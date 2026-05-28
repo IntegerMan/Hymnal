@@ -7,14 +7,28 @@
         x:Class="Hymnal.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="{Binding Title}"
-        Width="1280" Height="800">
+        Title="Hymnal"
+        Width="1280" Height="800"
+        Background="{StaticResource SurfaceBaseBrush}"
+        FontFamily="{StaticResource InterFont}"
+        TransparencyLevelHint="None">
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <!-- Placeholder shell — themed in T03/T04 -->
-    <TextBlock Text="{Binding Title}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    <DockPanel>
+        <!-- Synthwave accent top bar — confirms theme is live -->
+        <Border DockPanel.Dock="Top"
+                Background="{StaticResource SynthwavePurpleBrush}"
+                Height="2" />
+
+        <!-- Placeholder shell content — S02 will replace this -->
+        <TextBlock Text="{Binding Title}"
+                   Foreground="{StaticResource OnSurfaceBrush}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   FontSize="24" />
+    </DockPanel>
 
 </Window>
