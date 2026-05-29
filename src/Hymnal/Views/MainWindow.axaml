@@ -10,7 +10,7 @@
         Title="Hymnal"
         Width="1280" Height="800"
         Background="{StaticResource SurfaceBaseBrush}"
-        FontFamily="{StaticResource InterFont}"
+        FontFamily="{DynamicResource InterFont}"
         TransparencyLevelHint="None">
 
     <Design.DataContext>

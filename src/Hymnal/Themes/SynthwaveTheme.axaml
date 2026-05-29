@@ -30,7 +30,7 @@
     <SolidColorBrush x:Key="InfoBrush" Color="#38BDF8" />
 
     <!-- Font Families -->
-    <FontFamily x:Key="InterFont">avares://Hymnal/Assets/Fonts/Inter#Inter</FontFamily>
-    <FontFamily x:Key="EditorFont">avares://Hymnal/Assets/Fonts/JetBrainsMono#JetBrains Mono</FontFamily>
+    <FontFamily x:Key="InterFont">avares://Hymnal/Assets/Fonts#Inter</FontFamily>
+    <FontFamily x:Key="EditorFont">avares://Hymnal/Assets/Fonts#JetBrains Mono</FontFamily>
 
 </ResourceDictionary>
