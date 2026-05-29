@@ -74,6 +74,14 @@ public sealed class ManuscriptService : IDisposable
         }
     }
 
+    public void UnloadWorkspace()
+    {
+        _debounceTimer?.Dispose();
+        _debounceTimer = null;
+        _syncContext = null;
+        DisposeWatcher();
+    }
+
     public void Dispose()
     {
         _debounceTimer?.Dispose();

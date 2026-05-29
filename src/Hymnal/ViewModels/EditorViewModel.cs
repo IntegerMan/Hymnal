@@ -62,6 +62,22 @@ public class EditorViewModel : ViewModelBase, IDisposable
     private readonly ObservableAsPropertyHelper<bool> _canSave;
     public bool CanSave => _canSave.Value;
 
+    private readonly ObservableAsPropertyHelper<bool> _hasActiveChapter;
+    public bool HasActiveChapter => _hasActiveChapter.Value;
+
+    private readonly ObservableAsPropertyHelper<bool> _showWorkspacePrompt;
+    public bool ShowWorkspacePrompt => _showWorkspacePrompt.Value;
+
+    private readonly ObservableAsPropertyHelper<bool> _showNoChapterPrompt;
+    public bool ShowNoChapterPrompt => _showNoChapterPrompt.Value;
+
+    private bool _hasWorkspace;
+    public bool HasWorkspace
+    {
+        get => _hasWorkspace;
+        set => this.RaiseAndSetIfChanged(ref _hasWorkspace, value);
+    }
+
     // ── Conflict state ──────────────────────────────────────────────────────
 
     private bool _hasConflict;
@@ -98,6 +114,17 @@ public class EditorViewModel : ViewModelBase, IDisposable
 
         _canSave = this.WhenAnyValue(x => x.IsDirty, x => x.ActiveFilePath, (dirty, path) => dirty && path != null)
             .ToProperty(this, x => x.CanSave);
+
+        _hasActiveChapter = this.WhenAnyValue(x => x.ActiveNode)
+            .Select(node => node != null)
+            .ToProperty(this, x => x.HasActiveChapter);
+
+        _showWorkspacePrompt = this.WhenAnyValue(x => x.HasWorkspace)
+            .Select(hasWorkspace => !hasWorkspace)
+            .ToProperty(this, x => x.ShowWorkspacePrompt);
+
+        _showNoChapterPrompt = this.WhenAnyValue(x => x.HasWorkspace, x => x.ActiveNode, (hasWorkspace, node) => hasWorkspace && node == null)
+            .ToProperty(this, x => x.ShowNoChapterPrompt);
 
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, this.WhenAnyValue(x => x.CanSave));
 
@@ -164,15 +191,25 @@ public class EditorViewModel : ViewModelBase, IDisposable
     {
         if (!CanSave) return;
 
+        var savePath = ActiveFilePath;
+        StopWatcher();
+
         try
         {
-            await _metadataStore.WriteTextAtomicAsync(ActiveFilePath!, Text);
+            await _metadataStore.WriteTextAtomicAsync(savePath!, Text);
             OriginalText = Text;
+            HasConflict = false;
+            ConflictMessage = null;
         }
         catch (Exception ex)
         {
             _notificationService.ShowError($"Save failed: {ex.Message}");
             throw;
+        }
+        finally
+        {
+            if (savePath != null && ActiveFilePath == savePath)
+                StartWatcher(savePath);
         }
     }
 
@@ -232,6 +269,20 @@ public class EditorViewModel : ViewModelBase, IDisposable
         _watcher.Changed -= OnFileChanged;
         _watcher.Dispose();
         _watcher = null;
+    }
+
+    /// <summary>
+    /// Clears the active chapter and buffer, leaving the editor ready for a new workspace.
+    /// </summary>
+    public void CloseChapter()
+    {
+        StopWatcher();
+        HasConflict = false;
+        ConflictMessage = null;
+        ActiveNode = null;
+        ActiveFilePath = null;
+        Text = string.Empty;
+        OriginalText = string.Empty;
     }
 
     // ── IDisposable ──────────────────────────────────────────────────────────

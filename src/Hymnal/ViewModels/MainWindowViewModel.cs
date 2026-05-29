@@ -33,6 +33,13 @@ public class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _hasBanner, value);
     }
 
+    private string? _bannerTitle = "Notice";
+    public string? BannerTitle
+    {
+        get => _bannerTitle;
+        set => this.RaiseAndSetIfChanged(ref _bannerTitle, value);
+    }
+
     private string? _bannerMessage;
     public string? BannerMessage
     {
@@ -64,6 +71,11 @@ public class MainWindowViewModel : ViewModelBase
         WorkspaceViewModel = workspaceViewModel;
         EditorViewModel = editorViewModel;
 
+        EditorViewModel.HasWorkspace = WorkspaceViewModel.HasWorkspace;
+        Disposables.Add(
+            WorkspaceViewModel.WhenAnyValue(x => x.HasWorkspace)
+                .Subscribe(hasWorkspace => EditorViewModel.HasWorkspace = hasWorkspace));
+
         // ── Reactive window title ────────────────────────────────────────────
         // Reflects "• filename — Hymnal" (dirty), "filename — Hymnal" (clean), or "Hymnal" (no chapter).
         Disposables.Add(
@@ -90,8 +102,15 @@ public class MainWindowViewModel : ViewModelBase
                 .Subscribe(n =>
                 {
                     HasBanner = true;
-                    BannerMessage = n.Message;
                     BannerKind = n.Kind;
+                    BannerTitle = n.Kind switch
+                    {
+                        Hymnal.Infrastructure.NotificationKind.Error => "Error",
+                        Hymnal.Infrastructure.NotificationKind.Success => "Success",
+                        Hymnal.Infrastructure.NotificationKind.Info => "Info",
+                        _ => "Notice"
+                    };
+                    BannerMessage = n.Message;
 
                     timerDisposable.Disposable = Observable
                         .Timer(TimeSpan.FromSeconds(5))

@@ -58,6 +58,7 @@ public class WorkspaceViewModel : ViewModelBase
     }
 
     public ReactiveCommand<Unit, Unit> OpenWorkspaceCommand { get; }
+    public ReactiveCommand<Unit, Unit> CloseWorkspaceCommand { get; }
 
     public WorkspaceViewModel(
         ManuscriptService manuscriptService,
@@ -71,13 +72,18 @@ public class WorkspaceViewModel : ViewModelBase
         _folderPicker = folderPicker;
         _notificationService = notificationService;
         _editor = editor;
+        _editor.HasWorkspace = false;
 
         Nodes = new ReadOnlyObservableCollection<ChapterNode>(_nodes);
 
         OpenWorkspaceCommand = ReactiveCommand.CreateFromTask(OpenWorkspaceAsync);
+        CloseWorkspaceCommand = ReactiveCommand.CreateFromTask(CloseWorkspaceAsync, this.WhenAnyValue(x => x.HasWorkspace));
 
         Disposables.Add(
             OpenWorkspaceCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            CloseWorkspaceCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
 
         // React to user-initiated chapter selection (skip the initial null emission).
@@ -163,12 +169,47 @@ public class WorkspaceViewModel : ViewModelBase
 
             ErrorMessage = null;
             await _settingsStore.SetAsync("lastWorkspacePath", path);
+            _editor.HasWorkspace = true;
             BindModel(result.Value!);
         }
         finally
         {
             IsLoading = false;
         }
+    }
+
+    private async Task CloseWorkspaceAsync()
+    {
+        if (!HasWorkspace)
+            return;
+
+        if (_editor.IsDirty)
+        {
+            try
+            {
+                await _editor.SaveAsync();
+            }
+            catch
+            {
+                // SaveAsync already surfaced the error. Keep the workspace open.
+                return;
+            }
+        }
+
+        _manuscriptService.UnloadWorkspace();
+        _editor.CloseChapter();
+        _editor.HasWorkspace = false;
+
+        _model = null;
+        _nodes.Clear();
+        _isSwitching = false;
+        SelectedNode = null;
+        HasWorkspace = false;
+        ErrorMessage = null;
+        IsLoading = false;
+
+        await _settingsStore.SetAsync<string?>("lastWorkspacePath", null);
+        await _settingsStore.SetAsync<string?>("lastChapterPath", null);
     }
 
     // ── Init / restore ────────────────────────────────────────────────────────
@@ -187,6 +228,7 @@ public class WorkspaceViewModel : ViewModelBase
                 return;
 
             BindModel(result.Value!);
+            _editor.HasWorkspace = true;
 
             // Restore last edited chapter silently (no error banner on restore failure).
             var lastChapterPath = await _settingsStore.GetAsync<string>("lastChapterPath");

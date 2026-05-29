@@ -14,53 +14,104 @@
         FontFamily="{DynamicResource InterFont}"
         TransparencyLevelHint="None">
 
-    <DockPanel>
+    <Window.Styles>
+        <Style Selector="Button.toolbar-icon">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="MinWidth" Value="34" />
+            <Setter Property="MinHeight" Value="34" />
+        </Style>
+        <Style Selector="Button.toolbar-icon:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}" />
+        </Style>
+        <Style Selector="Button.toolbar-icon:pressed">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+        </Style>
+        <Style Selector="Button.toolbar-icon:disabled">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
         <!-- Synthwave accent top bar -->
-        <Border DockPanel.Dock="Top"
+        <Border Grid.Row="0"
                 Background="{StaticResource SynthwavePurpleBrush}"
                 Height="2" />
 
         <!-- Menu bar -->
-        <Menu DockPanel.Dock="Top"
+        <Menu Grid.Row="1"
               Background="{DynamicResource SurfaceElevatedBrush}"
               Foreground="{DynamicResource OnSurfaceBrush}"
               Padding="4,2">
             <MenuItem Header="_File" Foreground="{DynamicResource OnSurfaceBrush}">
                 <MenuItem Header="_Open Workspace…"
-                          Command="{Binding WorkspaceViewModel.OpenWorkspaceCommand}"
-                          InputGesture="Ctrl+O" />
-                <Separator />
-                <MenuItem Header="_Save"
-                          Command="{Binding EditorViewModel.SaveCommand}"
-                          InputGesture="Ctrl+S" />
+                          Command="{Binding WorkspaceViewModel.OpenWorkspaceCommand}" />
+                <MenuItem Header="_Close Workspace"
+                          Command="{Binding WorkspaceViewModel.CloseWorkspaceCommand}" />
                 <Separator />
                 <MenuItem Header="E_xit"
-                          Command="{Binding ExitCommand}"
-                          InputGesture="Alt+F4" />
+                          Command="{Binding ExitCommand}" />
             </MenuItem>
         </Menu>
 
-        <!-- Notification banner: auto-dismissed after 5 s by MainWindowViewModel -->
-        <Border DockPanel.Dock="Bottom"
-                IsVisible="{Binding HasBanner}"
+        <!-- Toolbar row -->
+        <Border Grid.Row="2"
                 Background="{DynamicResource SurfaceElevatedBrush}"
                 BorderBrush="{DynamicResource BorderSubtleBrush}"
-                BorderThickness="0,1,0,0"
-                Padding="12,8">
-            <TextBlock Text="{Binding BannerMessage}"
-                       Foreground="{DynamicResource OnSurfaceBrush}"
-                       TextWrapping="Wrap" />
+                BorderThickness="0,0,0,1"
+                Padding="6,4,8,4">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="4">
+                <Button Classes="toolbar-icon"
+                        Command="{Binding EditorViewModel.SaveCommand}"
+                        ToolTip.Tip="Save">
+                    <TextBlock Text="💾"
+                               FontSize="14"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                </Button>
+            </StackPanel>
         </Border>
 
-        <!-- Two-panel shell: sidebar | separator | editor -->
-        <Grid ColumnDefinitions="240,Auto,*">
+        <!-- Main shell -->
+        <Grid Grid.Row="3" ColumnDefinitions="240,Auto,*">
             <views:SidebarView Grid.Column="0" DataContext="{Binding WorkspaceViewModel}" />
-            <!-- Column separator -->
             <Border Grid.Column="1"
                     Width="1"
                     Background="{DynamicResource BorderSubtleBrush}" />
-            <views:EditorView Grid.Column="2" DataContext="{Binding EditorViewModel}" />
+            <views:EditorView Grid.Column="2"
+                              DataContext="{Binding EditorViewModel}" />
         </Grid>
-    </DockPanel>
+
+        <!-- Toast-style notifications -->
+        <Border Grid.RowSpan="4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="16"
+                MaxWidth="460"
+                IsVisible="{Binding HasBanner}"
+                Background="{DynamicResource SurfaceElevatedBrush}"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+            <Grid ColumnDefinitions="8,*">
+                <Border Background="{DynamicResource SynthwavePurpleBrush}"
+                        CornerRadius="12,0,0,12" />
+                <StackPanel Grid.Column="1"
+                            Margin="14,12"
+                            Spacing="4">
+                    <TextBlock Text="{Binding BannerTitle}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                    <TextBlock Text="{Binding BannerMessage}"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
 
 </Window>

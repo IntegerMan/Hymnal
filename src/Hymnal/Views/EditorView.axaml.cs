@@ -1,12 +1,17 @@
 using System;
 using System.Reactive.Disposables;
-using System.Xml;
+using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Platform;
+using Avalonia.Media;
+using Avalonia.Styling;
+using AvaloniaEdit.Document;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
+using AvaloniaEdit.Rendering;
+using Hymnal.Infrastructure;
 using Hymnal.ViewModels;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 
 namespace Hymnal.Views;
@@ -23,10 +28,28 @@ public partial class EditorView : UserControl
     private CompositeDisposable _viewDisposables = new();
     private IDisposable? _vmTextSub;
     private bool _highlightingLoaded;
+    private MarkuaColorizingTransformer? _markuaColorizer;
+
+    public static readonly StyledProperty<bool> HasWorkspaceProperty =
+        AvaloniaProperty.Register<EditorView, bool>(nameof(HasWorkspace));
+
+    public bool HasWorkspace
+    {
+        get => GetValue(HasWorkspaceProperty);
+        set => SetValue(HasWorkspaceProperty, value);
+    }
 
     public EditorView()
     {
         InitializeComponent();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == HasWorkspaceProperty && DataContext is EditorViewModel vm)
+            vm.HasWorkspace = change.GetNewValue<bool>();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -35,12 +58,15 @@ public partial class EditorView : UserControl
 
         _viewDisposables = new CompositeDisposable();
 
-        // Load syntax highlighting once (idempotent via the loaded flag).
+        // Load syntax styling once (idempotent via the loaded flag).
         if (!_highlightingLoaded)
         {
             LoadMarkuaHighlighting();
             _highlightingLoaded = true;
         }
+
+        // Apply dark-theme colors directly to the AvaloniaEdit rendering surface.
+        ApplyEditorTheme();
 
         // Editor → VM: fire on every text edit in the AvaloniaEdit surface.
         PART_Editor.TextChanged += OnEditorTextChanged;
@@ -100,22 +126,142 @@ public partial class EditorView : UserControl
             vm.Text = PART_Editor.Text;
     }
 
-    // ── Syntax highlighting ───────────────────────────────────────────────────
+    // ── Syntax styling ───────────────────────────────────────────────────────
+
+    private void ApplyEditorTheme()
+    {
+        var theme = Application.Current?.ActualThemeVariant ?? ThemeVariant.Dark;
+
+        var surfaceBrush = TryGetResource("SurfaceBaseBrush", theme, out var surface)
+            ? surface as IBrush
+            : null;
+        var textBrush = TryGetResource("OnSurfaceBrush", theme, out var text)
+            ? text as IBrush
+            : null;
+        var accentBrush = TryGetResource("SynthwavePurpleBrush", theme, out var accent)
+            ? accent as IBrush
+            : null;
+
+        var dimBrush = TryGetResource("OnSurfaceDimBrush", theme, out var dim)
+            ? dim as IBrush
+            : null;
+        var borderBrush = TryGetResource("BorderDefaultBrush", theme, out var border)
+            ? border as IBrush
+            : null;
+        var currentLineBrush = TryGetResource("SurfaceHighBrush", theme, out var currentLine)
+            ? currentLine as IBrush
+            : null;
+
+        if (surfaceBrush != null)
+        {
+            PART_Editor.Background = surfaceBrush;
+            PART_Editor.TextArea.Background = surfaceBrush;
+        }
+
+        if (textBrush != null)
+        {
+            PART_Editor.Foreground = textBrush;
+            PART_Editor.TextArea.Foreground = textBrush;
+            PART_Editor.TextArea.TextView.LinkTextForegroundBrush = accentBrush ?? textBrush;
+        }
+
+        PART_Editor.LineNumbersForeground = dimBrush ?? textBrush ?? Brushes.White;
+
+        if (accentBrush != null)
+            PART_Editor.TextArea.CaretBrush = accentBrush;
+
+        PART_Editor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromArgb(0x66, 0x9D, 0x4E, 0xDD));
+        PART_Editor.TextArea.SelectionForeground = textBrush ?? Brushes.White;
+        PART_Editor.TextArea.SelectionBorder = borderBrush != null ? new Pen(borderBrush, 1) : null;
+        PART_Editor.TextArea.SelectionCornerRadius = 2;
+
+        if (currentLineBrush != null)
+            PART_Editor.TextArea.TextView.CurrentLineBackground = currentLineBrush;
+    }
 
     private void LoadMarkuaHighlighting()
     {
-        try
+        // The XSHD definition is currently disabled because AvaloniaEdit crashes on a zero-width
+        // Markua rule during startup. Keep the editor usable by applying our own safe transformer.
+        PART_Editor.SyntaxHighlighting = null;
+
+        _markuaColorizer ??= new MarkuaColorizingTransformer(PART_Editor.FontFamily);
+        PART_Editor.TextArea.TextView.LineTransformers.Add(_markuaColorizer);
+
+        if (App.Services?.GetService<NotificationService>() is { } notifications)
+            notifications.ShowInfo("Markua syntax styling is active in simplified mode.");
+    }
+
+    private static bool TryGetResource(string key, ThemeVariant theme, out object? value)
+    {
+        value = null;
+        if (Application.Current?.Resources == null)
+            return false;
+
+        if (!Application.Current.TryGetResource(key, theme, out value))
+            return false;
+
+        return value != null;
+    }
+
+    private sealed class MarkuaColorizingTransformer : DocumentColorizingTransformer
+    {
+        private static readonly Regex HeadingRegex = new(@"^\s*#{1,6}\s+.+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex BoldRegex = new(@"\*\*[^*\r\n]+\*\*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex ItalicRegex = new(@"(?<!\*)\*[^*\r\n]+\*(?!\*)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        private readonly IBrush _headingBrush = new SolidColorBrush(Color.Parse("#C792EA"));
+        private readonly IBrush _boldBrush = new SolidColorBrush(Color.Parse("#EDE8F5"));
+        private readonly IBrush _italicBrush = new SolidColorBrush(Color.Parse("#A0A0B8"));
+        private readonly Typeface _headingTypeface;
+        private readonly Typeface _boldTypeface;
+        private readonly Typeface _italicTypeface;
+
+        public MarkuaColorizingTransformer(FontFamily fontFamily)
         {
-            using var stream = AssetLoader.Open(
-                new Uri("avares://Hymnal/Views/MarkuaHighlighting.xshd"));
-            using var reader = XmlReader.Create(stream);
-            PART_Editor.SyntaxHighlighting =
-                HighlightingLoader.Load(reader, HighlightingManager.Instance);
+            _headingTypeface = new Typeface(fontFamily, FontStyle.Normal, FontWeight.Bold);
+            _boldTypeface = new Typeface(fontFamily, FontStyle.Normal, FontWeight.Bold);
+            _italicTypeface = new Typeface(fontFamily, FontStyle.Italic, FontWeight.Normal);
         }
-        catch (Exception ex)
+
+        protected override void ColorizeLine(DocumentLine line)
         {
-            System.Diagnostics.Debug.WriteLine(
-                $"[EditorView] Failed to load Markua syntax highlighting: {ex.Message}");
+            if (CurrentContext.Document is null)
+                return;
+
+            var text = CurrentContext.Document.GetText(line);
+            if (HeadingRegex.IsMatch(text))
+            {
+                ChangeLinePart(line.Offset, line.EndOffset, element =>
+                {
+                    var props = element.TextRunProperties;
+                    props.SetForegroundBrush(_headingBrush);
+                    props.SetTypeface(_headingTypeface);
+                });
+                return;
+            }
+
+            ApplyMatches(text, line.Offset, BoldRegex, _boldBrush, _boldTypeface);
+            ApplyMatches(text, line.Offset, ItalicRegex, _italicBrush, _italicTypeface);
+        }
+
+        private void ApplyMatches(string text, int lineOffset, Regex regex, IBrush brush, Typeface typeface)
+        {
+            foreach (Match match in regex.Matches(text))
+            {
+                if (!match.Success || match.Length <= 0)
+                    continue;
+
+                var start = lineOffset + match.Index;
+                var end = start + match.Length;
+
+                ChangeLinePart(start, end, element =>
+                {
+                    var props = element.TextRunProperties;
+                    props.SetForegroundBrush(brush);
+                    props.SetTypeface(typeface);
+                });
+            }
         }
     }
 }

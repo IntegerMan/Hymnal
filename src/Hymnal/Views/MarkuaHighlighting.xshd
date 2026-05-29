@@ -19,8 +19,8 @@
       <End>^```</End>
     </Span>
 
-    <!-- Headings: # through ###### at start of line -->
-    <Rule color="Heading">^#{1,6} .*</Rule>
+    <!-- Headings: # through ###### at start of line; require at least one non-space character to avoid zero-length matches -->
+    <Rule color="Heading">^#{1,6}\s+\S.*</Rule>
 
     <!-- Markua structural directives: {mainmatter}, {backmatter}, etc. -->
     <Rule color="Directive">^\{(?:mainmatter|backmatter|frontmatter|sample|pagebreak|blurb)\b[^}]*\}</Rule>

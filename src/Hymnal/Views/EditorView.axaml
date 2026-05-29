@@ -13,10 +13,10 @@
         <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
     </UserControl.KeyBindings>
 
-    <DockPanel>
+    <Grid RowDefinitions="Auto,*">
 
         <!-- Conflict strip: visible when an external file change conflicts with dirty buffer -->
-        <Border DockPanel.Dock="Top"
+        <Border Grid.Row="0"
                 IsVisible="{Binding HasConflict}"
                 Background="{DynamicResource SurfaceHighBrush}"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
@@ -39,18 +39,53 @@
             </StackPanel>
         </Border>
 
-        <!-- AvaloniaEdit text editor surface — fills remaining panel space -->
-        <avedit:TextEditor x:Name="PART_Editor"
-                           FontFamily="{DynamicResource EditorFont}"
-                           FontSize="14"
-                           WordWrap="True"
-                           ShowLineNumbers="False"
-                           Background="{DynamicResource SurfaceBaseBrush}"
-                           Foreground="{DynamicResource OnSurfaceBrush}"
-                           HorizontalScrollBarVisibility="Disabled"
-                           VerticalScrollBarVisibility="Auto"
-                           Padding="16,12" />
+        <Grid Grid.Row="1">
+            <avedit:TextEditor x:Name="PART_Editor"
+                               FontFamily="{DynamicResource EditorFont}"
+                               FontSize="14"
+                               WordWrap="True"
+                               ShowLineNumbers="False"
+                               Background="{DynamicResource SurfaceBaseBrush}"
+                               Foreground="{DynamicResource OnSurfaceBrush}"
+                               HorizontalScrollBarVisibility="Disabled"
+                               VerticalScrollBarVisibility="Auto"
+                               Padding="16,12" />
 
-    </DockPanel>
+            <Border IsVisible="{Binding ShowWorkspacePrompt}"
+                    Background="{DynamicResource SurfaceBaseBrush}">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8"
+                            MaxWidth="420">
+                    <TextBlock Text="Open a workspace"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                    <TextBlock Text="Use File > Open Workspace or the sidebar button to load a manuscript."
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                </StackPanel>
+            </Border>
+
+            <Border IsVisible="{Binding ShowNoChapterPrompt}"
+                    Background="{DynamicResource SurfaceBaseBrush}">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8"
+                            MaxWidth="420">
+                    <TextBlock Text="No chapter open"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                    <TextBlock Text="Select a chapter in the sidebar to load its Markua content here."
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+    </Grid>
 
 </UserControl>
