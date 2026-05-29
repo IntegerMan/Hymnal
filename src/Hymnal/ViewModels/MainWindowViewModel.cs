@@ -11,6 +11,11 @@ public class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _title, value);
     }
 
-    /// <summary>Current routed view — null in S01, populated from S02 onward.</summary>
-    public object? CurrentView { get; set; }
+    public WorkspaceViewModel WorkspaceViewModel { get; }
+
+    public MainWindowViewModel(WorkspaceViewModel workspaceViewModel)
+    {
+        WorkspaceViewModel = workspaceViewModel;
+        _ = workspaceViewModel.InitAsync();
+    }
 }

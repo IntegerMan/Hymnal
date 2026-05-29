@@ -1,7 +1,10 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Hymnal.Core.Interfaces;
+using Hymnal.Core.Infrastructure;
+using Hymnal.Core.Services;
 using Hymnal.Infrastructure;
 using Hymnal.ViewModels;
 using Hymnal.Views;
@@ -28,6 +31,16 @@ public partial class App : Application
 
         // Platform credential store stub — real impl deferred to a future milestone
         services.AddSingleton<ICredentialStore, CredentialStoreStub>();
+
+        // S02 services
+        services.AddSingleton<IAppSettingsStore, AppSettingsStore>();
+        services.AddSingleton<ManuscriptService>();
+        services.AddSingleton<WorkspaceViewModel>();
+        services.AddSingleton<IFolderPickerService>(sp =>
+            new FolderPickerService(() =>
+                App.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime dl
+                    ? TopLevel.GetTopLevel(dl.MainWindow)
+                    : null));
 
         services.AddTransient<MainWindowViewModel>();
 

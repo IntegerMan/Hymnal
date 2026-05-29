@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Hymnal.ViewModels"
+        xmlns:views="clr-namespace:Hymnal.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
@@ -13,22 +14,17 @@
         FontFamily="{DynamicResource InterFont}"
         TransparencyLevelHint="None">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
-
     <DockPanel>
         <!-- Synthwave accent top bar — confirms theme is live -->
         <Border DockPanel.Dock="Top"
                 Background="{StaticResource SynthwavePurpleBrush}"
                 Height="2" />
 
-        <!-- Placeholder shell content — S02 will replace this -->
-        <TextBlock Text="{Binding Title}"
-                   Foreground="{StaticResource OnSurfaceBrush}"
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   FontSize="24" />
+        <!-- Two-panel shell: sidebar | editor placeholder -->
+        <Grid ColumnDefinitions="240,*">
+            <views:SidebarView Grid.Column="0" DataContext="{Binding WorkspaceViewModel}" />
+            <Border Grid.Column="1" Background="{DynamicResource SynthwaveBackgroundBrush}" />
+        </Grid>
     </DockPanel>
 
 </Window>
