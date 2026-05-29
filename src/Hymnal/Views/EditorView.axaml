@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:avedit="using:AvaloniaEdit"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="Hymnal.Views.EditorView"
+             x:DataType="vm:EditorViewModel"
+             Background="{DynamicResource SurfaceBaseBrush}">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
+    </UserControl.KeyBindings>
+
+    <DockPanel>
+
+        <!-- Conflict strip: visible when an external file change conflicts with dirty buffer -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding HasConflict}"
+                Background="{DynamicResource SurfaceHighBrush}"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="{Binding ConflictMessage}"
+                           Foreground="{DynamicResource OnSurfaceBrush}"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="600" />
+                <Button Content="Keep my edits"
+                        Command="{Binding KeepLocalCommand}"
+                        Padding="10,4"
+                        CornerRadius="4" />
+                <Button Content="Reload from disk"
+                        Command="{Binding AcceptExternalCommand}"
+                        Padding="10,4"
+                        CornerRadius="4" />
+            </StackPanel>
+        </Border>
+
+        <!-- AvaloniaEdit text editor surface — fills remaining panel space -->
+        <avedit:TextEditor x:Name="PART_Editor"
+                           FontFamily="{DynamicResource EditorFont}"
+                           FontSize="14"
+                           WordWrap="True"
+                           ShowLineNumbers="False"
+                           Background="{DynamicResource SurfaceBaseBrush}"
+                           Foreground="{DynamicResource OnSurfaceBrush}"
+                           HorizontalScrollBarVisibility="Disabled"
+                           VerticalScrollBarVisibility="Auto"
+                           Padding="16,12" />
+
+    </DockPanel>
+
+</UserControl>

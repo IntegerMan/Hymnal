@@ -8,7 +8,7 @@
         x:Class="Hymnal.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="Hymnal"
+        Title="{Binding Title}"
         Width="1280" Height="800"
         Background="{StaticResource SurfaceBaseBrush}"
         FontFamily="{DynamicResource InterFont}"
@@ -30,20 +30,36 @@
                           Command="{Binding WorkspaceViewModel.OpenWorkspaceCommand}"
                           InputGesture="Ctrl+O" />
                 <Separator />
+                <MenuItem Header="_Save"
+                          Command="{Binding EditorViewModel.SaveCommand}"
+                          InputGesture="Ctrl+S" />
+                <Separator />
                 <MenuItem Header="E_xit"
                           Command="{Binding ExitCommand}"
                           InputGesture="Alt+F4" />
             </MenuItem>
         </Menu>
 
-        <!-- Two-panel shell: sidebar | editor placeholder -->
+        <!-- Notification banner: auto-dismissed after 5 s by MainWindowViewModel -->
+        <Border DockPanel.Dock="Bottom"
+                IsVisible="{Binding HasBanner}"
+                Background="{DynamicResource SurfaceElevatedBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,8">
+            <TextBlock Text="{Binding BannerMessage}"
+                       Foreground="{DynamicResource OnSurfaceBrush}"
+                       TextWrapping="Wrap" />
+        </Border>
+
+        <!-- Two-panel shell: sidebar | separator | editor -->
         <Grid ColumnDefinitions="240,Auto,*">
             <views:SidebarView Grid.Column="0" DataContext="{Binding WorkspaceViewModel}" />
             <!-- Column separator -->
             <Border Grid.Column="1"
                     Width="1"
                     Background="{DynamicResource BorderSubtleBrush}" />
-            <Border Grid.Column="2" Background="{DynamicResource SurfaceBaseBrush}" />
+            <views:EditorView Grid.Column="2" DataContext="{Binding EditorViewModel}" />
         </Grid>
     </DockPanel>
 

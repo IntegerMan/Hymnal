@@ -44,8 +44,11 @@
                     CornerRadius="4" />
         </StackPanel>
 
-        <!-- Chapter tree: shown once a workspace is loaded -->
+        <!-- Chapter tree: shown once a workspace is loaded.
+             SelectedItem is two-way bound to WorkspaceViewModel.SelectedNode; the VM guards
+             against Part/missing nodes and re-entrant selection via _isSwitching. -->
         <ListBox ItemsSource="{Binding Nodes}"
+                 SelectedItem="{Binding SelectedNode}"
                  Background="Transparent"
                  BorderThickness="0"
                  Padding="0,4"
