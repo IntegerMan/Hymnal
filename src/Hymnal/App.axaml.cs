@@ -35,6 +35,10 @@ public partial class App : Application
         // S02 services
         services.AddSingleton<IAppSettingsStore, AppSettingsStore>();
         services.AddSingleton<ManuscriptService>();
+
+        // S03 services
+        services.AddSingleton<IMetadataStore, MetadataStore>();
+
         services.AddSingleton<WorkspaceViewModel>();
         services.AddSingleton<IFolderPickerService>(sp =>
             new FolderPickerService(() =>

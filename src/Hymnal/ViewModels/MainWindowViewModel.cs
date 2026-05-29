@@ -1,4 +1,7 @@
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using ReactiveUI;
+using System.Reactive;
 
 namespace Hymnal.ViewModels;
 
@@ -12,6 +15,13 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     public WorkspaceViewModel WorkspaceViewModel { get; }
+
+    public ReactiveCommand<Unit, Unit> ExitCommand { get; } =
+        ReactiveCommand.Create(() =>
+        {
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                desktop.Shutdown();
+        });
 
     public MainWindowViewModel(WorkspaceViewModel workspaceViewModel)
     {

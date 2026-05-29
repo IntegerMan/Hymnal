@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:models="using:Hymnal.Core.Models"
+             xmlns:conv="using:Hymnal.Views.Converters"
+             x:Class="Hymnal.Views.SidebarView"
+             x:DataType="vm:WorkspaceViewModel"
+             Background="{DynamicResource SurfaceElevatedBrush}">
+
+    <UserControl.Resources>
+        <conv:NodeKindToFontWeightConverter x:Key="NodeKindToFontWeightConverter" />
+        <conv:NodeKindToMarginConverter x:Key="NodeKindToMarginConverter" />
+        <conv:NodeKindToForegroundConverter x:Key="NodeKindToForegroundConverter" />
+    </UserControl.Resources>
+
+    <Panel>
+        <!-- Empty state: shown when no workspace is loaded -->
+        <StackPanel VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Spacing="12"
+                    IsVisible="{Binding !HasWorkspace}">
+
+            <!-- Error message (only visible after a failed load) -->
+            <TextBlock Text="{Binding ErrorMessage}"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource ErrorBrush}"
+                       HorizontalAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="180"
+                       FontSize="11"
+                       TextAlignment="Center" />
+
+            <TextBlock Text="No workspace open"
+                       Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                       HorizontalAlignment="Center"
+                       FontSize="12" />
+
+            <Button Content="Open Folder…"
+                    Command="{Binding OpenWorkspaceCommand}"
+                    HorizontalAlignment="Center"
+                    Background="{DynamicResource SynthwavePurpleBrush}"
+                    Foreground="{DynamicResource OnSurfaceBrush}"
+                    Padding="12,6"
+                    CornerRadius="4" />
+        </StackPanel>
+
+        <!-- Chapter tree: shown once a workspace is loaded -->
+        <ListBox ItemsSource="{Binding Nodes}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 Padding="0,4"
+                 IsVisible="{Binding HasWorkspace}">
+            <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                    <Setter Property="Padding" Value="8,5" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceBrush}" />
+                    <Setter Property="CornerRadius" Value="4" />
+                    <Setter Property="Margin" Value="4,1" />
+                </Style>
+                <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                    <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+                </Style>
+                <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                    <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+                </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="models:ChapterNode">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding Title}"
+                                   FontWeight="{Binding Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
+                                   Margin="{Binding Kind, Converter={StaticResource NodeKindToMarginConverter}}"
+                                   Foreground="{Binding Kind, Converter={StaticResource NodeKindToForegroundConverter}}" />
+                        <TextBlock Text=" ⚠"
+                                   IsVisible="{Binding IsMissing}"
+                                   Foreground="{DynamicResource ErrorBrush}"
+                                   ToolTip.Tip="File not found on disk" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Loading overlay -->
+        <Border IsVisible="{Binding IsLoading}"
+                Background="{DynamicResource SurfaceElevatedBrush}">
+            <StackPanel VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Spacing="10">
+                <TextBlock Text="Loading…"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}"
+                           HorizontalAlignment="Center"
+                           FontSize="12" />
+            </StackPanel>
+        </Border>
+    </Panel>
+
+</UserControl>

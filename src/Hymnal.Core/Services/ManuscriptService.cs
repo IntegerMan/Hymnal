@@ -18,21 +18,28 @@ public sealed class ManuscriptService : IDisposable
 
     public Task<Result<ManuscriptModel>> LoadWorkspaceAsync(string folderPath)
     {
+        // PRD FR-2: check {workspace}/Book.txt first, then {workspace}/manuscript/Book.txt
         var bookTxtPath = Path.Combine(folderPath, "Book.txt");
+        if (!File.Exists(bookTxtPath))
+            bookTxtPath = Path.Combine(folderPath, "manuscript", "Book.txt");
 
         if (!File.Exists(bookTxtPath))
-            return Task.FromResult(Result<ManuscriptModel>.Fail("Book.txt not found in folder"));
+            return Task.FromResult(Result<ManuscriptModel>.Fail(
+                "Book.txt not found. Expected at the workspace root or in a 'manuscript' subfolder."));
+
+        var manuscriptRoot = Path.GetDirectoryName(bookTxtPath)!;
 
         var lines = File.ReadAllLines(bookTxtPath);
-        var nodes = BookTxtParser.Parse(folderPath, lines);
+        var nodes = BookTxtParser.Parse(manuscriptRoot, lines);
 
         var model = new ManuscriptModel();
         model.Load(nodes);
+        model.SetRoots(folderPath, manuscriptRoot);
 
         _syncContext = SynchronizationContext.Current;
 
         DisposeWatcher();
-        _watcher = new FileSystemWatcher(folderPath, "Book.txt")
+        _watcher = new FileSystemWatcher(manuscriptRoot, "Book.txt")
         {
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
             EnableRaisingEvents = true

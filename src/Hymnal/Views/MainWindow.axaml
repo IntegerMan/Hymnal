@@ -15,15 +15,35 @@
         TransparencyLevelHint="None">
 
     <DockPanel>
-        <!-- Synthwave accent top bar — confirms theme is live -->
+        <!-- Synthwave accent top bar -->
         <Border DockPanel.Dock="Top"
                 Background="{StaticResource SynthwavePurpleBrush}"
                 Height="2" />
 
+        <!-- Menu bar -->
+        <Menu DockPanel.Dock="Top"
+              Background="{DynamicResource SurfaceElevatedBrush}"
+              Foreground="{DynamicResource OnSurfaceBrush}"
+              Padding="4,2">
+            <MenuItem Header="_File" Foreground="{DynamicResource OnSurfaceBrush}">
+                <MenuItem Header="_Open Workspace…"
+                          Command="{Binding WorkspaceViewModel.OpenWorkspaceCommand}"
+                          InputGesture="Ctrl+O" />
+                <Separator />
+                <MenuItem Header="E_xit"
+                          Command="{Binding ExitCommand}"
+                          InputGesture="Alt+F4" />
+            </MenuItem>
+        </Menu>
+
         <!-- Two-panel shell: sidebar | editor placeholder -->
-        <Grid ColumnDefinitions="240,*">
+        <Grid ColumnDefinitions="240,Auto,*">
             <views:SidebarView Grid.Column="0" DataContext="{Binding WorkspaceViewModel}" />
-            <Border Grid.Column="1" Background="{DynamicResource SynthwaveBackgroundBrush}" />
+            <!-- Column separator -->
+            <Border Grid.Column="1"
+                    Width="1"
+                    Background="{DynamicResource BorderSubtleBrush}" />
+            <Border Grid.Column="2" Background="{DynamicResource SurfaceBaseBrush}" />
         </Grid>
     </DockPanel>
 
