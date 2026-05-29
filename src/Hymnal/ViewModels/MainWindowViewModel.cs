@@ -14,6 +14,7 @@ public class MainWindowViewModel : ViewModelBase
 {
     public WorkspaceViewModel WorkspaceViewModel { get; }
     public EditorViewModel EditorViewModel { get; }
+    public NotesViewModel NotesViewModel { get; }
 
     // ── Window title ──────────────────────────────────────────────────────────
 
@@ -66,10 +67,12 @@ public class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(
         WorkspaceViewModel workspaceViewModel,
         EditorViewModel editorViewModel,
+        NotesViewModel notesViewModel,
         NotificationService notificationService)
     {
         WorkspaceViewModel = workspaceViewModel;
         EditorViewModel = editorViewModel;
+        NotesViewModel = notesViewModel;
 
         EditorViewModel.HasWorkspace = WorkspaceViewModel.HasWorkspace;
         Disposables.Add(

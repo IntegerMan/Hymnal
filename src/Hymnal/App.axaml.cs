@@ -39,6 +39,9 @@ public partial class App : Application
         // S03 services
         services.AddSingleton<IMetadataStore, MetadataStore>();
 
+        // S04 services
+        services.AddSingleton<INotesService, NotesService>();
+
         // S03 view-models (order matters: EditorViewModel before WorkspaceViewModel)
         services.AddSingleton<EditorViewModel>(sp =>
             new EditorViewModel(
@@ -59,10 +62,18 @@ public partial class App : Application
                 sp.GetRequiredService<INotificationService>(),
                 sp.GetRequiredService<EditorViewModel>()));
 
+        services.AddSingleton<NotesViewModel>(sp =>
+            new NotesViewModel(
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<INotesService>(),
+                sp.GetRequiredService<INotificationService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<NotesViewModel>(),
                 sp.GetRequiredService<NotificationService>()));
 
         Services = services.BuildServiceProvider();
