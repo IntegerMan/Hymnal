@@ -34,7 +34,31 @@
         <Style Selector="Button.toolbar-icon:disabled">
             <Setter Property="Opacity" Value="0.45" />
         </Style>
+        <Style Selector="ToggleButton.toolbar-icon">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="MinWidth" Value="34" />
+            <Setter Property="MinHeight" Value="34" />
+        </Style>
+        <Style Selector="ToggleButton.toolbar-icon:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}" />
+        </Style>
+        <Style Selector="ToggleButton.toolbar-icon:checked">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+        <Style Selector="ToggleButton.toolbar-icon:disabled">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
     </Window.Styles>
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="F4" Command="{Binding NotesViewModel.ToggleCommand}" />
+    </Window.KeyBindings>
 
     <Grid RowDefinitions="Auto,Auto,Auto,*">
         <!-- Synthwave accent top bar -->
@@ -72,17 +96,37 @@
                                FontSize="14"
                                Foreground="{DynamicResource OnSurfaceBrush}" />
                 </Button>
+                <ToggleButton Classes="toolbar-icon"
+                              IsChecked="{Binding NotesViewModel.IsVisible, Mode=OneWay}"
+                              Command="{Binding NotesViewModel.ToggleCommand}"
+                              ToolTip.Tip="Toggle Notes (F4)">
+                    <TextBlock Text="📝"
+                               FontSize="14"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                </ToggleButton>
             </StackPanel>
         </Border>
 
         <!-- Main shell -->
-        <Grid Grid.Row="3" ColumnDefinitions="240,Auto,*">
+        <Grid Grid.Row="3" ColumnDefinitions="240,Auto,*,Auto,280">
             <views:SidebarView Grid.Column="0" DataContext="{Binding WorkspaceViewModel}" />
             <Border Grid.Column="1"
                     Width="1"
                     Background="{DynamicResource BorderSubtleBrush}" />
             <views:EditorView Grid.Column="2"
                               DataContext="{Binding EditorViewModel}" />
+            <GridSplitter Grid.Column="3"
+                          Width="4"
+                          ResizeDirection="Columns"
+                          IsVisible="{Binding NotesViewModel.IsVisible}"
+                          Background="{DynamicResource BorderSubtleBrush}" />
+            <Border Grid.Column="4"
+                    IsVisible="{Binding NotesViewModel.IsVisible}"
+                    MinWidth="180"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="1,0,0,0">
+                <views:NotesView DataContext="{Binding NotesViewModel}" />
+            </Border>
         </Grid>
 
         <!-- Toast-style notifications -->
