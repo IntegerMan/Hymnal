@@ -39,14 +39,31 @@ public partial class App : Application
         // S03 services
         services.AddSingleton<IMetadataStore, MetadataStore>();
 
-        services.AddSingleton<WorkspaceViewModel>();
+        // S03 view-models (order matters: EditorViewModel before WorkspaceViewModel)
+        services.AddSingleton<EditorViewModel>(sp =>
+            new EditorViewModel(
+                sp.GetRequiredService<IMetadataStore>(),
+                sp.GetRequiredService<INotificationService>()));
+
         services.AddSingleton<IFolderPickerService>(sp =>
             new FolderPickerService(() =>
                 App.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime dl
                     ? TopLevel.GetTopLevel(dl.MainWindow)
                     : null));
 
-        services.AddTransient<MainWindowViewModel>();
+        services.AddSingleton<WorkspaceViewModel>(sp =>
+            new WorkspaceViewModel(
+                sp.GetRequiredService<ManuscriptService>(),
+                sp.GetRequiredService<IAppSettingsStore>(),
+                sp.GetRequiredService<IFolderPickerService>(),
+                sp.GetRequiredService<INotificationService>(),
+                sp.GetRequiredService<EditorViewModel>()));
+
+        services.AddTransient<MainWindowViewModel>(sp =>
+            new MainWindowViewModel(
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<NotificationService>()));
 
         Services = services.BuildServiceProvider();
 
