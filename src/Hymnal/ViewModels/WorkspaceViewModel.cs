@@ -57,6 +57,11 @@ public class WorkspaceViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _selectedNode, value);
     }
 
+    /// <summary>
+    /// Returns the root directory of the currently open workspace, or an empty string when no workspace is loaded.
+    /// </summary>
+    public string WorkspaceRoot => _model?.WorkspaceRoot ?? string.Empty;
+
     public ReactiveCommand<Unit, Unit> OpenWorkspaceCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseWorkspaceCommand { get; }
 
