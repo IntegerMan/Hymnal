@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Reactive.Disposables;
 using DynamicData;
 using DynamicData.Binding;
+using PathHelper = Hymnal.Core.Common.PathHelper;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
@@ -156,7 +157,7 @@ public class WorkspaceViewModel : ViewModelBase
 
         var absolutePath = ResolveAbsolutePath(node);
         await _editor.OpenChapterAsync(node, absolutePath);
-        await _settingsStore.SetAsync("lastChapterPath", absolutePath);
+        await _settingsStore.SetAsync("lastChapterPath", Path.GetFullPath(absolutePath));
     }
 
     private string ResolveAbsolutePath(ChapterNode node) =>
@@ -251,10 +252,10 @@ public class WorkspaceViewModel : ViewModelBase
             if (lastChapterPath != null)
             {
                 ChapterNode? match = null;
-                foreach (var n in _nodes)
+                foreach (var n in _model!.Nodes.Items)
                 {
                     if (n.Kind == NodeKind.Chapter && !n.IsMissing &&
-                        ResolveAbsolutePath(n) == lastChapterPath)
+                        PathHelper.IsSamePath(ResolveAbsolutePath(n), lastChapterPath))
                     {
                         match = n;
                         break;
@@ -263,15 +264,18 @@ public class WorkspaceViewModel : ViewModelBase
 
                 if (match != null)
                 {
-                    // Set SelectedNode with the guard so the WhenAnyValue subscription
-                    // doesn't double-fire; then open the chapter directly.
-                    _isSwitching = true;
-                    SelectedNode = match;
-                    _isSwitching = false;
-
+                    // Open the chapter first; only assign SelectedNode after success so
+                    // a file-read failure leaves the editor blank rather than showing a
+                    // sidebar selection with no content.
                     try
                     {
                         await _editor.OpenChapterAsync(match, ResolveAbsolutePath(match));
+
+                        // Set SelectedNode with the guard so the WhenAnyValue subscription
+                        // doesn't double-fire.
+                        _isSwitching = true;
+                        SelectedNode = match;
+                        _isSwitching = false;
                     }
                     catch
                     {
