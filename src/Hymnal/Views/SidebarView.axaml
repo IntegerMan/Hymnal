@@ -67,6 +67,12 @@
                 <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
                     <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
                 </Style>
+                <Style Selector="ListBoxItem:selected">
+                    <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+                    <Setter Property="BorderThickness" Value="2,0,0,0" />
+                    <Setter Property="CornerRadius" Value="0,4,4,0" />
+                    <Setter Property="Padding" Value="6,5" />
+                </Style>
             </ListBox.Styles>
             <ListBox.ItemTemplate>
                 <DataTemplate DataType="models:ChapterNode">
@@ -75,10 +81,17 @@
                                    FontWeight="{Binding Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
                                    Margin="{Binding Kind, Converter={StaticResource NodeKindToMarginConverter}}"
                                    Foreground="{Binding Kind, Converter={StaticResource NodeKindToForegroundConverter}}" />
-                        <TextBlock Text=" ⚠"
-                                   IsVisible="{Binding IsMissing}"
-                                   Foreground="{DynamicResource ErrorBrush}"
-                                   ToolTip.Tip="File not found on disk" />
+                        <Border IsVisible="{Binding IsMissing}"
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="File not found on disk">
+                            <Path Data="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"
+                                  Stroke="{DynamicResource ErrorBrush}"
+                                  StrokeThickness="1.5"
+                                  StrokeLineCap="Round"
+                                  Width="12" Height="12"
+                                  Stretch="Uniform" />
+                        </Border>
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>

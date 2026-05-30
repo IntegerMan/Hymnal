@@ -7,7 +7,7 @@
              mc:Ignorable="d"
              x:Class="Hymnal.Views.EditorView"
              x:DataType="vm:EditorViewModel"
-             Background="{DynamicResource SurfaceBaseBrush}">
+             Background="Transparent">
 
     <UserControl.KeyBindings>
         <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
@@ -45,7 +45,7 @@
                                FontSize="14"
                                WordWrap="True"
                                ShowLineNumbers="False"
-                               Background="{DynamicResource SurfaceBaseBrush}"
+                               Background="Transparent"
                                Foreground="{DynamicResource OnSurfaceBrush}"
                                HorizontalScrollBarVisibility="Disabled"
                                VerticalScrollBarVisibility="Auto"

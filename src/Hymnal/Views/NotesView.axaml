@@ -5,24 +5,10 @@
              x:DataType="vm:NotesViewModel"
              Background="{DynamicResource SurfaceElevatedBrush}">
 
-    <Grid RowDefinitions="Auto,*">
-
-        <!-- Header -->
-        <Border Grid.Row="0"
-                Background="{DynamicResource SurfaceElevatedBrush}"
-                BorderBrush="{DynamicResource BorderSubtleBrush}"
-                BorderThickness="0,0,0,1"
-                Padding="10,8">
-            <TextBlock Text="{Binding ChapterTitle, FallbackValue='Notes'}"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource OnSurfaceBrush}"
-                       TextTrimming="CharacterEllipsis" />
-        </Border>
+    <Panel>
 
         <!-- Empty state: shown when no chapter is active -->
-        <TextBlock Grid.Row="1"
-                   Text="Open a chapter to start taking notes."
+        <TextBlock Text="Open a chapter to start taking notes."
                    IsVisible="{Binding ChapterTitle, Converter={x:Static ObjectConverters.IsNull}}"
                    VerticalAlignment="Center"
                    HorizontalAlignment="Center"
@@ -33,8 +19,7 @@
                    Margin="16" />
 
         <!-- Notes text area -->
-        <TextBox Grid.Row="1"
-                 Text="{Binding Text, Mode=TwoWay}"
+        <TextBox Text="{Binding Text, Mode=TwoWay}"
                  IsVisible="{Binding ChapterTitle, Converter={x:Static ObjectConverters.IsNotNull}}"
                  AcceptsReturn="True"
                  TextWrapping="Wrap"
@@ -48,6 +33,6 @@
                  CaretBrush="{DynamicResource SynthwavePurpleBrush}"
                  VerticalContentAlignment="Top" />
 
-    </Grid>
+    </Panel>
 
 </UserControl>

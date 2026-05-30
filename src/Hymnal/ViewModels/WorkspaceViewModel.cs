@@ -62,6 +62,16 @@ public class WorkspaceViewModel : ViewModelBase
     /// </summary>
     public string WorkspaceRoot => _model?.WorkspaceRoot ?? string.Empty;
 
+    private string? _workspaceName;
+    /// <summary>
+    /// The folder name of the open workspace (e.g. "New Game"). Null when no workspace is loaded.
+    /// </summary>
+    public string? WorkspaceName
+    {
+        get => _workspaceName;
+        private set => this.RaiseAndSetIfChanged(ref _workspaceName, value);
+    }
+
     public ReactiveCommand<Unit, Unit> OpenWorkspaceCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseWorkspaceCommand { get; }
 
@@ -210,6 +220,7 @@ public class WorkspaceViewModel : ViewModelBase
         _isSwitching = false;
         SelectedNode = null;
         HasWorkspace = false;
+        WorkspaceName = null;
         ErrorMessage = null;
         IsLoading = false;
 
@@ -281,6 +292,7 @@ public class WorkspaceViewModel : ViewModelBase
     {
         _model = model;
         HasWorkspace = true;
+        WorkspaceName = Path.GetFileName(model.WorkspaceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
         Disposables.Add(
             model.Nodes

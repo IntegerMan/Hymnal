@@ -152,11 +152,10 @@ public partial class EditorView : UserControl
             ? currentLine as IBrush
             : null;
 
-        if (surfaceBrush != null)
-        {
-            PART_Editor.Background = surfaceBrush;
-            PART_Editor.TextArea.Background = surfaceBrush;
-        }
+        // Keep the editor and TextArea transparent so the synthwave background gradient
+        // set on the parent Panel in MainWindow shows through.
+        PART_Editor.Background = Brushes.Transparent;
+        PART_Editor.TextArea.Background = Brushes.Transparent;
 
         if (textBrush != null)
         {

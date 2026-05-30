@@ -10,61 +10,51 @@
         Icon="/Assets/avalonia-logo.ico"
         Title="{Binding Title}"
         Width="1280" Height="800"
-        Background="{StaticResource SurfaceBaseBrush}"
+        Background="#0B0820"
         FontFamily="{DynamicResource InterFont}"
         TransparencyLevelHint="None">
 
     <Window.Styles>
-        <Style Selector="Button.toolbar-icon">
+        <!-- Pane icon button: used in collapsed rail and expanded pane header -->
+        <Style Selector="Button.nav-icon">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="8,6" />
-            <Setter Property="MinWidth" Value="34" />
-            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="48" />
+            <Setter Property="Height" Value="48" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
         </Style>
-        <Style Selector="Button.toolbar-icon:pointerover">
+        <Style Selector="Button.nav-icon:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}" />
         </Style>
-        <Style Selector="Button.toolbar-icon:pressed">
+        <Style Selector="Button.nav-icon:pressed /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
-        </Style>
-        <Style Selector="Button.toolbar-icon:disabled">
-            <Setter Property="Opacity" Value="0.45" />
-        </Style>
-        <Style Selector="ToggleButton.toolbar-icon">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="8,6" />
-            <Setter Property="MinWidth" Value="34" />
-            <Setter Property="MinHeight" Value="34" />
-        </Style>
-        <Style Selector="ToggleButton.toolbar-icon:pointerover">
-            <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}" />
-        </Style>
-        <Style Selector="ToggleButton.toolbar-icon:checked">
-            <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
-        </Style>
-        <Style Selector="ToggleButton.toolbar-icon:disabled">
-            <Setter Property="Opacity" Value="0.45" />
         </Style>
     </Window.Styles>
 
     <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
         <KeyBinding Gesture="F4" Command="{Binding NotesViewModel.ToggleCommand}" />
     </Window.KeyBindings>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*">
-        <!-- Synthwave accent top bar -->
+    <Grid RowDefinitions="Auto,Auto,*">
+
+        <!-- Synthwave accent stripe -->
         <Border Grid.Row="0"
-                Background="{StaticResource SynthwavePurpleBrush}"
-                Height="2" />
+                Height="5"
+                BoxShadow="0 4 24 2 #BB9D4EDD, 0 8 48 0 #669D4EDD">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                    <GradientStop Color="#9D4EDD" Offset="0" />
+                    <GradientStop Color="#E91E8C" Offset="0.5" />
+                    <GradientStop Color="#38BDF8" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
 
         <!-- Menu bar -->
         <Menu Grid.Row="1"
@@ -77,60 +67,198 @@
                 <MenuItem Header="_Close Workspace"
                           Command="{Binding WorkspaceViewModel.CloseWorkspaceCommand}" />
                 <Separator />
+                <MenuItem Header="_Save"
+                          Command="{Binding EditorViewModel.SaveCommand}"
+                          InputGesture="Ctrl+S" />
+                <Separator />
                 <MenuItem Header="E_xit"
                           Command="{Binding ExitCommand}" />
             </MenuItem>
+            <MenuItem Header="_View" Foreground="{DynamicResource OnSurfaceBrush}">
+                <MenuItem Header="Toggle _Sidebar"
+                          Command="{Binding ToggleSidebarCommand}"
+                          InputGesture="Ctrl+B" />
+                <MenuItem Header="Toggle _Notes"
+                          Command="{Binding NotesViewModel.ToggleCommand}"
+                          InputGesture="F4" />
+            </MenuItem>
         </Menu>
 
-        <!-- Toolbar row -->
-        <Border Grid.Row="2"
-                Background="{DynamicResource SurfaceElevatedBrush}"
-                BorderBrush="{DynamicResource BorderSubtleBrush}"
-                BorderThickness="0,0,0,1"
-                Padding="6,4,8,4">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="4">
-                <Button Classes="toolbar-icon"
-                        Command="{Binding EditorViewModel.SaveCommand}"
-                        ToolTip.Tip="Save">
-                    <TextBlock Text="💾"
-                               FontSize="14"
-                               Foreground="{DynamicResource OnSurfaceBrush}" />
-                </Button>
-                <ToggleButton Classes="toolbar-icon"
-                              IsChecked="{Binding NotesViewModel.IsVisible, Mode=OneWay}"
-                              Command="{Binding NotesViewModel.ToggleCommand}"
-                              ToolTip.Tip="Toggle Notes (F4)">
-                    <TextBlock Text="📝"
-                               FontSize="14"
-                               Foreground="{DynamicResource OnSurfaceBrush}" />
-                </ToggleButton>
-            </StackPanel>
-        </Border>
-
         <!-- Main shell -->
-        <Grid Grid.Row="3" ColumnDefinitions="240,Auto,*,Auto,280">
-            <views:SidebarView Grid.Column="0" DataContext="{Binding WorkspaceViewModel}" />
-            <Border Grid.Column="1"
-                    Width="1"
-                    Background="{DynamicResource BorderSubtleBrush}" />
-            <views:EditorView Grid.Column="2"
-                              DataContext="{Binding EditorViewModel}" />
-            <GridSplitter Grid.Column="3"
-                          Width="4"
-                          ResizeDirection="Columns"
-                          IsVisible="{Binding NotesViewModel.IsVisible}"
-                          Background="{DynamicResource BorderSubtleBrush}" />
-            <Border Grid.Column="4"
-                    IsVisible="{Binding NotesViewModel.IsVisible}"
-                    MinWidth="180"
-                    BorderBrush="{DynamicResource BorderSubtleBrush}"
-                    BorderThickness="1,0,0,0">
-                <views:NotesView DataContext="{Binding NotesViewModel}" />
+        <Panel Grid.Row="2">
+
+            <!-- Synthwave gradient background (full main area) -->
+            <Border>
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#0B0820" Offset="0" />
+                        <GradientStop Color="#0F082A" Offset="0.55" />
+                        <GradientStop Color="#160833" Offset="0.82" />
+                        <GradientStop Color="#1B0838" Offset="1" />
+                    </LinearGradientBrush>
+                </Border.Background>
             </Border>
-        </Grid>
+
+            <!-- Faint synthwave horizon glow at bottom -->
+            <Border VerticalAlignment="Bottom" Height="220" Opacity="0.45">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0%,100%" EndPoint="0%,0%">
+                        <GradientStop Color="#60E91E8C" Offset="0" />
+                        <GradientStop Color="#289D4EDD" Offset="0.38" />
+                        <GradientStop Color="#0038BDF8" Offset="0.7" />
+                        <GradientStop Color="#00000000" Offset="1" />
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
+
+            <!-- Layout: [left pane] [editor] [splitter] [right pane] -->
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+
+                <!-- ── LEFT PANE ─────────────────────────────────────────────── -->
+                <!-- Outer wrapper carries the shared background + right border.   -->
+                <!-- Inner Panel switches between the 48px rail and 220px sidebar. -->
+                <Border Grid.Column="0"
+                        Background="{DynamicResource SurfaceElevatedBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                        BorderThickness="0,0,1,0">
+                    <Panel>
+
+                        <!-- COLLAPSED: 48px icon rail -->
+                        <StackPanel Width="48"
+                                    IsVisible="{Binding !IsSidebarExpanded}"
+                                    Margin="0,8,0,0">
+                            <Button Classes="nav-icon"
+                                    Command="{Binding ToggleSidebarCommand}"
+                                    ToolTip.Tip="Chapters (Ctrl+B)">
+                                <Path Data="M3 12h18M3 6h18M3 18h18"
+                                      Stroke="{DynamicResource OnSurfaceDimBrush}"
+                                      StrokeThickness="1.5"
+                                      StrokeLineCap="Round"
+                                      Width="18" Height="18"
+                                      Stretch="Uniform" />
+                            </Button>
+                        </StackPanel>
+
+                        <!-- EXPANDED: 220px pane with integrated header -->
+                        <Grid Width="220"
+                              IsVisible="{Binding IsSidebarExpanded}"
+                              RowDefinitions="48,*">
+
+                            <!-- Header: icon (active) + panel title -->
+                            <Border Grid.Row="0"
+                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                    BorderThickness="0,0,0,1">
+                            <Grid ColumnDefinitions="48,*">
+                                <Button Grid.Column="0"
+                                        Classes="nav-icon"
+                                        Command="{Binding ToggleSidebarCommand}"
+                                        ToolTip.Tip="Collapse chapters (Ctrl+B)">
+                                    <Path Data="M3 12h18M3 6h18M3 18h18"
+                                          Stroke="{DynamicResource SynthwavePurpleBrush}"
+                                          StrokeThickness="1.5"
+                                          StrokeLineCap="Round"
+                                          Width="18" Height="18"
+                                          Stretch="Uniform" />
+                                </Button>
+                                <TextBlock Grid.Column="1"
+                                           Text="CHAPTERS"
+                                           VerticalAlignment="Center"
+                                           Margin="4,0,0,0"
+                                           FontSize="10"
+                                           FontWeight="SemiBold"
+                                           LetterSpacing="1.5"
+                                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                            </Grid>
+                            </Border>
+
+                            <!-- Chapter list -->
+                            <views:SidebarView Grid.Row="1"
+                                               DataContext="{Binding WorkspaceViewModel}" />
+                        </Grid>
+
+                    </Panel>
+                </Border>
+
+                <!-- ── EDITOR ────────────────────────────────────────────────── -->
+                <views:EditorView Grid.Column="1"
+                                  DataContext="{Binding EditorViewModel}"
+                                  Background="Transparent" />
+
+                <!-- ── SPLITTER (only visible when notes panel is open) ──────── -->
+                <GridSplitter Grid.Column="2"
+                              Width="4"
+                              ResizeDirection="Columns"
+                              IsVisible="{Binding NotesViewModel.IsVisible}"
+                              Background="{DynamicResource BorderSubtleBrush}" />
+
+                <!-- ── RIGHT PANE ────────────────────────────────────────────── -->
+                <Border Grid.Column="3"
+                        Background="{DynamicResource SurfaceElevatedBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                        BorderThickness="1,0,0,0">
+                    <Panel>
+
+                        <!-- COLLAPSED: 48px icon rail -->
+                        <StackPanel Width="48"
+                                    IsVisible="{Binding !NotesViewModel.IsVisible}"
+                                    Margin="0,8,0,0">
+                            <Button Classes="nav-icon"
+                                    Command="{Binding NotesViewModel.ToggleCommand}"
+                                    ToolTip.Tip="Notes (F4)">
+                                <Path Data="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"
+                                      Stroke="{DynamicResource OnSurfaceDimBrush}"
+                                      StrokeThickness="1.5"
+                                      StrokeLineCap="Round"
+                                      Width="18" Height="18"
+                                      Stretch="Uniform" />
+                            </Button>
+                        </StackPanel>
+
+                        <!-- EXPANDED: 280px pane with integrated header -->
+                        <Grid Width="280"
+                              IsVisible="{Binding NotesViewModel.IsVisible}"
+                              RowDefinitions="48,*">
+
+                            <!-- Header: icon (active) + panel title -->
+                            <Border Grid.Row="0"
+                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                    BorderThickness="0,0,0,1">
+                            <Grid ColumnDefinitions="48,*">
+                                <Button Grid.Column="0"
+                                        Classes="nav-icon"
+                                        Command="{Binding NotesViewModel.ToggleCommand}"
+                                        ToolTip.Tip="Collapse notes (F4)">
+                                    <Path Data="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"
+                                          Stroke="{DynamicResource SynthwavePurpleBrush}"
+                                          StrokeThickness="1.5"
+                                          StrokeLineCap="Round"
+                                          Width="18" Height="18"
+                                          Stretch="Uniform" />
+                                </Button>
+                                <TextBlock Grid.Column="1"
+                                           Text="NOTES"
+                                           VerticalAlignment="Center"
+                                           Margin="4,0,0,0"
+                                           FontSize="10"
+                                           FontWeight="SemiBold"
+                                           LetterSpacing="1.5"
+                                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                            </Grid>
+                            </Border>
+
+                            <!-- Notes content -->
+                            <views:NotesView Grid.Row="1"
+                                             DataContext="{Binding NotesViewModel}" />
+                        </Grid>
+
+                    </Panel>
+                </Border>
+
+            </Grid>
+        </Panel>
 
         <!-- Toast-style notifications -->
-        <Border Grid.RowSpan="4"
+        <Border Grid.RowSpan="3"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
                 Margin="16"
@@ -156,6 +284,7 @@
                 </StackPanel>
             </Grid>
         </Border>
+
     </Grid>
 
 </Window>

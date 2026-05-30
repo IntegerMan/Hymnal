@@ -55,6 +55,17 @@ public class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _bannerKind, value);
     }
 
+    // ── Sidebar visibility ────────────────────────────────────────────────────
+
+    private bool _isSidebarExpanded = true;
+    public bool IsSidebarExpanded
+    {
+        get => _isSidebarExpanded;
+        set => this.RaiseAndSetIfChanged(ref _isSidebarExpanded, value);
+    }
+
+    public ReactiveCommand<Unit, Unit> ToggleSidebarCommand { get; }
+
     // ── Exit ─────────────────────────────────────────────────────────────────
 
     public ReactiveCommand<Unit, Unit> ExitCommand { get; } =
@@ -73,6 +84,7 @@ public class MainWindowViewModel : ViewModelBase
         WorkspaceViewModel = workspaceViewModel;
         EditorViewModel = editorViewModel;
         NotesViewModel = notesViewModel;
+        ToggleSidebarCommand = ReactiveCommand.Create(() => { IsSidebarExpanded = !IsSidebarExpanded; });
 
         EditorViewModel.HasWorkspace = WorkspaceViewModel.HasWorkspace;
         Disposables.Add(
@@ -80,18 +92,24 @@ public class MainWindowViewModel : ViewModelBase
                 .Subscribe(hasWorkspace => EditorViewModel.HasWorkspace = hasWorkspace));
 
         // ── Reactive window title ────────────────────────────────────────────
-        // Reflects "• filename — Hymnal" (dirty), "filename — Hymnal" (clean), or "Hymnal" (no chapter).
+        // Format: "Hymnal", "Hymnal - StoryTitle", "Hymnal - StoryTitle - file.md", or with " *" when dirty.
         Disposables.Add(
             Observable.CombineLatest(
                 editorViewModel.WhenAnyValue(x => x.IsDirty),
                 editorViewModel.WhenAnyValue(x => x.ActiveNode),
-                (dirty, node) =>
+                workspaceViewModel.WhenAnyValue(x => x.WorkspaceName),
+                (dirty, node, workspaceName) =>
                 {
-                    if (node == null) return "Hymnal";
+                    if (string.IsNullOrEmpty(workspaceName))
+                        return "Hymnal";
+
+                    if (node == null)
+                        return $"Hymnal \u2014 {workspaceName}";
+
                     var fileName = Path.GetFileName(node.RelativePath);
                     return dirty
-                        ? $"\u2022 {fileName} \u2014 Hymnal"   // • filename — Hymnal
-                        : $"{fileName} \u2014 Hymnal";          // filename — Hymnal
+                        ? $"Hymnal \u2014 {workspaceName} \u2014 {fileName} *"
+                        : $"Hymnal \u2014 {workspaceName} \u2014 {fileName}";
                 })
             .Subscribe(t => Title = t));
 

@@ -2,13 +2,13 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- Aliases -->
-    <SolidColorBrush x:Key="SynthwaveBackgroundBrush" Color="#0D0B14" />
+    <SolidColorBrush x:Key="SynthwaveBackgroundBrush" Color="#0C0A20" />
 
     <!-- Surface Colors -->
-    <SolidColorBrush x:Key="SurfaceBaseBrush" Color="#0D0B14" />
-    <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="#141020" />
-    <SolidColorBrush x:Key="SurfaceOverlayBrush" Color="#1C1729" />
-    <SolidColorBrush x:Key="SurfaceHighBrush" Color="#241F35" />
+    <SolidColorBrush x:Key="SurfaceBaseBrush" Color="#0C0A20" />
+    <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="#130F22" />
+    <SolidColorBrush x:Key="SurfaceOverlayBrush" Color="#261A50" />
+    <SolidColorBrush x:Key="SurfaceHighBrush" Color="#3D1A7A" />
 
     <!-- Border Colors -->
     <SolidColorBrush x:Key="BorderSubtleBrush" Color="#2D2540" />
