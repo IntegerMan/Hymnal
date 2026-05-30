@@ -4,8 +4,26 @@ bin/
 obj/
 *.user
 *.suo
+*.userosscache
+*.sln.docstates
 .vs/
+*.rsuser
+*.cache
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuspec
+*.DotSettings.user
 TestResults/
+[Tt]emp/
+*.Coverage
+*.coveragexml
+*.runsettings
+*.testlog
 publish/
 
 # ── GSD baseline (auto-generated) ──
