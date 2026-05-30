@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SyntaxDefinition name="Markua" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <!-- Color palette matched to the dark Synthwave theme (#0D0B14 background) -->
+  <Color name="Heading"   foreground="#C792EA" fontWeight="bold" />
+  <Color name="Attribute" foreground="#89DDFF" />
+  <Color name="Bold"      foreground="#EEFFFF" fontWeight="bold" />
+  <Color name="Italic"    foreground="#A0A0B8" fontStyle="italic" />
+  <Color name="Code"      foreground="#C3E88D" />
+  <Color name="CodeBlock" foreground="#C3E88D" />
+  <Color name="Directive" foreground="#FFCB6B" />
+  <Color name="Blurb"     foreground="#E0956C" />
+
+  <RuleSet>
+
+    <!-- Fenced code block: from opening ``` to closing ``` -->
+    <Span color="CodeBlock" multiline="true">
+      <Begin>^```</Begin>
+      <End>^```</End>
+    </Span>
+
+    <!-- Headings: # through ###### at start of line; require at least one non-space character to avoid zero-length matches -->
+    <Rule color="Heading">^#{1,6}\s+\S.*</Rule>
+
+    <!-- Markua structural directives: {mainmatter}, {backmatter}, etc. -->
+    <Rule color="Directive">^\{(?:mainmatter|backmatter|frontmatter|sample|pagebreak|blurb)\b[^}]*\}</Rule>
+
+    <!-- Attribute lists on their own line: {key: value} -->
+    <Rule color="Attribute">^\{[^}]*\}</Rule>
+
+    <!-- Blurb line prefixes: A>, B>, D>, E>, I>, Q>, T>, W>, X>, C> -->
+    <Rule color="Blurb">^[ABDEIQTWXC]&gt;</Rule>
+
+    <!-- Inline code: `code` -->
+    <Rule color="Code">`[^`]+`</Rule>
+
+    <!-- Inline bold: **text** (listed before italic to take precedence) -->
+    <Rule color="Bold">\*\*[^*\r\n]+\*\*</Rule>
+
+    <!-- Inline italic: *text* (single asterisk, not bold) -->
+    <Rule color="Italic">\*[^*\r\n]+\*</Rule>
+
+  </RuleSet>
+</SyntaxDefinition>

@@ -1,0 +1,202 @@
+using System;
+using System.Reactive;
+using System.Reactive.Concurrency;
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
+using System.Threading;
+using System.Threading.Tasks;
+using Hymnal.Core.Interfaces;
+using Hymnal.Core.Models;
+using ReactiveUI;
+
+namespace Hymnal.ViewModels;
+
+/// <summary>
+/// Manages the Chapter Notes side-panel. Observes the active chapter, loads / clears notes on
+/// chapter transitions, and debounce-saves text changes (1 500 ms idle) with chapter-switch
+/// safety (CancellationToken reset on each load).
+/// </summary>
+public class NotesViewModel : ViewModelBase, IDisposable
+{
+    private readonly INotesService _notesService;
+    private readonly INotificationService _notificationService;
+    private readonly WorkspaceViewModel _workspaceViewModel;
+
+    // ── Backing fields ────────────────────────────────────────────────────────
+
+    private string _text = "";
+    public string Text
+    {
+        get => _text;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _text, value);
+            _saveSubject.OnNext(value);
+        }
+    }
+
+    private bool _isVisible;
+    public bool IsVisible
+    {
+        get => _isVisible;
+        private set => this.RaiseAndSetIfChanged(ref _isVisible, value);
+    }
+
+    private string? _chapterTitle;
+    public string? ChapterTitle
+    {
+        get => _chapterTitle;
+        private set => this.RaiseAndSetIfChanged(ref _chapterTitle, value);
+    }
+
+    // ── Auto-save plumbing ────────────────────────────────────────────────────
+
+    private readonly Subject<string> _saveSubject = new();
+
+    /// <summary>
+    /// Tracks which chapter node was loaded most-recently.  Compared in the flush handler
+    /// to guard against stale writes after a chapter switch.
+    /// </summary>
+    private ChapterNode? _loadedNode;
+
+    /// <summary>
+    /// Cancelled and replaced every time a new chapter is loaded.  Prevents in-flight saves
+    /// from writing after the chapter has already changed.
+    /// </summary>
+    private CancellationTokenSource _saveCts = new();
+
+    // ── Toggle command ────────────────────────────────────────────────────────
+
+    public ReactiveCommand<Unit, Unit> ToggleCommand { get; }
+
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    public NotesViewModel(
+        EditorViewModel editorViewModel,
+        WorkspaceViewModel workspaceViewModel,
+        INotesService notesService,
+        INotificationService notificationService)
+    {
+        _workspaceViewModel = workspaceViewModel;
+        _notesService = notesService;
+        _notificationService = notificationService;
+
+        // ── Toggle: only when a chapter is active ────────────────────────────
+        var hasActiveNode = editorViewModel
+            .WhenAnyValue(x => x.ActiveNode)
+            .Select(n => n != null);
+
+        ToggleCommand = ReactiveCommand.Create(
+            () => { if (_loadedNode != null) IsVisible = !IsVisible; },
+            canExecute: hasActiveNode);
+
+        Disposables.Add(
+            ToggleCommand.ThrownExceptions
+                .Subscribe(ex => _notificationService.ShowError($"Toggle notes failed: {ex.Message}")));
+
+        // ── Chapter observation ──────────────────────────────────────────────
+        Disposables.Add(
+            editorViewModel
+                .WhenAnyValue(x => x.ActiveNode)
+                .Subscribe(node => OnActiveNodeChanged(node)));
+
+        // ── Throttled auto-save ──────────────────────────────────────────────
+        Disposables.Add(
+            _saveSubject
+                .Throttle(TimeSpan.FromMilliseconds(1500), TaskPoolScheduler.Default)
+                .Subscribe(text => _ = FlushSaveAsync(text)));
+    }
+
+    // ── Chapter transition handler ────────────────────────────────────────────
+
+    private void OnActiveNodeChanged(ChapterNode? node)
+    {
+        // Cancel any pending save for the previous chapter.
+        _saveCts.Cancel();
+        _saveCts.Dispose();
+        _saveCts = new CancellationTokenSource();
+
+        if (node == null)
+        {
+            _loadedNode = null;
+            _text = "";
+            this.RaisePropertyChanged(nameof(Text));
+            ChapterTitle = null;
+            IsVisible = false;
+            return;
+        }
+
+        ChapterTitle = node.Title;
+        _loadedNode = node;
+
+        var wasVisible = IsVisible;
+        _ = LoadNotesAsync(node, wasVisible);
+    }
+
+    private async Task LoadNotesAsync(ChapterNode node, bool wasVisible)
+    {
+        var ct = _saveCts.Token;
+        try
+        {
+            var workspaceRoot = _workspaceViewModel.WorkspaceRoot;
+            if (string.IsNullOrEmpty(workspaceRoot))
+                return;
+
+            var path = INotesService.DeriveNotesPath(workspaceRoot, node.RelativePath);
+            var content = await _notesService.LoadAsync(path).ConfigureAwait(false);
+
+            if (ct.IsCancellationRequested) return;
+
+            // Update Text without triggering auto-save (set backing field directly, then notify).
+            _text = content;
+            this.RaisePropertyChanged(nameof(Text));
+
+            // Restore panel visibility only if it was shown before the chapter switch.
+            IsVisible = wasVisible;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            _notificationService.ShowError($"Failed to load notes: {ex.Message}");
+        }
+    }
+
+    // ── Flush save ────────────────────────────────────────────────────────────
+
+    private async Task FlushSaveAsync(string text)
+    {
+        var nodeAtSave = _loadedNode;
+        if (nodeAtSave == null) return;
+
+        var ct = _saveCts.Token;
+        if (ct.IsCancellationRequested) return;
+
+        try
+        {
+            var workspaceRoot = _workspaceViewModel.WorkspaceRoot;
+            if (string.IsNullOrEmpty(workspaceRoot)) return;
+
+            var path = INotesService.DeriveNotesPath(workspaceRoot, nodeAtSave.RelativePath);
+            await _notesService.SaveAsync(path, text).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            _notificationService.ShowError($"Failed to save notes: {ex.Message}");
+        }
+    }
+
+    // ── IDisposable ───────────────────────────────────────────────────────────
+
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        Disposables.Dispose();
+        _saveSubject.OnCompleted();
+        _saveSubject.Dispose();
+        _saveCts.Cancel();
+        _saveCts.Dispose();
+    }
+}

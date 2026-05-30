@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hymnal.Core/Hymnal.Core.csproj" />
+    <Project Path="src/Hymnal/Hymnal.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hymnal.Core.Tests/Hymnal.Core.Tests.csproj" />
+  </Folder>
+</Solution>

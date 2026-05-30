@@ -1,0 +1,101 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Button ControlTheme -->
+    <ControlTheme x:Key="{x:Type Button}" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource SurfaceElevatedBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        Padding="{TemplateBinding Padding}"
+                        CornerRadius="4">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+        </Style>
+        <Style Selector="^:pressed">
+            <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+        </Style>
+    </ControlTheme>
+
+    <!-- TextBox ControlTheme -->
+    <ControlTheme x:Key="{x:Type TextBox}" TargetType="TextBox">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBaseBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CaretBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        <Setter Property="SelectionBrush" Value="#669D4EDD" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="4">
+                    <ScrollViewer HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Hidden">
+                        <TextPresenter Name="PART_TextPresenter"
+                                       Text="{TemplateBinding Text, Mode=TwoWay}"
+                                       CaretBrush="{TemplateBinding CaretBrush}"
+                                       SelectionBrush="{TemplateBinding SelectionBrush}"
+                                       SelectionForegroundBrush="{TemplateBinding SelectionForegroundBrush}"
+                                       TextAlignment="{TemplateBinding TextAlignment}"
+                                       TextWrapping="{TemplateBinding TextWrapping}"
+                                       PasswordChar="{TemplateBinding PasswordChar}"
+                                       RevealPassword="{TemplateBinding RevealPassword}"
+                                       Margin="{TemplateBinding Padding}" />
+                    </ScrollViewer>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:focus">
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+    </ControlTheme>
+
+    <!-- TreeView ControlTheme -->
+    <ControlTheme x:Key="{x:Type TreeView}" TargetType="TreeView">
+        <Setter Property="Background" Value="{DynamicResource SurfaceElevatedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </ControlTheme>
+
+    <!-- TreeViewItem ControlTheme -->
+    <ControlTheme x:Key="{x:Type TreeViewItem}" TargetType="TreeViewItem">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceBrush}" />
+        <Setter Property="Padding" Value="4,2" />
+        <Style Selector="^:selected">
+            <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+        </Style>
+        <Style Selector="^:selected /template/ Border#SelectionIndicator">
+            <Setter Property="Background" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+    </ControlTheme>
+
+    <!-- ScrollBar ControlTheme -->
+    <ControlTheme x:Key="{x:Type ScrollBar}" TargetType="ScrollBar">
+        <Setter Property="Background" Value="{DynamicResource SurfaceElevatedBrush}" />
+        <Style Selector="^ /template/ RepeatButton#PART_PageUpButton,
+                         ^ /template/ RepeatButton#PART_PageDownButton">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="^ /template/ Thumb">
+            <Setter Property="Background" Value="{DynamicResource BorderDefaultBrush}" />
+        </Style>
+    </ControlTheme>
+
+</ResourceDictionary>

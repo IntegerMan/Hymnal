@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             x:Class="Hymnal.Views.NotesView"
+             x:DataType="vm:NotesViewModel"
+             Background="{DynamicResource SurfaceElevatedBrush}">
+
+    <Panel>
+
+        <!-- Empty state: shown when no chapter is active -->
+        <TextBlock Text="Open a chapter to start taking notes."
+                   IsVisible="{Binding ChapterTitle, Converter={x:Static ObjectConverters.IsNull}}"
+                   VerticalAlignment="Center"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   FontSize="12"
+                   Margin="16" />
+
+        <!-- Notes text area -->
+        <TextBox Text="{Binding Text, Mode=TwoWay}"
+                 IsVisible="{Binding ChapterTitle, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 Background="{DynamicResource SurfaceBaseBrush}"
+                 Foreground="{DynamicResource OnSurfaceBrush}"
+                 BorderThickness="0"
+                 Padding="10"
+                 FontSize="13"
+                 FontFamily="{DynamicResource InterFont}"
+                 VerticalAlignment="Stretch"
+                 CaretBrush="{DynamicResource SynthwavePurpleBrush}"
+                 VerticalContentAlignment="Top" />
+
+    </Panel>
+
+</UserControl>

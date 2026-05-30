@@ -1,0 +1,91 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:avedit="using:AvaloniaEdit"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="Hymnal.Views.EditorView"
+             x:DataType="vm:EditorViewModel"
+             Background="Transparent">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
+    </UserControl.KeyBindings>
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Conflict strip: visible when an external file change conflicts with dirty buffer -->
+        <Border Grid.Row="0"
+                IsVisible="{Binding HasConflict}"
+                Background="{DynamicResource SurfaceHighBrush}"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="{Binding ConflictMessage}"
+                           Foreground="{DynamicResource OnSurfaceBrush}"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="600" />
+                <Button Content="Keep my edits"
+                        Command="{Binding KeepLocalCommand}"
+                        Padding="10,4"
+                        CornerRadius="4" />
+                <Button Content="Reload from disk"
+                        Command="{Binding AcceptExternalCommand}"
+                        Padding="10,4"
+                        CornerRadius="4" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <avedit:TextEditor x:Name="PART_Editor"
+                               FontFamily="{DynamicResource EditorFont}"
+                               FontSize="14"
+                               WordWrap="True"
+                               ShowLineNumbers="False"
+                               Background="Transparent"
+                               Foreground="{DynamicResource OnSurfaceBrush}"
+                               HorizontalScrollBarVisibility="Disabled"
+                               VerticalScrollBarVisibility="Auto"
+                               Padding="16,12" />
+
+            <Border IsVisible="{Binding ShowWorkspacePrompt}"
+                    Background="{DynamicResource SurfaceBaseBrush}">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8"
+                            MaxWidth="420">
+                    <TextBlock Text="Open a workspace"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                    <TextBlock Text="Use File > Open Workspace or the sidebar button to load a manuscript."
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                </StackPanel>
+            </Border>
+
+            <Border IsVisible="{Binding ShowNoChapterPrompt}"
+                    Background="{DynamicResource SurfaceBaseBrush}">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8"
+                            MaxWidth="420">
+                    <TextBlock Text="No chapter open"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                    <TextBlock Text="Select a chapter in the sidebar to load its Markua content here."
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+    </Grid>
+
+</UserControl>
