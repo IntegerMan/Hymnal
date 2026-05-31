@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Data.Converters;
@@ -33,9 +34,8 @@ public class NodeKindToForegroundConverter : IValueConverter
 {
     public static readonly NodeKindToForegroundConverter Instance = new();
 
-    // Parts get the purple accent; chapters get the full-brightness text colour
     private static readonly SolidColorBrush PartBrush    = new(Color.Parse("#9D4EDD"));
-    private static readonly SolidColorBrush ChapterBrush = new(Color.Parse("#EDE8F5")); // OnSurfaceBrush
+    private static readonly SolidColorBrush ChapterBrush = new(Color.Parse("#EDE8F5"));
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => value is NodeKind.Part ? PartBrush : ChapterBrush;
@@ -44,3 +44,25 @@ public class NodeKindToForegroundConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+public class NodeKindIsChapterConverter : IValueConverter
+{
+    public static readonly NodeKindIsChapterConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is NodeKind.Chapter;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>Returns true when NodeKind == Chapter AND IsMissing == false.</summary>
+public class NodeKindIsChapterAndPresentConverter : IMultiValueConverter
+{
+    public static readonly NodeKindIsChapterAndPresentConverter Instance = new();
+
+    public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Count < 2) return false;
+        return values[0] is NodeKind.Chapter && values[1] is false;
+    }
+}

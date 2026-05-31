@@ -39,6 +39,10 @@ public partial class App : Application
         // S03 services
         services.AddSingleton<IMetadataStore, MetadataStore>();
 
+        // M002/S01 services — chapter registry and phase data
+        services.AddSingleton<ChapterRegistryService>();
+        services.AddSingleton<PhaseDataService>();
+
         // S04 services
         services.AddSingleton<INotesService, NotesService>();
 
@@ -60,7 +64,9 @@ public partial class App : Application
                 sp.GetRequiredService<IAppSettingsStore>(),
                 sp.GetRequiredService<IFolderPickerService>(),
                 sp.GetRequiredService<INotificationService>(),
-                sp.GetRequiredService<EditorViewModel>()));
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<ChapterRegistryService>(),
+                sp.GetRequiredService<PhaseDataService>()));
 
         services.AddSingleton<NotesViewModel>(sp =>
             new NotesViewModel(

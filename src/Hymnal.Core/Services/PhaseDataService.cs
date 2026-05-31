@@ -50,17 +50,59 @@ public sealed class PhaseDataService
 
     public async Task SaveAsync(string workspaceRoot, Dictionary<string, PhaseData> phases)
     {
+        await WithWorkspaceLockAsync(workspaceRoot, async () =>
+        {
+            await SaveUnlockedAsync(workspaceRoot, phases).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+
+    public async Task UpsertAsync(string workspaceRoot, string uuid, Func<PhaseData?, PhaseData> update)
+    {
+        await WithWorkspaceLockAsync(workspaceRoot, async () =>
+        {
+            var phases = await LoadUnlockedAsync(workspaceRoot).ConfigureAwait(false);
+            phases[uuid] = update(phases.TryGetValue(uuid, out var current) ? current : null);
+            await SaveUnlockedAsync(workspaceRoot, phases).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+
+    private static async Task<Dictionary<string, PhaseData>> LoadUnlockedAsync(string workspaceRoot)
+    {
+        var path = PhasesPath(workspaceRoot);
+        if (!File.Exists(path))
+            return new Dictionary<string, PhaseData>();
+
+        var json = await File.ReadAllTextAsync(path).ConfigureAwait(false);
+        var doc = JsonSerializer.Deserialize<PhasesFile>(json, JsonOptions)
+                  ?? throw new InvalidDataException("phases.json deserialized to null.");
+
+        if (doc.SchemaVersion != 1)
+            throw new InvalidDataException(
+                $"phases.json has unsupported schemaVersion {doc.SchemaVersion}. Expected 1.");
+
+        return doc.Phases ?? new Dictionary<string, PhaseData>();
+    }
+
+    private async Task SaveUnlockedAsync(string workspaceRoot, Dictionary<string, PhaseData> phases)
+    {
         var file = new PhasesFile { SchemaVersion = 1, Phases = phases };
         var json = JsonSerializer.Serialize(file, JsonOptions);
         await _store.WriteTextAtomicAsync(PhasesPath(workspaceRoot), json).ConfigureAwait(false);
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
+    private static async Task WithWorkspaceLockAsync(string workspaceRoot, Func<Task> action)
+    {
+        var lockPath = PhasesLockPath(workspaceRoot);
+        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
+        using var lockStream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        await action().ConfigureAwait(false);
+    }
 
     private static string PhasesPath(string workspaceRoot) =>
         Path.Combine(workspaceRoot, ".hymnal-data", "phases.json");
+
+    private static string PhasesLockPath(string workspaceRoot) =>
+        Path.Combine(workspaceRoot, ".hymnal-data", "phases.lock");
 
     // -------------------------------------------------------------------------
     // Internal DTO for serialization

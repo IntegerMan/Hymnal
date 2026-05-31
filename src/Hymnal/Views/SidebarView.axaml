@@ -11,6 +11,12 @@
         <conv:NodeKindToFontWeightConverter x:Key="NodeKindToFontWeightConverter" />
         <conv:NodeKindToMarginConverter x:Key="NodeKindToMarginConverter" />
         <conv:NodeKindToForegroundConverter x:Key="NodeKindToForegroundConverter" />
+        <conv:NodeKindIsChapterConverter x:Key="NodeKindIsChapterConverter" />
+        <conv:NodeKindIsChapterAndPresentConverter x:Key="NodeKindIsChapterAndPresentConverter" />
+        <conv:StatusToBrushConverter x:Key="StatusToBrushConverter" />
+        <conv:BoolNotConverter x:Key="BoolNotConverter" />
+        <conv:StatusEqualsConverter x:Key="StatusEqualsConverter" />
+        <conv:StatusDotTooltipConverter x:Key="StatusDotTooltipConverter" />
     </UserControl.Resources>
 
     <Panel>
@@ -20,7 +26,6 @@
                     Spacing="12"
                     IsVisible="{Binding !HasWorkspace}">
 
-            <!-- Error message (only visible after a failed load) -->
             <TextBlock Text="{Binding ErrorMessage}"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                        Foreground="{DynamicResource ErrorBrush}"
@@ -44,9 +49,7 @@
                     CornerRadius="4" />
         </StackPanel>
 
-        <!-- Chapter tree: shown once a workspace is loaded.
-             SelectedItem is two-way bound to WorkspaceViewModel.SelectedNode; the VM guards
-             against Part/missing nodes and re-entrant selection via _isSwitching. -->
+        <!-- Chapter tree -->
         <ListBox ItemsSource="{Binding Nodes}"
                  SelectedItem="{Binding SelectedNode}"
                  Background="Transparent"
@@ -75,24 +78,95 @@
                 </Style>
             </ListBox.Styles>
             <ListBox.ItemTemplate>
-                <DataTemplate DataType="models:ChapterNode">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding Title}"
-                                   FontWeight="{Binding Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
-                                   Margin="{Binding Kind, Converter={StaticResource NodeKindToMarginConverter}}"
-                                   Foreground="{Binding Kind, Converter={StaticResource NodeKindToForegroundConverter}}" />
-                        <Border IsVisible="{Binding IsMissing}"
-                                Margin="4,0,0,0"
+                <DataTemplate DataType="vm:ChapterViewModel">
+                    <Grid ColumnDefinitions="Auto,*">
+
+                        <Button Grid.Column="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="6,3"
+                                Margin="0,0,8,0"
                                 VerticalAlignment="Center"
-                                ToolTip.Tip="File not found on disk">
-                            <Path Data="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"
-                                  Stroke="{DynamicResource ErrorBrush}"
-                                  StrokeThickness="1.5"
-                                  StrokeLineCap="Round"
-                                  Width="12" Height="12"
-                                  Stretch="Uniform" />
-                        </Border>
-                    </StackPanel>
+                                Cursor="Arrow">
+                            <Button.IsVisible>
+                                <Binding Path="Node.Kind" Converter="{StaticResource NodeKindIsChapterConverter}" />
+                            </Button.IsVisible>
+                            <Button.Opacity>
+                                <Binding Path="Node.IsMissing" Converter="{StaticResource BoolToOpacityConverter}" />
+                            </Button.Opacity>
+                            <Button.IsHitTestVisible>
+                                <Binding Path="Node.IsMissing" Converter="{StaticResource BoolNotConverter}" />
+                            </Button.IsHitTestVisible>
+                            <ToolTip.Tip>
+                                <MultiBinding Converter="{StaticResource StatusDotTooltipConverter}">
+                                    <Binding Path="Node.IsMissing" />
+                                    <Binding Path="Status" />
+                                </MultiBinding>
+                            </ToolTip.Tip>
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <MenuItem Header="Outlining"
+                                              Command="{Binding ChangeStatusCommand}"
+                                              CommandParameter="{x:Static models:ChapterStatus.Outlining}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="✓"
+                                                       IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Outlining}}" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Drafting"
+                                              Command="{Binding ChangeStatusCommand}"
+                                              CommandParameter="{x:Static models:ChapterStatus.Drafting}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="✓"
+                                                       IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Drafting}}" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Editing"
+                                              Command="{Binding ChangeStatusCommand}"
+                                              CommandParameter="{x:Static models:ChapterStatus.Editing}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="✓"
+                                                       IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Editing}}" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Polishing"
+                                              Command="{Binding ChangeStatusCommand}"
+                                              CommandParameter="{x:Static models:ChapterStatus.Polishing}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="✓"
+                                                       IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Polishing}}" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Reviewing"
+                                              Command="{Binding ChangeStatusCommand}"
+                                              CommandParameter="{x:Static models:ChapterStatus.Reviewing}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="✓"
+                                                       IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Reviewing}}" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Done"
+                                              Command="{Binding ChangeStatusCommand}"
+                                              CommandParameter="{x:Static models:ChapterStatus.Done}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="✓"
+                                                       IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Done}}" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                </MenuFlyout>
+                            </Button.Flyout>
+                            <Ellipse Width="8" Height="8"
+                                     Fill="{Binding Status, Converter={StaticResource StatusToBrushConverter}}" />
+                        </Button>
+
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Node.Title}"
+                                   FontWeight="{Binding Node.Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
+                                   Margin="{Binding Node.Kind, Converter={StaticResource NodeKindToMarginConverter}}"
+                                   Foreground="{Binding Node.Kind, Converter={StaticResource NodeKindToForegroundConverter}}"
+                                   VerticalAlignment="Center" />
+
+                    </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>

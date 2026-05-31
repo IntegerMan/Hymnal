@@ -58,13 +58,26 @@ public sealed class ChapterRegistryService
     /// </summary>
     public (string uuid, bool wasNew) AssignUuid(
         Dictionary<string, ChapterRegistryEntry> registry,
-        string relativePath)
+        string relativePath,
+        string? title = null)
     {
         // Search for an existing entry whose CurrentPath matches (case-insensitive on Windows)
         foreach (var (uuid, entry) in registry)
         {
             if (string.Equals(entry.CurrentPath, relativePath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.Equals(entry.Title, title, StringComparison.Ordinal))
+                {
+                    registry[uuid] = new ChapterRegistryEntry
+                    {
+                        Uuid = entry.Uuid,
+                        CurrentPath = entry.CurrentPath,
+                        Orphaned = entry.Orphaned,
+                        Title = title
+                    };
+                }
                 return (uuid, false);
+            }
         }
 
         var newUuid = Guid.NewGuid().ToString();
@@ -72,7 +85,8 @@ public sealed class ChapterRegistryService
         {
             Uuid = newUuid,
             CurrentPath = relativePath,
-            Orphaned = false
+            Orphaned = false,
+            Title = title
         };
         return (newUuid, true);
     }
@@ -90,7 +104,7 @@ public sealed class ChapterRegistryService
         foreach (var (uuid, entry) in registry)
         {
             updated[uuid] = string.Equals(entry.CurrentPath, oldPath, StringComparison.OrdinalIgnoreCase)
-                ? new ChapterRegistryEntry { Uuid = entry.Uuid, CurrentPath = newPath, Orphaned = entry.Orphaned }
+                ? new ChapterRegistryEntry { Uuid = entry.Uuid, CurrentPath = newPath, Orphaned = entry.Orphaned, Title = entry.Title }
                 : entry;
         }
         return updated;
@@ -112,7 +126,7 @@ public sealed class ChapterRegistryService
         {
             var shouldBeOrphaned = !activeSet.Contains(entry.CurrentPath);
             updated[uuid] = shouldBeOrphaned != entry.Orphaned
-                ? new ChapterRegistryEntry { Uuid = entry.Uuid, CurrentPath = entry.CurrentPath, Orphaned = shouldBeOrphaned }
+                ? new ChapterRegistryEntry { Uuid = entry.Uuid, CurrentPath = entry.CurrentPath, Orphaned = shouldBeOrphaned, Title = entry.Title }
                 : entry;
         }
         return updated;

@@ -84,32 +84,25 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
 
     private async Task ChangeStatusAsync(ChapterStatus newStatus)
     {
-        // Determine whether to pre-fill the phase start date (default: true).
-        var prefill = await _settingsStore
-            .GetAsync<bool?>("prefillPhaseDate")
-            .ConfigureAwait(false)
-            ?? true;
-
-        var updated = new PhaseData
+        PhaseData? updated = null;
+        await _phaseDataService.UpsertAsync(_workspaceRoot, Uuid, current =>
         {
-            Status = newStatus,
-            PhaseStartDate = prefill
-                ? DateTime.UtcNow.ToString("yyyy-MM-dd")
-                : _phaseData?.PhaseStartDate,
-            PhaseEndDate = _phaseData?.PhaseEndDate
-        };
-
-        // Load current phases, upsert this chapter's entry, persist.
-        var phases = await _phaseDataService.LoadAsync(_workspaceRoot).ConfigureAwait(false);
-        phases[Uuid] = updated;
-        await _phaseDataService.SaveAsync(_workspaceRoot, phases).ConfigureAwait(false);
+            var basePhaseData = current ?? _phaseData;
+            updated = new PhaseData
+            {
+                Status = newStatus,
+                PhaseStartDate = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                PhaseEndDate = basePhaseData?.PhaseEndDate
+            };
+            return updated;
+        }).ConfigureAwait(false);
 
         // Commit state updates on the UI thread.
         await Avalonia.Threading.Dispatcher.UIThread
             .InvokeAsync(() =>
             {
                 Status = newStatus;
-                PhaseData = updated;
+                PhaseData = updated!;
             });
     }
 

@@ -1,0 +1,81 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using Avalonia;
+using Avalonia.Data.Converters;
+using Avalonia.Media;
+using Hymnal.Core.Models;
+
+namespace Hymnal.Views.Converters;
+
+public sealed class StatusToBrushConverter : IValueConverter
+{
+    public static readonly StatusToBrushConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var brushKey = value is ChapterStatus status ? StatusToBrushKey(status) : null;
+        if (brushKey == null) return Brushes.Transparent;
+        if (Application.Current?.Resources.TryGetResource(brushKey, null, out var resource) == true
+            && resource is IBrush brush)
+            return brush;
+        return Brushes.Transparent;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+
+    private static string? StatusToBrushKey(ChapterStatus status) => status switch
+    {
+        ChapterStatus.Outlining => "OnSurfaceDimBrush",
+        ChapterStatus.Drafting  => "CyanBrush",
+        ChapterStatus.Editing   => "SynthwavePurpleBrush",
+        ChapterStatus.Polishing => "YellowBrush",
+        ChapterStatus.Reviewing => "PinkBrush",
+        ChapterStatus.Done      => "SuccessBrush",
+        _                       => null
+    };
+}
+
+public sealed class BoolToOpacityConverter : IValueConverter
+{
+    public static readonly BoolToOpacityConverter Instance = new();
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? 0.35 : 1.0;
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+public sealed class BoolNotConverter : IValueConverter
+{
+    public static readonly BoolNotConverter Instance = new();
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is not true;
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+public sealed class StatusEqualsConverter : IValueConverter
+{
+    public static readonly StatusEqualsConverter Instance = new();
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is ChapterStatus status && parameter is ChapterStatus expected && status == expected;
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+public sealed class StatusDotTooltipConverter : IMultiValueConverter
+{
+    public static readonly StatusDotTooltipConverter Instance = new();
+
+    public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Count < 2)
+            return null;
+
+        if (values[0] is bool isMissing && isMissing)
+            return "File not found";
+
+        return values[1] is ChapterStatus status ? status.ToString() : null;
+    }
+}
