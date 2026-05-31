@@ -29,6 +29,7 @@ public partial class EditorView : UserControl
     private IDisposable? _vmTextSub;
     private bool _highlightingLoaded;
     private MarkuaColorizingTransformer? _markuaColorizer;
+    private ValidationMargin? _validationMargin;
 
     public static readonly StyledProperty<bool> HasWorkspaceProperty =
         AvaloniaProperty.Register<EditorView, bool>(nameof(HasWorkspace));
@@ -65,6 +66,20 @@ public partial class EditorView : UserControl
             _highlightingLoaded = true;
         }
 
+        // Advisory gutter: register ValidationMargin as a background renderer.
+        // AbstractMargin is absent in Avalonia.AvaloniaEdit 12.0.0; we use IBackgroundRenderer
+        // + BackgroundRenderers.Add() as the documented fallback.
+        try
+        {
+            _validationMargin = new ValidationMargin();
+            PART_Editor.TextArea.TextView.BackgroundRenderers.Add(_validationMargin);
+        }
+        catch
+        {
+            // Swallow silently — ValidationMargin is advisory only; editor must not crash.
+            _validationMargin = null;
+        }
+
         // Apply dark-theme colors directly to the AvaloniaEdit rendering surface.
         ApplyEditorTheme();
 
@@ -89,6 +104,15 @@ public partial class EditorView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+
+        // Remove advisory gutter renderer to avoid dangling references.
+        if (_validationMargin != null)
+        {
+            try { PART_Editor.TextArea.TextView.BackgroundRenderers.Remove(_validationMargin); }
+            catch { /* swallow */ }
+            _validationMargin = null;
+        }
+
         _viewDisposables.Dispose();
     }
 
@@ -124,6 +148,13 @@ public partial class EditorView : UserControl
     {
         if (DataContext is EditorViewModel vm)
             vm.Text = PART_Editor.Text;
+
+        // Refresh advisory gutter on every text change.
+        if (_validationMargin != null)
+        {
+            try { _validationMargin.Refresh(PART_Editor.Document, PART_Editor.TextArea.TextView); }
+            catch { /* swallow — advisory only */ }
+        }
     }
 
     // ── Syntax styling ───────────────────────────────────────────────────────
