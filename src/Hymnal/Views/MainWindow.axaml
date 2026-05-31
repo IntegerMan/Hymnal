@@ -38,6 +38,7 @@
 
     <Window.KeyBindings>
         <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
+        <KeyBinding Gesture="F3" Command="{Binding ChapterInfoViewModel.ToggleCommand}" />
         <KeyBinding Gesture="F4" Command="{Binding NotesViewModel.ToggleCommand}" />
     </Window.KeyBindings>
 
@@ -78,6 +79,9 @@
                 <MenuItem Header="Toggle _Sidebar"
                           Command="{Binding ToggleSidebarCommand}"
                           InputGesture="Ctrl+B" />
+                <MenuItem Header="Toggle _Chapter Info"
+                          Command="{Binding ChapterInfoViewModel.ToggleCommand}"
+                          InputGesture="F3" />
                 <MenuItem Header="Toggle _Notes"
                           Command="{Binding NotesViewModel.ToggleCommand}"
                           InputGesture="F4" />
@@ -115,8 +119,6 @@
             <Grid ColumnDefinitions="Auto,*,Auto,Auto">
 
                 <!-- ── LEFT PANE ─────────────────────────────────────────────── -->
-                <!-- Outer wrapper carries the shared background + right border.   -->
-                <!-- Inner Panel switches between the 48px rail and 220px sidebar. -->
                 <Border Grid.Column="0"
                         Background="{DynamicResource SurfaceElevatedBrush}"
                         BorderBrush="{DynamicResource BorderSubtleBrush}"
@@ -184,24 +186,34 @@
                                   DataContext="{Binding EditorViewModel}"
                                   Background="Transparent" />
 
-                <!-- ── SPLITTER (only visible when notes panel is open) ──────── -->
+                <!-- ── SPLITTER (visible when any right pane is open) ─────────── -->
                 <GridSplitter Grid.Column="2"
                               Width="4"
                               ResizeDirection="Columns"
-                              IsVisible="{Binding NotesViewModel.IsVisible}"
+                              IsVisible="{Binding IsAnyRightPaneOpen}"
                               Background="{DynamicResource BorderSubtleBrush}" />
 
-                <!-- ── RIGHT PANE ────────────────────────────────────────────── -->
+                <!-- ── RIGHT PANE ─────────────────────────────────────────────── -->
                 <Border Grid.Column="3"
                         Background="{DynamicResource SurfaceElevatedBrush}"
                         BorderBrush="{DynamicResource BorderSubtleBrush}"
                         BorderThickness="1,0,0,0">
                     <Panel>
 
-                        <!-- COLLAPSED: 48px icon rail -->
+                        <!-- COLLAPSED: 48px icon strip — visible when neither pane is open -->
                         <StackPanel Width="48"
-                                    IsVisible="{Binding !NotesViewModel.IsVisible}"
+                                    IsVisible="{Binding !IsAnyRightPaneOpen}"
                                     Margin="0,8,0,0">
+                            <!-- F3: Chapter Info -->
+                            <Button Classes="nav-icon"
+                                    Command="{Binding ChapterInfoViewModel.ToggleCommand}"
+                                    ToolTip.Tip="Chapter Info (F3)">
+                                <Path Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+                                      Fill="{DynamicResource OnSurfaceDimBrush}"
+                                      Width="18" Height="18"
+                                      Stretch="Uniform" />
+                            </Button>
+                            <!-- F4: Notes -->
                             <Button Classes="nav-icon"
                                     Command="{Binding NotesViewModel.ToggleCommand}"
                                     ToolTip.Tip="Notes (F4)">
@@ -214,41 +226,92 @@
                             </Button>
                         </StackPanel>
 
-                        <!-- EXPANDED: 280px pane with integrated header -->
+                        <!-- EXPANDED: 280px shared host — both/either pane visible -->
+                        <!--
+                             Row 0: Chapter Info section (height managed in MainWindow.axaml.cs)
+                             Row 1: Row GridSplitter (auto; only visible when both panes open)
+                             Row 2: Notes section (height managed in MainWindow.axaml.cs)
+                        -->
                         <Grid Width="280"
-                              IsVisible="{Binding NotesViewModel.IsVisible}"
-                              RowDefinitions="48,*">
+                              IsVisible="{Binding IsAnyRightPaneOpen}"
+                              RowDefinitions="*,Auto,*"
+                              x:Name="RightPaneGrid">
 
-                            <!-- Header: icon (active) + panel title -->
-                            <Border Grid.Row="0"
-                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                    BorderThickness="0,0,0,1">
-                            <Grid ColumnDefinitions="48,*">
-                                <Button Grid.Column="0"
-                                        Classes="nav-icon"
-                                        Command="{Binding NotesViewModel.ToggleCommand}"
-                                        ToolTip.Tip="Collapse notes (F4)">
-                                    <Path Data="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"
-                                          Stroke="{DynamicResource SynthwavePurpleBrush}"
-                                          StrokeThickness="1.5"
-                                          StrokeLineCap="Round"
-                                          Width="18" Height="18"
-                                          Stretch="Uniform" />
-                                </Button>
-                                <TextBlock Grid.Column="1"
-                                           Text="NOTES"
-                                           VerticalAlignment="Center"
-                                           Margin="4,0,0,0"
-                                           FontSize="10"
-                                           FontWeight="SemiBold"
-                                           LetterSpacing="1.5"
-                                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                            <!-- Row 0: Chapter Info section -->
+                            <Grid Grid.Row="0"
+                                  RowDefinitions="48,*"
+                                  IsVisible="{Binding ChapterInfoViewModel.IsVisible}">
+                                <!-- Header -->
+                                <Border Grid.Row="0"
+                                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                        BorderThickness="0,0,0,1">
+                                    <Grid ColumnDefinitions="48,*">
+                                        <Button Grid.Column="0"
+                                                Classes="nav-icon"
+                                                Command="{Binding ChapterInfoViewModel.ToggleCommand}"
+                                                ToolTip.Tip="Collapse chapter info (F3)">
+                                            <Path Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+                                                  Fill="{DynamicResource SynthwavePurpleBrush}"
+                                                  Width="18" Height="18"
+                                                  Stretch="Uniform" />
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="CHAPTER INFO"
+                                                   VerticalAlignment="Center"
+                                                   Margin="4,0,0,0"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   LetterSpacing="1.5"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    </Grid>
+                                </Border>
+                                <!-- Content -->
+                                <views:ChapterInfoView Grid.Row="1"
+                                                       DataContext="{Binding ChapterInfoViewModel}" />
                             </Grid>
-                            </Border>
 
-                            <!-- Notes content -->
-                            <views:NotesView Grid.Row="1"
-                                             DataContext="{Binding NotesViewModel}" />
+                            <!-- Row 1: GridSplitter between panes (visible only when both open) -->
+                            <GridSplitter Grid.Row="1"
+                                          Height="4"
+                                          ResizeDirection="Rows"
+                                          IsVisible="{Binding IsBothRightPanesOpen}"
+                                          Background="{DynamicResource BorderSubtleBrush}" />
+
+                            <!-- Row 2: Notes section -->
+                            <Grid Grid.Row="2"
+                                  RowDefinitions="48,*"
+                                  IsVisible="{Binding NotesViewModel.IsVisible}">
+                                <!-- Header -->
+                                <Border Grid.Row="0"
+                                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                        BorderThickness="0,0,0,1">
+                                    <Grid ColumnDefinitions="48,*">
+                                        <Button Grid.Column="0"
+                                                Classes="nav-icon"
+                                                Command="{Binding NotesViewModel.ToggleCommand}"
+                                                ToolTip.Tip="Collapse notes (F4)">
+                                            <Path Data="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"
+                                                  Stroke="{DynamicResource SynthwavePurpleBrush}"
+                                                  StrokeThickness="1.5"
+                                                  StrokeLineCap="Round"
+                                                  Width="18" Height="18"
+                                                  Stretch="Uniform" />
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="NOTES"
+                                                   VerticalAlignment="Center"
+                                                   Margin="4,0,0,0"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   LetterSpacing="1.5"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    </Grid>
+                                </Border>
+                                <!-- Content -->
+                                <views:NotesView Grid.Row="1"
+                                                 DataContext="{Binding NotesViewModel}" />
+                            </Grid>
+
                         </Grid>
 
                     </Panel>

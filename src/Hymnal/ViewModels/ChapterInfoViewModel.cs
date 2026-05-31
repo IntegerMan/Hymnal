@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
@@ -24,6 +25,11 @@ namespace Hymnal.ViewModels;
 /// </summary>
 public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
 {
+    // ── Static view-model data (consumed by ChapterInfoView ComboBox) ────────
+
+    /// <summary>All valid chapter statuses; bound to the status ComboBox ItemsSource.</summary>
+    public static IReadOnlyList<ChapterStatus> AllStatuses { get; } =
+        Enum.GetValues<ChapterStatus>();
     // ── Injected services ────────────────────────────────────────────────────
 
     private readonly EditorViewModel _editorViewModel;
@@ -98,6 +104,16 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
     {
         get => _targetDisplay;
         private set => this.RaiseAndSetIfChanged(ref _targetDisplay, value);
+    }
+
+    private int? _pendingTarget;
+    /// <summary>
+    /// Editable target word count typed by the user; passed to SetTargetCommand on confirmation.
+    /// </summary>
+    public int? PendingTarget
+    {
+        get => _pendingTarget;
+        set => this.RaiseAndSetIfChanged(ref _pendingTarget, value);
     }
 
     private readonly ObservableAsPropertyHelper<double> _proximityFill;
