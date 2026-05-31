@@ -43,6 +43,10 @@ public partial class App : Application
         services.AddSingleton<ChapterRegistryService>();
         services.AddSingleton<PhaseDataService>();
 
+        // M002/S02 services — word count, targets, history
+        services.AddSingleton<WordCountService>();
+        services.AddSingleton<TargetsService>();
+
         // S04 services
         services.AddSingleton<INotesService, NotesService>();
 
@@ -50,7 +54,8 @@ public partial class App : Application
         services.AddSingleton<EditorViewModel>(sp =>
             new EditorViewModel(
                 sp.GetRequiredService<IMetadataStore>(),
-                sp.GetRequiredService<INotificationService>()));
+                sp.GetRequiredService<INotificationService>(),
+                sp.GetRequiredService<WordCountService>()));
 
         services.AddSingleton<IFolderPickerService>(sp =>
             new FolderPickerService(() =>
@@ -66,7 +71,8 @@ public partial class App : Application
                 sp.GetRequiredService<INotificationService>(),
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<ChapterRegistryService>(),
-                sp.GetRequiredService<PhaseDataService>()));
+                sp.GetRequiredService<PhaseDataService>(),
+                sp.GetRequiredService<TargetsService>()));
 
         services.AddSingleton<NotesViewModel>(sp =>
             new NotesViewModel(

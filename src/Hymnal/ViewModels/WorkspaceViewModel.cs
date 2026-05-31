@@ -26,6 +26,7 @@ public class WorkspaceViewModel : ViewModelBase
     private readonly EditorViewModel _editor;
     private readonly ChapterRegistryService _registryService;
     private readonly PhaseDataService _phaseDataService;
+    private readonly TargetsService _targetsService;
     private ManuscriptModel? _model;
     private int _workspaceGeneration;
     private Task? _hydrationTask;
@@ -81,7 +82,8 @@ public class WorkspaceViewModel : ViewModelBase
         INotificationService notificationService,
         EditorViewModel editor,
         ChapterRegistryService registryService,
-        PhaseDataService phaseDataService)
+        PhaseDataService phaseDataService,
+        TargetsService targetsService)
     {
         _manuscriptService = manuscriptService;
         _settingsStore = settingsStore;
@@ -90,6 +92,7 @@ public class WorkspaceViewModel : ViewModelBase
         _editor = editor;
         _registryService = registryService;
         _phaseDataService = phaseDataService;
+        _targetsService = targetsService;
         _editor.HasWorkspace = false;
 
         Nodes = new ReadOnlyObservableCollection<ChapterViewModel>(_nodes);
@@ -353,7 +356,7 @@ public class WorkspaceViewModel : ViewModelBase
                     phases.TryGetValue(uuid, out var phaseData);
                     return new ChapterViewModel(
                         node, uuid, phaseData,
-                        _phaseDataService, _settingsStore, _notificationService,
+                        _phaseDataService, _targetsService, _settingsStore, _notificationService,
                         model.WorkspaceRoot);
                 })
                 .ToList();
