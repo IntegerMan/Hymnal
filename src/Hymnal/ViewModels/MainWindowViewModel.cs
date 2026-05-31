@@ -1,9 +1,11 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Hymnal.Core.Interfaces;
 using Hymnal.Infrastructure;
 using ReactiveUI;
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
@@ -16,6 +18,8 @@ public class MainWindowViewModel : ViewModelBase
     public EditorViewModel EditorViewModel { get; }
     public NotesViewModel NotesViewModel { get; }
     public ChapterInfoViewModel ChapterInfoViewModel { get; }
+
+    private readonly IAppSettingsStore _settingsStore;
 
     // ── Window title ──────────────────────────────────────────────────────────
 
@@ -86,18 +90,39 @@ public class MainWindowViewModel : ViewModelBase
                 desktop.Shutdown();
         });
 
+    // ── About ─────────────────────────────────────────────────────────────────
+
+    public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; } =
+        ReactiveCommand.Create(() => { /* handled in MainWindow code-behind */ });
+
     public MainWindowViewModel(
         WorkspaceViewModel workspaceViewModel,
         EditorViewModel editorViewModel,
         NotesViewModel notesViewModel,
         ChapterInfoViewModel chapterInfoViewModel,
-        NotificationService notificationService)
+        NotificationService notificationService,
+        IAppSettingsStore settingsStore)
     {
         WorkspaceViewModel = workspaceViewModel;
         EditorViewModel = editorViewModel;
         NotesViewModel = notesViewModel;
         ChapterInfoViewModel = chapterInfoViewModel;
-        ToggleSidebarCommand = ReactiveCommand.Create(() => { IsSidebarExpanded = !IsSidebarExpanded; });
+        _settingsStore = settingsStore;
+
+        try
+        {
+            _isSidebarExpanded = _settingsStore.GetAsync<bool?>("sidebarExpanded").GetAwaiter().GetResult() ?? true;
+        }
+        catch
+        {
+            _isSidebarExpanded = true;
+        }
+
+        ToggleSidebarCommand = ReactiveCommand.Create(() =>
+        {
+            IsSidebarExpanded = !IsSidebarExpanded;
+            _ = PersistSidebarExpandedAsync(IsSidebarExpanded);
+        });
 
         // ── Right-rail pane aggregates ────────────────────────────────────────
         _isAnyRightPaneOpen = Observable.CombineLatest(
@@ -168,5 +193,17 @@ public class MainWindowViewModel : ViewModelBase
 
         // Start workspace init (loads last workspace + restores last chapter).
         _ = workspaceViewModel.InitAsync();
+    }
+
+    private async Task PersistSidebarExpandedAsync(bool value)
+    {
+        try
+        {
+            await _settingsStore.SetAsync("sidebarExpanded", value).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal; layout preference may not persist across sessions if storage fails.
+        }
     }
 }

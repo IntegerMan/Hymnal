@@ -30,7 +30,18 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     // ── Public read-only data ─────────────────────────────────────────────────
 
     /// <summary>The underlying immutable chapter node (for EditorViewModel etc.).</summary>
-    public ChapterNode Node { get; }
+    private ChapterNode _node;
+    public ChapterNode Node
+    {
+        get => _node;
+        private set => this.RaiseAndSetIfChanged(ref _node, value);
+    }
+
+    /// <summary>
+    /// Replaces the underlying node (e.g. after a title rename on save)
+    /// and raises <see cref="Node"/> property-changed so bound views update.
+    /// </summary>
+    public void UpdateNode(ChapterNode updated) => Node = updated;
 
     /// <summary>The stable UUID that survives file renames.</summary>
     public string Uuid { get; }
@@ -111,9 +122,17 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     /// <summary>'—' until WordCountKnown; then e.g. '2,130 w'.</summary>
     public string WordCountDisplay => _wordCountDisplay.Value;
 
+    private readonly ObservableAsPropertyHelper<string> _wordCountTooltip;
+    /// <summary>Full word count tooltip, including target range when set.</summary>
+    public string WordCountTooltip => _wordCountTooltip.Value;
+
     private readonly ObservableAsPropertyHelper<string> _partTotalDisplay;
     /// <summary>Part-total word count in the same display format.</summary>
     public string PartTotalDisplay => _partTotalDisplay.Value;
+
+    private readonly ObservableAsPropertyHelper<string> _partTotalTooltip;
+    /// <summary>Tooltip for the part-total word count.</summary>
+    public string PartTotalTooltip => _partTotalTooltip.Value;
 
     private readonly ObservableAsPropertyHelper<double> _proximityFill;
     /// <summary>
@@ -167,8 +186,7 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
         string workspaceRoot,
         WordCountTarget? target = null)
     {
-        Node = node;
-        Uuid = uuid;
+        _node = node;        Uuid = uuid;
         _phaseData = phaseData;
         _status = phaseData?.Status ?? ChapterStatus.Outlining;
 
@@ -189,12 +207,40 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
             .ToProperty(this, x => x.WordCountDisplay, out _wordCountDisplay);
         Disposables.Add(_wordCountDisplay);
 
+        // ── OAPH: WordCountTooltip ────────────────────────────────────────────
+        _wordCountTooltip = this
+            .WhenAnyValue(x => x.WordCountKnown, x => x.WordCount, x => x.Target,
+                (known, count, target) =>
+                {
+                    if (!known) return "Word count loading…";
+                    var sb = new System.Text.StringBuilder($"{count:N0} words");
+                    if (target != null)
+                    {
+                        if (target.MinWords.HasValue && target.MaxWords.HasValue)
+                            sb.Append($"  ·  Target: {target.MinWords:N0} – {target.MaxWords:N0}");
+                        else if (target.MinWords.HasValue)
+                            sb.Append($"  ·  Min: {target.MinWords:N0}");
+                        else if (target.MaxWords.HasValue)
+                            sb.Append($"  ·  Max: {target.MaxWords:N0}");
+                    }
+                    return sb.ToString();
+                })
+            .ToProperty(this, x => x.WordCountTooltip, out _wordCountTooltip);
+        Disposables.Add(_wordCountTooltip);
+
         // ── OAPH: PartTotalDisplay ────────────────────────────────────────────
         _partTotalDisplay = this
             .WhenAnyValue(x => x.PartTotalWordCount)
             .Select(total => $"{total:N0} w")
             .ToProperty(this, x => x.PartTotalDisplay, out _partTotalDisplay);
         Disposables.Add(_partTotalDisplay);
+
+        // ── OAPH: PartTotalTooltip ────────────────────────────────────────────
+        _partTotalTooltip = this
+            .WhenAnyValue(x => x.PartTotalWordCount)
+            .Select(total => $"{total:N0} words in this section")
+            .ToProperty(this, x => x.PartTotalTooltip, out _partTotalTooltip);
+        Disposables.Add(_partTotalTooltip);
 
         // ── OAPH: ProximityFill ───────────────────────────────────────────────
         _proximityFill = this

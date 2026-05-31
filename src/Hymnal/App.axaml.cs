@@ -82,7 +82,8 @@ public partial class App : Application
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<INotesService>(),
-                sp.GetRequiredService<INotificationService>()));
+                sp.GetRequiredService<INotificationService>(),
+                sp.GetRequiredService<IAppSettingsStore>()));
 
         services.AddSingleton<ChapterInfoViewModel>(sp =>
             new ChapterInfoViewModel(
@@ -99,7 +100,8 @@ public partial class App : Application
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<NotesViewModel>(),
                 sp.GetRequiredService<ChapterInfoViewModel>(),
-                sp.GetRequiredService<NotificationService>()));
+                sp.GetRequiredService<NotificationService>(),
+                sp.GetRequiredService<IAppSettingsStore>()));
 
         Services = services.BuildServiceProvider();
 

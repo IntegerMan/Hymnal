@@ -20,6 +20,7 @@ public class NotesViewModel : ViewModelBase, IDisposable
 {
     private readonly INotesService _notesService;
     private readonly INotificationService _notificationService;
+    private readonly IAppSettingsStore _settingsStore;
     private readonly WorkspaceViewModel _workspaceViewModel;
 
     // ── Backing fields ────────────────────────────────────────────────────────
@@ -75,11 +76,22 @@ public class NotesViewModel : ViewModelBase, IDisposable
         EditorViewModel editorViewModel,
         WorkspaceViewModel workspaceViewModel,
         INotesService notesService,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IAppSettingsStore settingsStore)
     {
         _workspaceViewModel = workspaceViewModel;
         _notesService = notesService;
         _notificationService = notificationService;
+        _settingsStore = settingsStore;
+
+        try
+        {
+            _isVisible = _settingsStore.GetAsync<bool?>("notesVisible").GetAwaiter().GetResult() ?? false;
+        }
+        catch
+        {
+            _isVisible = false;
+        }
 
         // ── Toggle: only when a chapter is active ────────────────────────────
         var hasActiveNode = editorViewModel
@@ -87,7 +99,14 @@ public class NotesViewModel : ViewModelBase, IDisposable
             .Select(n => n != null);
 
         ToggleCommand = ReactiveCommand.Create(
-            () => { if (_loadedNode != null) IsVisible = !IsVisible; },
+            () =>
+            {
+                if (_loadedNode != null)
+                {
+                    IsVisible = !IsVisible;
+                    _ = PersistNotesVisibilityAsync(IsVisible);
+                }
+            },
             canExecute: hasActiveNode);
 
         Disposables.Add(
@@ -181,6 +200,18 @@ public class NotesViewModel : ViewModelBase, IDisposable
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             _notificationService.ShowError($"Failed to save notes: {ex.Message}");
+        }
+    }
+
+    private async Task PersistNotesVisibilityAsync(bool value)
+    {
+        try
+        {
+            await _settingsStore.SetAsync("notesVisible", value).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal; preference may not persist across sessions if storage is unavailable.
         }
     }
 

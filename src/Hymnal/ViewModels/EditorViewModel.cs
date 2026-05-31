@@ -99,6 +99,36 @@ public class EditorViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _conflictMessage, value);
     }
 
+    // ── Special editor states ────────────────────────────────────────────────
+
+    /// <summary>True when Book.txt is open in the editor (book line was clicked).</summary>
+    private bool _isBookSelected;
+    public bool IsBookSelected
+    {
+        get => _isBookSelected;
+        private set => this.RaiseAndSetIfChanged(ref _isBookSelected, value);
+    }
+
+    private readonly ObservableAsPropertyHelper<bool> _showEditor;
+    /// <summary>True when there is a chapter or Book.txt loaded — controls editor visibility.</summary>
+    public bool ShowEditor => _showEditor.Value;
+
+    private readonly ObservableAsPropertyHelper<bool> _showBookTxtWarning;
+    /// <summary>True when Book.txt is open; drives the warning banner in EditorView.</summary>
+    public bool ShowBookTxtWarning => _showBookTxtWarning.Value;
+
+    /// <summary>True when the selected chapter is referenced in Book.txt but missing on disk.</summary>
+    private bool _showMissingChapterPrompt;
+    public bool ShowMissingChapterPrompt
+    {
+        get => _showMissingChapterPrompt;
+        private set => this.RaiseAndSetIfChanged(ref _showMissingChapterPrompt, value);
+    }
+
+    private readonly ObservableAsPropertyHelper<string?> _missingChapterMessage;
+    /// <summary>Formatted warning message shown in the missing-chapter overlay.</summary>
+    public string? MissingChapterMessage => _missingChapterMessage.Value;
+
     // ── Word count ──────────────────────────────────────────────────────────
 
     private readonly ObservableAsPropertyHelper<int> _liveWordCount;
@@ -141,8 +171,26 @@ public class EditorViewModel : ViewModelBase, IDisposable
             .Select(hasWorkspace => !hasWorkspace)
             .ToProperty(this, x => x.ShowWorkspacePrompt);
 
-        _showNoChapterPrompt = this.WhenAnyValue(x => x.HasWorkspace, x => x.ActiveNode, (hasWorkspace, node) => hasWorkspace && node == null)
+        _showNoChapterPrompt = this.WhenAnyValue(
+                x => x.HasWorkspace, x => x.ActiveNode, x => x.IsBookSelected, x => x.ShowMissingChapterPrompt,
+                (hasWorkspace, node, isBook, isMissing) => hasWorkspace && node == null && !isBook && !isMissing)
             .ToProperty(this, x => x.ShowNoChapterPrompt);
+
+        _showEditor = this.WhenAnyValue(x => x.HasActiveChapter, x => x.IsBookSelected,
+                (ch, book) => ch || book)
+            .ToProperty(this, x => x.ShowEditor);
+        Disposables.Add(_showEditor);
+
+        _showBookTxtWarning = this.WhenAnyValue(x => x.IsBookSelected)
+            .ToProperty(this, x => x.ShowBookTxtWarning);
+        Disposables.Add(_showBookTxtWarning);
+
+        _missingChapterMessage = this.WhenAnyValue(x => x.ActiveNode)
+            .Select(n => n != null
+                ? $"\"{n.Title}\" is referenced in Book.txt but the file could not be found on disk."
+                : null)
+            .ToProperty(this, x => x.MissingChapterMessage);
+        Disposables.Add(_missingChapterMessage);
 
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, this.WhenAnyValue(x => x.CanSave));
 
@@ -202,8 +250,79 @@ public class EditorViewModel : ViewModelBase, IDisposable
         ActiveFilePath = absolutePath;
         HasConflict = false;
         ConflictMessage = null;
+        ShowMissingChapterPrompt = false;
+        IsBookSelected = false;
 
         StartWatcher(absolutePath);
+    }
+
+    /// <summary>
+    /// Shows the missing-chapter warning overlay. The chapter is referenced
+    /// in Book.txt but no file was found on disk.
+    /// </summary>
+    /// <summary>
+    /// Updates ActiveNode in-place (e.g. after a title rename on save) so that
+    /// downstream observers such as ChapterInfoViewModel see the new title immediately.
+    /// </summary>
+    public void UpdateActiveNode(ChapterNode updated)
+    {
+        if (_activeNode?.RelativePath == updated.RelativePath)
+            ActiveNode = updated;
+    }
+
+    public void OpenMissingChapter(ChapterNode node)
+    {
+        StopWatcher();
+        HasConflict = false;
+        ConflictMessage = null;
+        ActiveNode = node;
+        ActiveFilePath = null;
+        Text = string.Empty;
+        OriginalText = string.Empty;
+        ShowMissingChapterPrompt = true;
+        IsBookSelected = false;
+    }
+
+    /// <summary>
+    /// <summary>
+    /// Opens Book.txt in the editor. Shows a warning banner so the user knows edits affect
+    /// the chapter list. Saves go to the same file; WorkspaceViewModel observes Saved to reload.
+    /// </summary>
+    public async Task SelectBookAsync(string bookTxtPath)
+    {
+        StopWatcher();
+        HasConflict = false;
+        ConflictMessage = null;
+        ShowMissingChapterPrompt = false;
+        ActiveNode = null;
+
+        if (File.Exists(bookTxtPath))
+        {
+            try
+            {
+                var content = await File.ReadAllTextAsync(bookTxtPath);
+                Text = content;
+                OriginalText = content;
+                ActiveFilePath = bookTxtPath;
+            }
+            catch (Exception ex)
+            {
+                _notificationService.ShowError($"Could not read Book.txt: {ex.Message}");
+                Text = string.Empty;
+                OriginalText = string.Empty;
+                ActiveFilePath = null;
+            }
+        }
+        else
+        {
+            Text = string.Empty;
+            OriginalText = string.Empty;
+            ActiveFilePath = null;
+        }
+
+        IsBookSelected = true;
+        if (ActiveFilePath != null)
+            StartWatcher(ActiveFilePath);
     }
 
     // ── Save ─────────────────────────────────────────────────────────────────
@@ -263,30 +382,51 @@ public class EditorViewModel : ViewModelBase, IDisposable
         // Small delay so the writing process has time to finish the file.
         await Task.Delay(150);
 
-        if (ActiveFilePath == null) return;
+        // Guard: watcher may have been stopped during the delay (navigation away).
+        if (_watcher == null || ActiveFilePath == null) return;
 
-        if (!IsDirty)
+        string? content = null;
+        try
         {
-            try
+            content = await File.ReadAllTextAsync(ActiveFilePath);
+        }
+        catch (Exception ex)
+        {
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                _notificationService.ShowError($"Auto-reload failed: {ex.Message}"));
+            return;
+        }
+
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            // Guard again after the async read — state may have changed.
+            if (_watcher == null || ActiveFilePath == null) return;
+
+            if (IsBookSelected)
             {
-                var content = await File.ReadAllTextAsync(ActiveFilePath);
-                Text = content;
-                OriginalText = content;
+                // Book.txt: always silently reload, never prompt, never notify.
+                Text = content!;
+                OriginalText = content!;
+                HasConflict = false;
+                ConflictMessage = null;
+                return;
+            }
+
+            if (!IsDirty)
+            {
+                Text = content!;
+                OriginalText = content!;
                 _notificationService.ShowInfo(
                     $"'{Path.GetFileName(ActiveFilePath)}' was changed externally and reloaded.");
             }
-            catch (Exception ex)
+            else
             {
-                _notificationService.ShowError($"Auto-reload failed: {ex.Message}");
+                HasConflict = true;
+                ConflictMessage =
+                    $"'{Path.GetFileName(ActiveFilePath)}' was changed externally. " +
+                    "Choose 'Reload from disk' to accept the external version, or 'Keep my edits' to discard it.";
             }
-        }
-        else
-        {
-            HasConflict = true;
-            ConflictMessage =
-                $"'{Path.GetFileName(ActiveFilePath)}' was changed externally. " +
-                "Choose 'Reload from disk' to accept the external version, or 'Keep my edits' to discard it.";
-        }
+        });
     }
 
     private void StopWatcher()
@@ -310,6 +450,8 @@ public class EditorViewModel : ViewModelBase, IDisposable
         ActiveFilePath = null;
         Text = string.Empty;
         OriginalText = string.Empty;
+        ShowMissingChapterPrompt = false;
+        IsBookSelected = false;
     }
 
     // ── IDisposable ──────────────────────────────────────────────────────────

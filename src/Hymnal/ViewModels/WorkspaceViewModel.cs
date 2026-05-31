@@ -85,8 +85,13 @@ public class WorkspaceViewModel : ViewModelBase
     /// <summary>Formatted book total for the CHAPTERS header, e.g. "12,345 w".</summary>
     public string TotalWordCountDisplay => _totalWordCountDisplay.Value;
 
+    private readonly ObservableAsPropertyHelper<string> _totalWordCountTooltip;
+    /// <summary>Full tooltip for the book total word count label.</summary>
+    public string TotalWordCountTooltip => _totalWordCountTooltip.Value;
+
     public ReactiveCommand<Unit, Unit> OpenWorkspaceCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseWorkspaceCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectBookCommand { get; }
 
     public WorkspaceViewModel(
         ManuscriptService manuscriptService,
@@ -116,12 +121,16 @@ public class WorkspaceViewModel : ViewModelBase
 
         OpenWorkspaceCommand = ReactiveCommand.CreateFromTask(OpenWorkspaceAsync);
         CloseWorkspaceCommand = ReactiveCommand.CreateFromTask(CloseWorkspaceAsync, this.WhenAnyValue(x => x.HasWorkspace));
+        SelectBookCommand = ReactiveCommand.CreateFromTask(SelectBookAsync);
 
         Disposables.Add(
             OpenWorkspaceCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
         Disposables.Add(
             CloseWorkspaceCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            SelectBookCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
 
         Disposables.Add(
@@ -140,7 +149,13 @@ public class WorkspaceViewModel : ViewModelBase
             .ToProperty(this, x => x.TotalWordCountDisplay);
         Disposables.Add(_totalWordCountDisplay);
 
-        // Subscribe to EditorViewModel.Saved: recount, update totals, record history.
+        _totalWordCountTooltip = this.WhenAnyValue(x => x.TotalWordCount)
+            .Select(c => $"{c:N0} words total")
+            .ToProperty(this, x => x.TotalWordCountTooltip);
+        Disposables.Add(_totalWordCountTooltip);
+
+        // Subscribe to EditorViewModel.Saved: recount, update totals, record history,
+        // and refresh sidebar title if the heading line changed.
         // Fires on the UI thread (Subject.OnNext is called from SaveAsync).
         Disposables.Add(
             _editor.Saved.Subscribe(saved =>
@@ -148,11 +163,22 @@ public class WorkspaceViewModel : ViewModelBase
                 var activeNode = _editor.ActiveNode;
                 if (activeNode == null || _model == null) return;
 
-                var vm = _nodes.FirstOrDefault(v => v.Node == activeNode);
+                // Lookup by RelativePath so the VM is found even after a title update.
+                var vm = _nodes.FirstOrDefault(v => v.Node.RelativePath == activeNode.RelativePath);
                 if (vm == null) return;
 
                 var count = _wordCountService.CountWords(_editor.Text);
                 vm.UpdateWordCount(count);
+
+                // Refresh sidebar title if the # heading changed in the saved content.
+                var newTitle = BookTxtParser.ExtractTitleFromText(_editor.Text);
+                if (newTitle != null && !string.Equals(newTitle, vm.Node.Title, StringComparison.Ordinal))
+                {
+                    var updatedNode = vm.Node with { Title = newTitle };
+                    vm.UpdateNode(updatedNode);
+                    _editor.UpdateActiveNode(updatedNode);
+                }
+
                 UpdateTotals();
 
                 if (!string.IsNullOrEmpty(vm.Uuid))
@@ -171,6 +197,23 @@ public class WorkspaceViewModel : ViewModelBase
                         }, TaskScheduler.Default);
                 }
             }));
+
+        // When the editor saves Book.txt, reload the workspace so chapter list stays in sync.
+        Disposables.Add(
+            _editor.Saved
+                .Where(_ => _editor.IsBookSelected && _model != null)
+                .Subscribe(_ =>
+                {
+                    var root = _model!.WorkspaceRoot;
+                    var bookTxtPath = _model.BookTxtPath;
+                    var task = ReloadWorkspaceAsync(root, bookTxtPath);
+                    task.ContinueWith(t =>
+                    {
+                        if (!t.IsCompletedSuccessfully && t.Exception != null)
+                            _notificationService.ShowError(
+                                $"Failed to reload workspace after Book.txt edit: {t.Exception.InnerException?.Message ?? t.Exception.Message}");
+                    }, TaskScheduler.Default);
+                }));
     }
 
     // ── Chapter switch ────────────────────────────────────────────────────────
@@ -178,11 +221,16 @@ public class WorkspaceViewModel : ViewModelBase
     private async Task TrySwitchChapterAsync(ChapterViewModel viewModel)
     {
         var node = viewModel.Node;
-        if (node.Kind == NodeKind.Part || node.IsMissing)
+
+        // Missing chapter: show warning overlay instead of deselecting.
+        if (node.IsMissing)
         {
-            _isSwitching = true;
-            SelectedNode = null;
-            _isSwitching = false;
+            if (_editor.IsDirty)
+            {
+                try { await _editor.SaveAsync(); }
+                catch { /* Don't abort — still show the missing warning */ }
+            }
+            _editor.OpenMissingChapter(node);
             return;
         }
 
@@ -207,13 +255,50 @@ public class WorkspaceViewModel : ViewModelBase
 
         var absolutePath = ResolveAbsolutePath(node);
         await _editor.OpenChapterAsync(node, absolutePath);
-        await _settingsStore.SetAsync("lastChapterPath", Path.GetFullPath(absolutePath));
+
+        // Only persist as "last chapter" for regular chapters, not parts.
+        if (node.Kind == NodeKind.Chapter)
+            await _settingsStore.SetAsync("lastChapterPath", Path.GetFullPath(absolutePath));
+    }
+
+    private async Task SelectBookAsync()
+    {
+        if (_editor.IsDirty)
+        {
+            try { await _editor.SaveAsync(); }
+            catch { return; }
+        }
+
+        _isSwitching = true;
+        SelectedNode = null;
+        _isSwitching = false;
+        await _editor.SelectBookAsync(_model?.BookTxtPath ?? string.Empty);
     }
 
     private string ResolveAbsolutePath(ChapterNode node) =>
         Path.Combine(_model!.ManuscriptRoot, node.RelativePath);
 
     // ── Workspace open ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Reload the workspace from disk (called after Book.txt is saved) without disturbing
+    /// the editor. Keeps Book.txt open so the user can continue editing.
+    /// </summary>
+    private async Task ReloadWorkspaceAsync(string workspaceRoot, string bookTxtPath)
+    {
+        var result = await _manuscriptService.LoadWorkspaceAsync(workspaceRoot);
+        if (!result.IsSuccess)
+        {
+            _notificationService.ShowError($"Failed to reload workspace: {result.Error}");
+            return;
+        }
+
+        // Rebuild node list without closing the editor.
+        BindModel(result.Value!);
+
+        // Re-open Book.txt in the editor so the title bar and watcher stay current.
+        await _editor.SelectBookAsync(bookTxtPath);
+    }
 
     private async Task OpenWorkspaceAsync()
     {

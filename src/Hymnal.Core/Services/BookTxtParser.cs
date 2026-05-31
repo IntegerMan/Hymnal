@@ -48,6 +48,28 @@ public static class BookTxtParser
         return nodes.AsReadOnly();
     }
 
+    /// <summary>
+    /// Scans the first few non-blank lines of <paramref name="text"/> and returns the
+    /// Markua/ATX heading title (the text after the leading <c># </c>), or <c>null</c>
+    /// if no heading is found in the first 5 non-blank lines.
+    /// </summary>
+    public static string? ExtractTitleFromText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        using var reader = new System.IO.StringReader(text);
+        string? line;
+        int nonBlankCount = 0;
+        while ((line = reader.ReadLine()) != null && nonBlankCount < 5)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            nonBlankCount++;
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith("# "))
+                return trimmed.Substring(2).Trim();
+        }
+        return null;
+    }
+
     private static List<string> ReadFirstNonBlankLines(string filePath, int count)
     {
         var result = new List<string>(count);

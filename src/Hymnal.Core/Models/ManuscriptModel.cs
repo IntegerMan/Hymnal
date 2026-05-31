@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.IO;
 using DynamicData;
 
 namespace Hymnal.Core.Models;
@@ -13,6 +15,9 @@ public class ManuscriptModel
 
     /// <summary>The folder that contains Book.txt (workspace root or workspace/manuscript/).</summary>
     public string ManuscriptRoot { get; private set; } = string.Empty;
+
+    /// <summary>Absolute path to Book.txt (derived from ManuscriptRoot).</summary>
+    public string BookTxtPath => Path.Combine(ManuscriptRoot, "Book.txt");
 
     public void Load(IEnumerable<ChapterNode> nodes)
     {

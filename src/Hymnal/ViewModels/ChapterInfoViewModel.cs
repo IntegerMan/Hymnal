@@ -186,6 +186,15 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         _settingsStore = settingsStore;
         _notificationService = notificationService;
 
+        try
+        {
+            _isVisible = _settingsStore.GetAsync<bool?>("chapterInfoVisible").GetAwaiter().GetResult() ?? false;
+        }
+        catch
+        {
+            _isVisible = false;
+        }
+
         // ── OAPHs that delegate to this VM's own observable props ────────────
 
         _wordCountDisplay = this
@@ -200,7 +209,14 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
             .Select(n => n != null);
 
         ToggleCommand = ReactiveCommand.Create(
-            () => { if (_loadedUuid != null) IsVisible = !IsVisible; },
+            () =>
+            {
+                if (_loadedUuid != null)
+                {
+                    IsVisible = !IsVisible;
+                    _ = PersistChapterInfoVisibilityAsync(IsVisible);
+                }
+            },
             canExecute: hasActiveNode);
         Disposables.Add(
             ToggleCommand.ThrownExceptions
@@ -438,6 +454,18 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         catch
         {
             // Non-fatal; preference may not persist across sessions if store is unavailable.
+        }
+    }
+
+    private async Task PersistChapterInfoVisibilityAsync(bool value)
+    {
+        try
+        {
+            await _settingsStore.SetAsync("chapterInfoVisible", value).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal; preference may not persist across sessions if storage is unavailable.
         }
     }
 

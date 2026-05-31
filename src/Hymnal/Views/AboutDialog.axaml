@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Hymnal.Views.AboutDialog"
+        Title="About Hymnal"
+        Width="400" Height="240"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#0B0820"
+        FontFamily="{DynamicResource InterFont}">
+
+    <Grid RowDefinitions="5,*">
+        <!-- Accent stripe -->
+        <Border Grid.Row="0" Height="5">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                    <GradientStop Color="#9D4EDD" Offset="0" />
+                    <GradientStop Color="#E91E8C" Offset="0.5" />
+                    <GradientStop Color="#38BDF8" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <StackPanel Grid.Row="1"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Spacing="12"
+                    Margin="32">
+
+            <TextBlock Text="Hymnal"
+                       FontSize="28"
+                       FontWeight="Bold"
+                       Foreground="{DynamicResource SynthwavePurpleBrush}"
+                       HorizontalAlignment="Center" />
+
+            <TextBlock Text="A streamlined editor for authors to plan, write, review, and edit LeanPub / Markua style manuscripts."
+                       FontSize="13"
+                       Foreground="{DynamicResource OnSurfaceDimBrush}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       MaxWidth="300" />
+
+            <TextBlock Text="Created by Matthew Hope-Eland"
+                       FontSize="12"
+                       Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                       HorizontalAlignment="Center" />
+
+            <Button Content="Close"
+                    HorizontalAlignment="Center"
+                    Padding="20,6"
+                    CornerRadius="4"
+                    Background="{DynamicResource SurfaceHighBrush}"
+                    Foreground="{DynamicResource OnSurfaceBrush}"
+                    Click="CloseButton_Click" />
+        </StackPanel>
+    </Grid>
+
+</Window>

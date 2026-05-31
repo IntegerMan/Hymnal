@@ -27,6 +27,7 @@ public sealed class StatusToBrushConverter : IValueConverter
 
     private static string? StatusToBrushKey(ChapterStatus status) => status switch
     {
+        ChapterStatus.Planned   => "OrangeBrush",
         ChapterStatus.Outlining => "OnSurfaceDimBrush",
         ChapterStatus.Drafting  => "CyanBrush",
         ChapterStatus.Editing   => "SynthwavePurpleBrush",
@@ -76,7 +77,7 @@ public sealed class StatusDotTooltipConverter : IMultiValueConverter
         if (values[0] is bool isMissing && isMissing)
             return "File not found";
 
-        return values[1] is ChapterStatus status ? status.ToString() : null;
+        return values[1] is ChapterStatus status ? $"Change status: {status}" : null;
     }
 }
 

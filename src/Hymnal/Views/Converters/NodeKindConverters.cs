@@ -80,6 +80,24 @@ public class NodeKindIsPartConverter : IValueConverter
 }
 
 /// <summary>
+/// Converts bool → SynthwavePurpleBrush (active) or OnSurfaceDimBrush (inactive).
+/// Used for section-header icons in the explorer bar so the lit icon matches the expanded state.
+/// </summary>
+public sealed class ActiveIconBrushConverter : IValueConverter
+{
+    public static readonly ActiveIconBrushConverter Instance = new();
+
+    private static readonly IBrush ActiveBrush  = new SolidColorBrush(Color.Parse("#9D4EDD"));
+    private static readonly IBrush InactiveBrush = new SolidColorBrush(Color.Parse("#88919B"));
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? ActiveBrush : InactiveBrush;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// Converts <see cref="bool"/> → <see cref="GridLength(1, Star)"/> when true,
 /// <see cref="GridLength(0)"/> when false.  Used to collapse hidden right-rail sections.
 /// </summary>

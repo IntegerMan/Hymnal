@@ -1,0 +1,6 @@
+  Determining projects to restore...
+C:\Program Files\dotnet\sdk\10.0.300-preview.0.26177.108\NuGet.targets(782,5): error : Value cannot be null. (Parameter 'path1') [C:\Dev\Hymnal\tests\Hymnal.Core.Tests\Hymnal.Core.Tests.csproj]
+C:\Program Files\dotnet\sdk\10.0.300-preview.0.26177.108\NuGet.targets(782,5): error : Value cannot be null. (Parameter 'path1') [C:\Dev\Hymnal\src\Hymnal.Core\Hymnal.Core.csproj]
+C:\Program Files\dotnet\sdk\10.0.300-preview.0.26177.108\NuGet.targets(782,5): error : Value cannot be null. (Parameter 'path1') [C:\Dev\Hymnal\src\Hymnal\Hymnal.csproj]
+
+Workload updates are available. Run `dotnet workload list` for more information.
