@@ -46,6 +46,7 @@ public partial class App : Application
         // M002/S02 services — word count, targets, history
         services.AddSingleton<WordCountService>();
         services.AddSingleton<TargetsService>();
+        services.AddSingleton<WordCountHistoryService>();
 
         // S04 services
         services.AddSingleton<INotesService, NotesService>();
@@ -72,7 +73,9 @@ public partial class App : Application
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<ChapterRegistryService>(),
                 sp.GetRequiredService<PhaseDataService>(),
-                sp.GetRequiredService<TargetsService>()));
+                sp.GetRequiredService<TargetsService>(),
+                sp.GetRequiredService<WordCountService>(),
+                sp.GetRequiredService<WordCountHistoryService>()));
 
         services.AddSingleton<NotesViewModel>(sp =>
             new NotesViewModel(
