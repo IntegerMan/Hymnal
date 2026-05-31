@@ -1,12 +1,16 @@
 using System;
 using System.IO;
 using System.Reactive;
+using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Threading.Tasks;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
+using Hymnal.Core.Services;
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 
 namespace Hymnal.ViewModels;
 
@@ -18,6 +22,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
 {
     private readonly IMetadataStore _metadataStore;
     private readonly INotificationService _notificationService;
+    private readonly WordCountService _wordCountService;
 
     private FileSystemWatcher? _watcher;
     private bool _disposed;
@@ -94,6 +99,17 @@ public class EditorViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _conflictMessage, value);
     }
 
+    // ── Word count ──────────────────────────────────────────────────────────
+
+    private readonly ObservableAsPropertyHelper<int> _liveWordCount;
+    public int LiveWordCount => _liveWordCount.Value;
+
+    // ── Saved signal ─────────────────────────────────────────────────────────
+
+    private readonly Subject<Unit> _savedSubject = new();
+    /// <summary>Fires a Unit after every successful atomic save.</summary>
+    public IObservable<Unit> Saved => _savedSubject.AsObservable();
+
     // ── Commands ────────────────────────────────────────────────────────────
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
@@ -104,10 +120,12 @@ public class EditorViewModel : ViewModelBase, IDisposable
     /// <summary>Keep local edits: clear HasConflict / ConflictMessage only.</summary>
     public ReactiveCommand<Unit, Unit> KeepLocalCommand { get; }
 
-    public EditorViewModel(IMetadataStore metadataStore, INotificationService notificationService)
+    public EditorViewModel(IMetadataStore metadataStore, INotificationService notificationService,
+        WordCountService wordCountService)
     {
         _metadataStore = metadataStore;
         _notificationService = notificationService;
+        _wordCountService = wordCountService;
 
         _isDirty = this.WhenAnyValue(x => x.Text, x => x.OriginalText, (t, o) => t != o)
             .ToProperty(this, x => x.IsDirty);
@@ -155,6 +173,14 @@ public class EditorViewModel : ViewModelBase, IDisposable
         Disposables.Add(_isDirty);
         Disposables.Add(_canSave);
 
+        // Live word count: debounced 300 ms on the thread-pool, result marshalled to UI thread.
+        _liveWordCount = this.WhenAnyValue(x => x.Text)
+            .Throttle(TimeSpan.FromMilliseconds(300), TaskPoolScheduler.Default)
+            .Select(t => _wordCountService.CountWords(t))
+            .ObserveOn(AvaloniaScheduler.Instance)
+            .ToProperty(this, x => x.LiveWordCount, out _liveWordCount);
+        Disposables.Add(_liveWordCount);
+
         // Register watcher teardown with the composite disposable.
         Disposables.Add(Disposable.Create(StopWatcher));
     }
@@ -198,6 +224,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
         {
             await _metadataStore.WriteTextAtomicAsync(savePath!, Text);
             OriginalText = Text;
+            _savedSubject.OnNext(Unit.Default);
             HasConflict = false;
             ConflictMessage = null;
         }

@@ -15,6 +15,7 @@ public class MainWindowViewModel : ViewModelBase
     public WorkspaceViewModel WorkspaceViewModel { get; }
     public EditorViewModel EditorViewModel { get; }
     public NotesViewModel NotesViewModel { get; }
+    public ChapterInfoViewModel ChapterInfoViewModel { get; }
 
     // ── Window title ──────────────────────────────────────────────────────────
 
@@ -66,6 +67,16 @@ public class MainWindowViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> ToggleSidebarCommand { get; }
 
+    // ── Right-rail pane aggregates ────────────────────────────────────────────
+
+    private readonly ObservableAsPropertyHelper<bool> _isAnyRightPaneOpen;
+    /// <summary>True when either the Notes or Chapter Info pane is visible.</summary>
+    public bool IsAnyRightPaneOpen => _isAnyRightPaneOpen.Value;
+
+    private readonly ObservableAsPropertyHelper<bool> _isBothRightPanesOpen;
+    /// <summary>True when both the Notes and Chapter Info panes are visible.</summary>
+    public bool IsBothRightPanesOpen => _isBothRightPanesOpen.Value;
+
     // ── Exit ─────────────────────────────────────────────────────────────────
 
     public ReactiveCommand<Unit, Unit> ExitCommand { get; } =
@@ -79,12 +90,29 @@ public class MainWindowViewModel : ViewModelBase
         WorkspaceViewModel workspaceViewModel,
         EditorViewModel editorViewModel,
         NotesViewModel notesViewModel,
+        ChapterInfoViewModel chapterInfoViewModel,
         NotificationService notificationService)
     {
         WorkspaceViewModel = workspaceViewModel;
         EditorViewModel = editorViewModel;
         NotesViewModel = notesViewModel;
+        ChapterInfoViewModel = chapterInfoViewModel;
         ToggleSidebarCommand = ReactiveCommand.Create(() => { IsSidebarExpanded = !IsSidebarExpanded; });
+
+        // ── Right-rail pane aggregates ────────────────────────────────────────
+        _isAnyRightPaneOpen = Observable.CombineLatest(
+                ChapterInfoViewModel.WhenAnyValue(x => x.IsVisible),
+                NotesViewModel.WhenAnyValue(x => x.IsVisible),
+                (a, b) => a || b)
+            .ToProperty(this, x => x.IsAnyRightPaneOpen);
+        Disposables.Add(_isAnyRightPaneOpen);
+
+        _isBothRightPanesOpen = Observable.CombineLatest(
+                ChapterInfoViewModel.WhenAnyValue(x => x.IsVisible),
+                NotesViewModel.WhenAnyValue(x => x.IsVisible),
+                (a, b) => a && b)
+            .ToProperty(this, x => x.IsBothRightPanesOpen);
+        Disposables.Add(_isBothRightPanesOpen);
 
         EditorViewModel.HasWorkspace = WorkspaceViewModel.HasWorkspace;
         Disposables.Add(

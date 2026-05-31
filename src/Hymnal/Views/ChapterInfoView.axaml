@@ -1,0 +1,204 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:models="using:Hymnal.Core.Models"
+             xmlns:conv="using:Hymnal.Views.Converters"
+             x:Class="Hymnal.Views.ChapterInfoView"
+             x:DataType="vm:ChapterInfoViewModel"
+             Background="{DynamicResource SurfaceElevatedBrush}">
+
+    <Panel>
+
+        <!-- Empty state: shown when no chapter is active -->
+        <TextBlock Text="Open a chapter to view its info."
+                   IsVisible="{Binding ChapterTitle, Converter={x:Static ObjectConverters.IsNull}}"
+                   VerticalAlignment="Center"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   FontSize="12"
+                   Margin="16" />
+
+        <!-- Content panel: visible when a chapter is open -->
+        <ScrollViewer IsVisible="{Binding ChapterTitle, Converter={x:Static ObjectConverters.IsNotNull}}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="12,10,12,16" Spacing="10">
+
+                <!-- Chapter title -->
+                <TextBlock Text="{Binding ChapterTitle}"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource OnSurfaceBrush}"
+                           TextWrapping="Wrap" />
+
+                <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
+
+                <!-- Status -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="STATUS"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="1.5"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                    <!-- x:Name="StatusComboBox" — SelectionChanged is wired in code-behind -->
+                    <ComboBox x:Name="StatusComboBox"
+                              ItemsSource="{x:Static vm:ChapterInfoViewModel.AllStatuses}"
+                              SelectedItem="{Binding Status, Mode=OneWay}"
+                              HorizontalAlignment="Stretch"
+                              Padding="8,6"
+                              Background="{DynamicResource SurfaceBaseBrush}"
+                              Foreground="{DynamicResource OnSurfaceBrush}"
+                              BorderBrush="{DynamicResource BorderSubtleBrush}"
+                              BorderThickness="1">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:ChapterStatus">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Ellipse Width="8" Height="8"
+                                             Fill="{Binding Converter={x:Static conv:StatusToBrushConverter.Instance}}"
+                                             VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding}"
+                                               VerticalAlignment="Center"
+                                               FontSize="12" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Phase Start Date -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="PHASE START"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="1.5"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                    <TextBox Text="{Binding PhaseStartDate, Mode=TwoWay}"
+                             PlaceholderText="YYYY-MM-DD"
+                             Background="{DynamicResource SurfaceBaseBrush}"
+                             Foreground="{DynamicResource OnSurfaceBrush}"
+                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                             BorderThickness="1"
+                             FontSize="12"
+                             Padding="8,6" />
+                </StackPanel>
+
+                <!-- Phase End Date -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="PHASE END"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="1.5"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                    <TextBox Text="{Binding PhaseEndDate, Mode=TwoWay}"
+                             PlaceholderText="YYYY-MM-DD"
+                             Background="{DynamicResource SurfaceBaseBrush}"
+                             Foreground="{DynamicResource OnSurfaceBrush}"
+                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                             BorderThickness="1"
+                             FontSize="12"
+                             Padding="8,6" />
+                </StackPanel>
+
+                <!-- Apply Dates -->
+                <Button Content="Apply Dates"
+                        Command="{Binding SaveDatesCommand}"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Background="{DynamicResource SurfaceHighBrush}"
+                        Foreground="{DynamicResource SynthwavePurpleBrush}"
+                        BorderThickness="0"
+                        CornerRadius="4"
+                        Padding="8,6"
+                        FontSize="12" />
+
+                <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
+
+                <!-- Word Count -->
+                <StackPanel Spacing="2">
+                    <TextBlock Text="WORDS"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="1.5"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                    <TextBlock Text="{Binding WordCountDisplay}"
+                               FontSize="13"
+                               FontWeight="Medium"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                </StackPanel>
+
+                <!-- Proximity bar (visible only when a target is set) -->
+                <ProgressBar Value="{Binding ProximityFill}"
+                             Minimum="0"
+                             Maximum="1"
+                             IsVisible="{Binding HasTarget}"
+                             Height="4"
+                             CornerRadius="2"
+                             Foreground="{DynamicResource SynthwavePurpleBrush}"
+                             Background="{DynamicResource SurfaceHighBrush}" />
+
+                <!-- Target -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="TARGET"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="1.5"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                    <!-- Current target display (shown when target is set) -->
+                    <TextBlock Text="{Binding TargetDisplay}"
+                               IsVisible="{Binding HasTarget}"
+                               FontSize="12"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                    <!-- Input field -->
+                    <TextBox Text="{Binding PendingTarget, Mode=TwoWay,
+                                            Converter={x:Static conv:NullableIntToStringConverter.Instance}}"
+                             PlaceholderText="e.g. 5000"
+                             Background="{DynamicResource SurfaceBaseBrush}"
+                             Foreground="{DynamicResource OnSurfaceBrush}"
+                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                             BorderThickness="1"
+                             FontSize="12"
+                             Padding="8,6" />
+                    <Grid ColumnDefinitions="*,8,*">
+                        <Button Grid.Column="0"
+                                Content="Set Target"
+                                Command="{Binding SetTargetCommand}"
+                                CommandParameter="{Binding PendingTarget}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="{DynamicResource SurfaceHighBrush}"
+                                Foreground="{DynamicResource SynthwavePurpleBrush}"
+                                BorderThickness="0"
+                                CornerRadius="4"
+                                Padding="8,6"
+                                FontSize="12" />
+                        <Button Grid.Column="2"
+                                Content="Clear"
+                                Command="{Binding SetTargetCommand}"
+                                CommandParameter="{x:Null}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="{DynamicResource SurfaceHighBrush}"
+                                Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                BorderThickness="0"
+                                CornerRadius="4"
+                                Padding="8,6"
+                                FontSize="12" />
+                    </Grid>
+                </StackPanel>
+
+                <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
+
+                <!-- Pre-fill toggle -->
+                <CheckBox Content="Auto-fill today on status change"
+                          IsChecked="{Binding PrefillPhaseDate, Mode=TwoWay}"
+                          FontSize="12"
+                          Foreground="{DynamicResource OnSurfaceDimBrush}" />
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </Panel>
+
+</UserControl>

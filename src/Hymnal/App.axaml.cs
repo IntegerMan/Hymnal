@@ -39,6 +39,15 @@ public partial class App : Application
         // S03 services
         services.AddSingleton<IMetadataStore, MetadataStore>();
 
+        // M002/S01 services — chapter registry and phase data
+        services.AddSingleton<ChapterRegistryService>();
+        services.AddSingleton<PhaseDataService>();
+
+        // M002/S02 services — word count, targets, history
+        services.AddSingleton<WordCountService>();
+        services.AddSingleton<TargetsService>();
+        services.AddSingleton<WordCountHistoryService>();
+
         // S04 services
         services.AddSingleton<INotesService, NotesService>();
 
@@ -46,7 +55,8 @@ public partial class App : Application
         services.AddSingleton<EditorViewModel>(sp =>
             new EditorViewModel(
                 sp.GetRequiredService<IMetadataStore>(),
-                sp.GetRequiredService<INotificationService>()));
+                sp.GetRequiredService<INotificationService>(),
+                sp.GetRequiredService<WordCountService>()));
 
         services.AddSingleton<IFolderPickerService>(sp =>
             new FolderPickerService(() =>
@@ -60,7 +70,12 @@ public partial class App : Application
                 sp.GetRequiredService<IAppSettingsStore>(),
                 sp.GetRequiredService<IFolderPickerService>(),
                 sp.GetRequiredService<INotificationService>(),
-                sp.GetRequiredService<EditorViewModel>()));
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<ChapterRegistryService>(),
+                sp.GetRequiredService<PhaseDataService>(),
+                sp.GetRequiredService<TargetsService>(),
+                sp.GetRequiredService<WordCountService>(),
+                sp.GetRequiredService<WordCountHistoryService>()));
 
         services.AddSingleton<NotesViewModel>(sp =>
             new NotesViewModel(
@@ -69,11 +84,21 @@ public partial class App : Application
                 sp.GetRequiredService<INotesService>(),
                 sp.GetRequiredService<INotificationService>()));
 
+        services.AddSingleton<ChapterInfoViewModel>(sp =>
+            new ChapterInfoViewModel(
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<PhaseDataService>(),
+                sp.GetRequiredService<TargetsService>(),
+                sp.GetRequiredService<IAppSettingsStore>(),
+                sp.GetRequiredService<INotificationService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<NotesViewModel>(),
+                sp.GetRequiredService<ChapterInfoViewModel>(),
                 sp.GetRequiredService<NotificationService>()));
 
         Services = services.BuildServiceProvider();

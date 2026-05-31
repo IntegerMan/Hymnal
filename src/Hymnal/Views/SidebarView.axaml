@@ -11,6 +11,15 @@
         <conv:NodeKindToFontWeightConverter x:Key="NodeKindToFontWeightConverter" />
         <conv:NodeKindToMarginConverter x:Key="NodeKindToMarginConverter" />
         <conv:NodeKindToForegroundConverter x:Key="NodeKindToForegroundConverter" />
+        <conv:NodeKindIsChapterConverter x:Key="NodeKindIsChapterConverter" />
+        <conv:NodeKindIsPartConverter x:Key="NodeKindIsPartConverter" />
+        <conv:NodeKindIsChapterAndPresentConverter x:Key="NodeKindIsChapterAndPresentConverter" />
+        <conv:StatusToBrushConverter x:Key="StatusToBrushConverter" />
+        <conv:BoolToOpacityConverter x:Key="BoolToOpacityConverter" />
+        <conv:BoolNotConverter x:Key="BoolNotConverter" />
+        <conv:StatusEqualsConverter x:Key="StatusEqualsConverter" />
+        <conv:StatusDotTooltipConverter x:Key="StatusDotTooltipConverter" />
+        <conv:NullableIntToStringConverter x:Key="NullableIntToStringConverter" />
     </UserControl.Resources>
 
     <Panel>
@@ -20,7 +29,6 @@
                     Spacing="12"
                     IsVisible="{Binding !HasWorkspace}">
 
-            <!-- Error message (only visible after a failed load) -->
             <TextBlock Text="{Binding ErrorMessage}"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                        Foreground="{DynamicResource ErrorBrush}"
@@ -44,58 +52,248 @@
                     CornerRadius="4" />
         </StackPanel>
 
-        <!-- Chapter tree: shown once a workspace is loaded.
-             SelectedItem is two-way bound to WorkspaceViewModel.SelectedNode; the VM guards
-             against Part/missing nodes and re-entrant selection via _isSwitching. -->
-        <ListBox ItemsSource="{Binding Nodes}"
-                 SelectedItem="{Binding SelectedNode}"
-                 Background="Transparent"
-                 BorderThickness="0"
-                 Padding="0,4"
-                 IsVisible="{Binding HasWorkspace}">
-            <ListBox.Styles>
-                <Style Selector="ListBoxItem">
-                    <Setter Property="Padding" Value="8,5" />
-                    <Setter Property="Background" Value="Transparent" />
-                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceBrush}" />
-                    <Setter Property="CornerRadius" Value="4" />
-                    <Setter Property="Margin" Value="4,1" />
-                </Style>
-                <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
-                    <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
-                </Style>
-                <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                    <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
-                </Style>
-                <Style Selector="ListBoxItem:selected">
-                    <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
-                    <Setter Property="BorderThickness" Value="2,0,0,0" />
-                    <Setter Property="CornerRadius" Value="0,4,4,0" />
-                    <Setter Property="Padding" Value="6,5" />
-                </Style>
-            </ListBox.Styles>
-            <ListBox.ItemTemplate>
-                <DataTemplate DataType="models:ChapterNode">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding Title}"
-                                   FontWeight="{Binding Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
-                                   Margin="{Binding Kind, Converter={StaticResource NodeKindToMarginConverter}}"
-                                   Foreground="{Binding Kind, Converter={StaticResource NodeKindToForegroundConverter}}" />
-                        <Border IsVisible="{Binding IsMissing}"
-                                Margin="4,0,0,0"
-                                VerticalAlignment="Center"
-                                ToolTip.Tip="File not found on disk">
-                            <Path Data="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"
-                                  Stroke="{DynamicResource ErrorBrush}"
-                                  StrokeThickness="1.5"
-                                  StrokeLineCap="Round"
-                                  Width="12" Height="12"
-                                  Stretch="Uniform" />
-                        </Border>
-                    </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+        <!-- Workspace content: CHAPTERS header + chapter tree -->
+        <DockPanel IsVisible="{Binding HasWorkspace}" LastChildFill="True">
+
+            <!-- CHAPTERS header row -->
+            <DockPanel DockPanel.Dock="Top"
+                       Margin="8,6,8,4">
+                <TextBlock DockPanel.Dock="Right"
+                           Text="{Binding TotalWordCountDisplay}"
+                           Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                           FontSize="10"
+                           VerticalAlignment="Center"
+                           Margin="4,0,0,0" />
+                <TextBlock Text="{Binding WorkspaceName}"
+                           Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+
+            <!-- Chapter tree -->
+            <ListBox ItemsSource="{Binding Nodes}"
+                     SelectedItem="{Binding SelectedNode}"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Padding="0,4">
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="Padding" Value="8,5" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceBrush}" />
+                        <Setter Property="CornerRadius" Value="4" />
+                        <Setter Property="Margin" Value="4,1" />
+                    </Style>
+                    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+                    </Style>
+                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                        <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+                    </Style>
+                    <Style Selector="ListBoxItem:selected">
+                        <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+                        <Setter Property="BorderThickness" Value="2,0,0,0" />
+                        <Setter Property="CornerRadius" Value="0,4,4,0" />
+                        <Setter Property="Padding" Value="6,5" />
+                    </Style>
+                </ListBox.Styles>
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="vm:ChapterViewModel">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+
+                            <!-- Right-click context menu for Set Target -->
+                            <Grid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Set Target…"
+                                              IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
+                                              Command="{Binding OpenTargetFlyoutCommand}" />
+                                </ContextMenu>
+                            </Grid.ContextMenu>
+
+                            <!-- Status dot button [Col 0] -->
+                            <Button Grid.Column="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="6,3"
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    Cursor="Arrow">
+                                <Button.IsVisible>
+                                    <Binding Path="Node.Kind" Converter="{StaticResource NodeKindIsChapterConverter}" />
+                                </Button.IsVisible>
+                                <Button.Opacity>
+                                    <Binding Path="Node.IsMissing" Converter="{StaticResource BoolToOpacityConverter}" />
+                                </Button.Opacity>
+                                <Button.IsHitTestVisible>
+                                    <Binding Path="Node.IsMissing" Converter="{StaticResource BoolNotConverter}" />
+                                </Button.IsHitTestVisible>
+                                <ToolTip.Tip>
+                                    <MultiBinding Converter="{StaticResource StatusDotTooltipConverter}">
+                                        <Binding Path="Node.IsMissing" />
+                                        <Binding Path="Status" />
+                                    </MultiBinding>
+                                </ToolTip.Tip>
+                                <Button.Flyout>
+                                    <MenuFlyout>
+                                        <MenuItem Header="Outlining"
+                                                  Command="{Binding ChangeStatusCommand}"
+                                                  CommandParameter="{x:Static models:ChapterStatus.Outlining}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="✓"
+                                                           IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Outlining}}" />
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Drafting"
+                                                  Command="{Binding ChangeStatusCommand}"
+                                                  CommandParameter="{x:Static models:ChapterStatus.Drafting}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="✓"
+                                                           IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Drafting}}" />
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Editing"
+                                                  Command="{Binding ChangeStatusCommand}"
+                                                  CommandParameter="{x:Static models:ChapterStatus.Editing}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="✓"
+                                                           IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Editing}}" />
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Polishing"
+                                                  Command="{Binding ChangeStatusCommand}"
+                                                  CommandParameter="{x:Static models:ChapterStatus.Polishing}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="✓"
+                                                           IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Polishing}}" />
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Reviewing"
+                                                  Command="{Binding ChangeStatusCommand}"
+                                                  CommandParameter="{x:Static models:ChapterStatus.Reviewing}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="✓"
+                                                           IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Reviewing}}" />
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Done"
+                                                  Command="{Binding ChangeStatusCommand}"
+                                                  CommandParameter="{x:Static models:ChapterStatus.Done}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="✓"
+                                                           IsVisible="{Binding Status, Converter={StaticResource StatusEqualsConverter}, ConverterParameter={x:Static models:ChapterStatus.Done}}" />
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                                <Ellipse Width="8" Height="8"
+                                         Fill="{Binding Status, Converter={StaticResource StatusToBrushConverter}}" />
+                            </Button>
+
+                            <!-- Title + proximity fill bar [Col 1] -->
+                            <StackPanel Grid.Column="1" Spacing="0">
+                                <TextBlock Text="{Binding Node.Title}"
+                                           FontWeight="{Binding Node.Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
+                                           Margin="{Binding Node.Kind, Converter={StaticResource NodeKindToMarginConverter}}"
+                                           Foreground="{Binding Node.Kind, Converter={StaticResource NodeKindToForegroundConverter}}"
+                                           VerticalAlignment="Center" />
+                                <!-- Proximity fill bar: visible only when chapter has a target -->
+                                <ProgressBar IsVisible="{Binding HasTarget}"
+                                             Minimum="0"
+                                             Maximum="1"
+                                             Value="{Binding ProximityFill}"
+                                             Height="2"
+                                             Margin="0,3,4,0"
+                                             Background="Transparent"
+                                             Foreground="#669D4EDD"
+                                             VerticalAlignment="Bottom" />
+                            </StackPanel>
+
+                            <!-- Word count / Part total + target popup anchor [Col 2] -->
+                            <StackPanel Grid.Column="2"
+                                        VerticalAlignment="Center"
+                                        Orientation="Vertical"
+                                        Spacing="0">
+
+                                <!-- Chapter word count (chapter nodes only) -->
+                                <TextBlock Text="{Binding WordCountDisplay}"
+                                           IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
+                                           Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                                           FontSize="11"
+                                           VerticalAlignment="Center" />
+
+                                <!-- Part total (Part nodes only) -->
+                                <TextBlock Text="{Binding PartTotalDisplay}"
+                                           IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsPartConverter}}"
+                                           Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                                           FontSize="11"
+                                           VerticalAlignment="Center" />
+
+                                <!-- Set Target popup (Popup.IsOpen is publicly settable; TwoWay binding works) -->
+                                <Popup IsOpen="{Binding IsTargetFlyoutOpen, Mode=TwoWay}"
+                                       IsLightDismissEnabled="True"
+                                       Placement="Pointer">
+                                    <Border Background="{DynamicResource SurfaceElevatedBrush}"
+                                            BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="12">
+                                        <StackPanel Spacing="8" MinWidth="210">
+                                            <TextBlock Text="Set word count target"
+                                                       Foreground="{DynamicResource OnSurfaceBrush}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold" />
+                                            <!-- Min words row -->
+                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <TextBlock Text="Min words"
+                                                           Width="72"
+                                                           Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                           FontSize="12"
+                                                           VerticalAlignment="Center" />
+                                                <TextBox Text="{Binding PendingMinWords, Converter={StaticResource NullableIntToStringConverter}, Mode=TwoWay}"
+                                                         Width="90"
+                                                         Padding="6,3"
+                                                         FontSize="12" />
+                                            </StackPanel>
+                                            <!-- Max words row -->
+                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <TextBlock Text="Max words"
+                                                           Width="72"
+                                                           Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                           FontSize="12"
+                                                           VerticalAlignment="Center" />
+                                                <TextBox Text="{Binding PendingMaxWords, Converter={StaticResource NullableIntToStringConverter}, Mode=TwoWay}"
+                                                         Width="90"
+                                                         Padding="6,3"
+                                                         FontSize="12" />
+                                            </StackPanel>
+                                            <!-- Action buttons -->
+                                            <StackPanel Orientation="Horizontal"
+                                                        Spacing="6"
+                                                        HorizontalAlignment="Right">
+                                                <Button Content="Set"
+                                                        Command="{Binding ConfirmTargetCommand}"
+                                                        Background="{DynamicResource SynthwavePurpleBrush}"
+                                                        Foreground="{DynamicResource OnSurfaceBrush}"
+                                                        Padding="10,4" />
+                                                <Button Content="Clear"
+                                                        Command="{Binding ClearTargetCommand}"
+                                                        Padding="10,4" />
+                                                <Button Content="Cancel"
+                                                        Command="{Binding CancelTargetFlyoutCommand}"
+                                                        Padding="10,4" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Popup>
+                            </StackPanel>
+
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
 
         <!-- Loading overlay -->
         <Border IsVisible="{Binding IsLoading}"
