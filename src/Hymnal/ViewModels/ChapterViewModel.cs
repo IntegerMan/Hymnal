@@ -260,6 +260,28 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
         WordCountKnown = true;
     }
 
+    /// <summary>
+    /// Re-syncs observable status and phase-data state after ChapterInfoViewModel
+    /// has persisted a change via PhaseDataService directly.
+    /// Safe to call from any thread — posts to UIThread if not already on it.
+    /// </summary>
+    public void ApplyPhaseData(PhaseData phaseData)
+    {
+        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+        {
+            Status = phaseData.Status;
+            PhaseData = phaseData;
+        }
+        else
+        {
+            _ = Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                Status = phaseData.Status;
+                PhaseData = phaseData;
+            });
+        }
+    }
+
     // ── Command implementations ───────────────────────────────────────────────
 
     private async Task ChangeStatusAsync(ChapterStatus newStatus)

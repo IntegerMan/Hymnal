@@ -84,11 +84,21 @@ public partial class App : Application
                 sp.GetRequiredService<INotesService>(),
                 sp.GetRequiredService<INotificationService>()));
 
+        services.AddSingleton<ChapterInfoViewModel>(sp =>
+            new ChapterInfoViewModel(
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<PhaseDataService>(),
+                sp.GetRequiredService<TargetsService>(),
+                sp.GetRequiredService<IAppSettingsStore>(),
+                sp.GetRequiredService<INotificationService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<NotesViewModel>(),
+                sp.GetRequiredService<ChapterInfoViewModel>(),
                 sp.GetRequiredService<NotificationService>()));
 
         Services = services.BuildServiceProvider();
