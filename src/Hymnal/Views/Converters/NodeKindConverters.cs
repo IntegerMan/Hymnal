@@ -66,3 +66,14 @@ public class NodeKindIsChapterAndPresentConverter : IMultiValueConverter
         return values[0] is NodeKind.Chapter && values[1] is false;
     }
 }
+
+public class NodeKindIsPartConverter : IValueConverter
+{
+    public static readonly NodeKindIsPartConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is NodeKind.Part;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

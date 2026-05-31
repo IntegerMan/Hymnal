@@ -125,6 +125,16 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     private readonly ObservableAsPropertyHelper<bool> _hasTarget;
     public bool HasTarget => _hasTarget.Value;
 
+    // ── Flyout open/close state ───────────────────────────────────────────────
+
+    private bool _isTargetFlyoutOpen;
+    /// <summary>True while the Set Target popup is open in the sidebar.</summary>
+    public bool IsTargetFlyoutOpen
+    {
+        get => _isTargetFlyoutOpen;
+        set => this.RaiseAndSetIfChanged(ref _isTargetFlyoutOpen, value);
+    }
+
     // ── Commands ──────────────────────────────────────────────────────────────
 
     public ReactiveCommand<ChapterStatus, Unit> ChangeStatusCommand { get; }
@@ -137,6 +147,12 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
 
     /// <summary>Clears the target for this chapter.</summary>
     public ReactiveCommand<Unit, Unit> ClearTargetCommand { get; }
+
+    /// <summary>Opens the Set Target popup (sets IsTargetFlyoutOpen = true).</summary>
+    public ReactiveCommand<Unit, Unit> OpenTargetFlyoutCommand { get; }
+
+    /// <summary>Cancels without saving (sets IsTargetFlyoutOpen = false).</summary>
+    public ReactiveCommand<Unit, Unit> CancelTargetFlyoutCommand { get; }
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -220,6 +236,16 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
         Disposables.Add(
             ClearTargetCommand.ThrownExceptions
                 .Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
+        OpenTargetFlyoutCommand = ReactiveCommand.Create(() => { IsTargetFlyoutOpen = true; });
+        Disposables.Add(
+            OpenTargetFlyoutCommand.ThrownExceptions
+                .Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
+        CancelTargetFlyoutCommand = ReactiveCommand.Create(() => { IsTargetFlyoutOpen = false; });
+        Disposables.Add(
+            CancelTargetFlyoutCommand.ThrownExceptions
+                .Subscribe(ex => _notificationService.ShowError(ex.Message)));
     }
 
     // ── Public mutators ───────────────────────────────────────────────────────
@@ -280,11 +306,13 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
             MaxWords = PendingMaxWords
         };
         await SetTargetAsync(newTarget).ConfigureAwait(false);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => IsTargetFlyoutOpen = false);
     }
 
     private async Task ClearTargetAsync()
     {
         await SetTargetAsync(null).ConfigureAwait(false);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => IsTargetFlyoutOpen = false);
     }
 
     // ── IDisposable ───────────────────────────────────────────────────────────

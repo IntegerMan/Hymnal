@@ -79,3 +79,22 @@ public sealed class StatusDotTooltipConverter : IMultiValueConverter
         return values[1] is ChapterStatus status ? status.ToString() : null;
     }
 }
+
+/// <summary>
+/// Converts <see cref="int?"/> ↔ <see cref="string"/> for the Set Target flyout TextBoxes.
+/// ConvertBack returns null for empty or non-integer input.
+/// </summary>
+public sealed class NullableIntToStringConverter : IValueConverter
+{
+    public static readonly NullableIntToStringConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is int n ? n.ToString(CultureInfo.InvariantCulture) : string.Empty;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is string s && int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+            return (int?)parsed;
+        return (int?)null;
+    }
+}
