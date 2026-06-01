@@ -18,6 +18,7 @@ public class MainWindowViewModel : ViewModelBase
     public EditorViewModel EditorViewModel { get; }
     public NotesViewModel NotesViewModel { get; }
     public ChapterInfoViewModel ChapterInfoViewModel { get; }
+    public GanttViewModel GanttViewModel { get; }
 
     private readonly IAppSettingsStore _settingsStore;
 
@@ -60,6 +61,20 @@ public class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _bannerKind, value);
     }
 
+    // ── Gantt view toggle ─────────────────────────────────────────────────────
+
+    private bool _isGanttVisible;
+    public bool IsGanttVisible
+    {
+        get => _isGanttVisible;
+        set => this.RaiseAndSetIfChanged(ref _isGanttVisible, value);
+    }
+
+    /// <summary>True when the editor is the active centre-panel view.</summary>
+    public bool IsEditorVisible => !_isGanttVisible;
+
+    public ReactiveCommand<Unit, Unit> ToggleGanttCommand { get; }
+
     // ── Sidebar visibility ────────────────────────────────────────────────────
 
     private bool _isSidebarExpanded = true;
@@ -100,6 +115,7 @@ public class MainWindowViewModel : ViewModelBase
         EditorViewModel editorViewModel,
         NotesViewModel notesViewModel,
         ChapterInfoViewModel chapterInfoViewModel,
+        GanttViewModel ganttViewModel,
         NotificationService notificationService,
         IAppSettingsStore settingsStore)
     {
@@ -107,6 +123,7 @@ public class MainWindowViewModel : ViewModelBase
         EditorViewModel = editorViewModel;
         NotesViewModel = notesViewModel;
         ChapterInfoViewModel = chapterInfoViewModel;
+        GanttViewModel = ganttViewModel;
         _settingsStore = settingsStore;
 
         try
@@ -122,6 +139,12 @@ public class MainWindowViewModel : ViewModelBase
         {
             IsSidebarExpanded = !IsSidebarExpanded;
             _ = PersistSidebarExpandedAsync(IsSidebarExpanded);
+        });
+
+        ToggleGanttCommand = ReactiveCommand.Create(() =>
+        {
+            IsGanttVisible = !IsGanttVisible;
+            this.RaisePropertyChanged(nameof(IsEditorVisible));
         });
 
         // ── Right-rail pane aggregates ────────────────────────────────────────

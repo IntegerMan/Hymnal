@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:views="clr-namespace:Hymnal.Views"
+             x:Class="Hymnal.Views.GanttView"
+             x:DataType="vm:GanttViewModel"
+             Background="#0B0820">
+
+    <Grid RowDefinitions="48,*">
+
+        <!-- ── Header bar ─────────────────────────────────────────────────── -->
+        <Border Grid.Row="0"
+                Background="#120932"
+                BorderBrush="#2D1B5E"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="16,0">
+                    <!-- Gantt icon (horizontal bars) -->
+                    <Path Data="M3 6h18M3 10h12M3 14h15M3 18h9"
+                          Stroke="#9D4EDD"
+                          StrokeThickness="1.5"
+                          StrokeLineCap="Round"
+                          Width="16" Height="16"
+                          Stretch="Uniform"
+                          VerticalAlignment="Center" />
+                    <TextBlock Text="GANTT"
+                               Margin="10,0,0,0"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="2"
+                               Foreground="#94A3B8"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <!-- Legend -->
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="0,0,16,0"
+                            Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#38BDF8" />
+                        <TextBlock Text="Drafting"  FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#E91E8C" />
+                        <TextBlock Text="Editing"   FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#F59E0B" />
+                        <TextBlock Text="Polishing" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#34D399" />
+                        <TextBlock Text="Done"      FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ── Scrollable canvas ─────────────────────────────────────────── -->
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="#0B0820">
+            <views:GanttCanvas x:Name="Canvas"
+                               Rows="{Binding Rows}"
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Top" />
+        </ScrollViewer>
+
+    </Grid>
+
+</UserControl>

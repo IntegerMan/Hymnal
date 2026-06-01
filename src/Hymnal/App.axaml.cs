@@ -94,12 +94,18 @@ public partial class App : Application
                 sp.GetRequiredService<IAppSettingsStore>(),
                 sp.GetRequiredService<INotificationService>()));
 
+        services.AddSingleton<GanttViewModel>(sp =>
+            new GanttViewModel(
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<PhaseDataService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<NotesViewModel>(),
                 sp.GetRequiredService<ChapterInfoViewModel>(),
+                sp.GetRequiredService<GanttViewModel>(),
                 sp.GetRequiredService<NotificationService>(),
                 sp.GetRequiredService<IAppSettingsStore>()));
 
