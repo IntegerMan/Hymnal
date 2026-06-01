@@ -13,5 +13,12 @@ public sealed record GanttRowData(
     DateOnly? StartDate,
     DateOnly? EndDate,
     /// <summary>True when either StartDate or EndDate could not be parsed.</summary>
-    bool IsMissingDates
+    bool IsMissingDates,
+    /// <summary>
+    /// Fractional completion in the range [0.0, 1.0].
+    /// For Part rollup rows: fraction of child chapters whose status is <see cref="ChapterStatus.Done"/>.
+    /// For Chapter rows: 0.0 (chapter-level progress is not tracked here).
+    /// TODO: Weight by word count when WordCount is available on ChapterNode/PhaseData.
+    /// </summary>
+    double CompletionPercentage = 0.0
 );

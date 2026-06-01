@@ -36,6 +36,13 @@ public sealed class GanttRowViewModel : ViewModelBase
     /// <summary>True when either StartDate or EndDate is null — row renders in a muted style.</summary>
     public bool IsMissingDates { get; }
 
+    /// <summary>
+    /// Fractional completion in the range [0.0, 1.0].
+    /// For Part rollup rows this reflects child chapter completion (fraction with status Done).
+    /// For Chapter rows this is always 0.0 (chapter-level progress is not tracked here).
+    /// </summary>
+    public double CompletionPercentage { get; }
+
     // ── Convenience ───────────────────────────────────────────────────────────
 
     public bool IsChapter => Kind == NodeKind.Chapter;
@@ -45,12 +52,13 @@ public sealed class GanttRowViewModel : ViewModelBase
 
     public GanttRowViewModel(GanttRowData data)
     {
-        RelativePath  = data.RelativePath;
-        Title         = data.Title;
-        Kind          = data.Kind;
-        Status        = data.Status;
-        StartDate     = data.StartDate;
-        EndDate       = data.EndDate;
-        IsMissingDates = data.IsMissingDates;
+        RelativePath       = data.RelativePath;
+        Title              = data.Title;
+        Kind               = data.Kind;
+        Status             = data.Status;
+        StartDate          = data.StartDate;
+        EndDate            = data.EndDate;
+        IsMissingDates     = data.IsMissingDates;
+        CompletionPercentage = data.CompletionPercentage;
     }
 }

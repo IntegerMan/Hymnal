@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Hymnal.Core\Hymnal.Core.csproj" />
+    <ProjectReference Include="..\..\src\Hymnal\Hymnal.csproj" />
   </ItemGroup>
 
   <ItemGroup>

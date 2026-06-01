@@ -1,5 +1,11 @@
+using System.Collections.ObjectModel;
+using System.Runtime.CompilerServices;
+using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
+using Hymnal.ViewModels;
+using NSubstitute;
+using ReactiveUI.Builder;
 
 namespace Hymnal.Core.Tests.ViewModels;
 
@@ -10,6 +16,13 @@ namespace Hymnal.Core.Tests.ViewModels;
 /// </summary>
 public class GanttViewModelTests
 {
+    static GanttViewModelTests()
+    {
+        RxAppBuilder.CreateReactiveUIBuilder()
+            .WithCoreServices()
+            .BuildApp();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ChapterNode MakeNode(
@@ -24,6 +37,44 @@ public class GanttViewModelTests
         string? start        = null,
         string? end          = null) =>
         new PhaseData { Status = status, PhaseStartDate = start, PhaseEndDate = end };
+
+    private static WorkspaceViewModel CreateWorkspace(params ChapterViewModel[] nodes)
+    {
+        var workspace = (WorkspaceViewModel)RuntimeHelpers.GetUninitializedObject(typeof(WorkspaceViewModel));
+        var backing = new ObservableCollection<ChapterViewModel>(nodes);
+        var readOnly = new ReadOnlyObservableCollection<ChapterViewModel>(backing);
+
+        var nodesField = typeof(WorkspaceViewModel).GetField(
+            "<Nodes>k__BackingField",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Unable to locate WorkspaceViewModel.Nodes backing field.");
+
+        nodesField.SetValue(workspace, readOnly);
+        return workspace;
+    }
+
+    private static ChapterViewModel CreateChapterViewModel(
+        PhaseData? phaseData,
+        string title = "Chapter One",
+        string path = "ch01.md",
+        string uuid = "uuid-1")
+    {
+        var metadataStore = Substitute.For<IMetadataStore>();
+        var phaseDataService = new PhaseDataService(metadataStore);
+        var targetsService = new TargetsService(metadataStore);
+        var settingsStore = Substitute.For<IAppSettingsStore>();
+        var notificationService = Substitute.For<INotificationService>();
+
+        return new ChapterViewModel(
+            MakeNode(title: title, path: path),
+            uuid,
+            phaseData,
+            phaseDataService,
+            targetsService,
+            settingsStore,
+            notificationService,
+            workspaceRoot: Path.Combine(Path.GetTempPath(), "hymnal-gantt-tests"));
+    }
 
     // ── ParseDate ─────────────────────────────────────────────────────────────
 
@@ -168,5 +219,172 @@ public class GanttViewModelTests
         var row   = GanttProjection.Project(MakeNode(), phase);
 
         Assert.Equal(status, row.Status);
+    }
+
+    // ── GanttViewModel projection refresh ─────────────────────────────────────
+
+    [Fact]
+    public void GanttViewModel_MissingDatesStillProduceRows()
+    {
+        var chapter = CreateChapterViewModel(phaseData: MakePhase(start: null, end: null));
+        var workspace = CreateWorkspace(chapter);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+
+        Assert.Single(gantt.Rows);
+        Assert.True(gantt.Rows[0].IsMissingDates);
+        Assert.Equal(chapter.Node.Title, gantt.Rows[0].Title);
+    }
+
+    [Fact]
+    public void GanttViewModel_RefreshesWhenChapterPhaseDataChanges()
+    {
+        var initialPhase = MakePhase(status: ChapterStatus.Drafting, start: null, end: null);
+        var chapter = CreateChapterViewModel(phaseData: initialPhase);
+        var workspace = CreateWorkspace(chapter);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+
+        Assert.Single(gantt.Rows);
+        Assert.True(gantt.Rows[0].IsMissingDates);
+        Assert.Equal(ChapterStatus.Drafting, gantt.Rows[0].Status);
+
+        chapter.ApplyPhaseData(MakePhase(
+            status: ChapterStatus.Reviewing,
+            start: "2024-02-10",
+            end: "2024-03-15"));
+
+        var updated = SpinWait.SpinUntil(
+            () => gantt.Rows[0].Status == ChapterStatus.Reviewing
+               && gantt.Rows[0].StartDate == new DateOnly(2024, 2, 10)
+               && gantt.Rows[0].EndDate == new DateOnly(2024, 3, 15)
+               && !gantt.Rows[0].IsMissingDates,
+            TimeSpan.FromSeconds(2));
+
+        Assert.True(updated, "Gantt rows did not refresh after ChapterViewModel.ApplyPhaseData().");
+    }
+
+    // ── Part rollup rows ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void GanttViewModel_PartRow_SpansMinStartToMaxEndOfChildChapters()
+    {
+        var part = CreateChapterViewModel(
+            phaseData: null,
+            title: "Part One",
+            path: "part-01.md",
+            uuid: "uuid-part");
+        // Swap the Part node in — helper creates Chapter by default.
+        var partNode = new ChapterNode("part-01.md", "part-01.md", "Part One", NodeKind.Part, IsMissing: false, Index: 0);
+
+        var ch1 = CreateChapterViewModel(
+            phaseData: MakePhase(start: "2024-02-01", end: "2024-04-30"),
+            title: "Chapter One", path: "ch01.md", uuid: "uuid-ch1");
+        var ch2 = CreateChapterViewModel(
+            phaseData: MakePhase(start: "2024-01-15", end: "2024-05-31"),
+            title: "Chapter Two", path: "ch02.md", uuid: "uuid-ch2");
+
+        // Inject the Part node into the ChapterViewModel via field reflection.
+        InjectNode(part, partNode);
+
+        var workspace = CreateWorkspace(part, ch1, ch2);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+
+        Assert.Equal(3, gantt.Rows.Count);
+        var partRow = gantt.Rows[0];
+
+        Assert.True(partRow.IsPart);
+        // Start = min(2024-02-01, 2024-01-15) = 2024-01-15
+        Assert.Equal(new DateOnly(2024, 1, 15), partRow.StartDate);
+        // End = max(2024-04-30, 2024-05-31) = 2024-05-31
+        Assert.Equal(new DateOnly(2024, 5, 31), partRow.EndDate);
+        Assert.False(partRow.IsMissingDates);
+    }
+
+    [Fact]
+    public void GanttViewModel_PartRow_CompletionPercentage_ReflectsDoneChapters()
+    {
+        var part = CreateChapterViewModel(
+            phaseData: null,
+            title: "Part One", path: "part-01.md", uuid: "uuid-part");
+        InjectNode(part, new ChapterNode("part-01.md", "part-01.md", "Part One", NodeKind.Part, IsMissing: false, Index: 0));
+
+        var ch1 = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Done, start: "2024-01-01", end: "2024-03-01"),
+            title: "Ch1", path: "ch01.md", uuid: "uuid-ch1");
+        var ch2 = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Drafting, start: "2024-01-01", end: "2024-04-01"),
+            title: "Ch2", path: "ch02.md", uuid: "uuid-ch2");
+        var ch3 = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Done, start: "2024-01-01", end: "2024-05-01"),
+            title: "Ch3", path: "ch03.md", uuid: "uuid-ch3");
+
+        var workspace = CreateWorkspace(part, ch1, ch2, ch3);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+
+        var partRow = gantt.Rows[0];
+        Assert.True(partRow.IsPart);
+        // 2 out of 3 chapters are Done → ~0.667
+        Assert.Equal(2.0 / 3.0, partRow.CompletionPercentage, precision: 10);
+    }
+
+    [Fact]
+    public void GanttViewModel_PartRow_NoChildren_ZeroCompletionAndMissingDates()
+    {
+        var part = CreateChapterViewModel(
+            phaseData: null,
+            title: "Part One", path: "part-01.md", uuid: "uuid-part");
+        InjectNode(part, new ChapterNode("part-01.md", "part-01.md", "Part One", NodeKind.Part, IsMissing: false, Index: 0));
+
+        var workspace = CreateWorkspace(part);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+
+        var partRow = gantt.Rows[0];
+        Assert.True(partRow.IsPart);
+        Assert.True(partRow.IsMissingDates);
+        Assert.Equal(0.0, partRow.CompletionPercentage);
+    }
+
+    [Fact]
+    public void GanttViewModel_PartRow_StopsAtNextPart()
+    {
+        // Part1 → ch1, ch2; Part2 → ch3
+        var part1 = CreateChapterViewModel(phaseData: null, title: "Part 1", path: "part-01.md", uuid: "p1");
+        InjectNode(part1, new ChapterNode("part-01.md", "part-01.md", "Part 1", NodeKind.Part, IsMissing: false, Index: 0));
+
+        var ch1 = CreateChapterViewModel(phaseData: MakePhase(start: "2024-01-01", end: "2024-02-28"), title: "Ch1", path: "ch01.md", uuid: "ch1");
+        var ch2 = CreateChapterViewModel(phaseData: MakePhase(start: "2024-03-01", end: "2024-04-30"), title: "Ch2", path: "ch02.md", uuid: "ch2");
+
+        var part2 = CreateChapterViewModel(phaseData: null, title: "Part 2", path: "part-02.md", uuid: "p2");
+        InjectNode(part2, new ChapterNode("part-02.md", "part-02.md", "Part 2", NodeKind.Part, IsMissing: false, Index: 3));
+
+        var ch3 = CreateChapterViewModel(phaseData: MakePhase(start: "2024-06-01", end: "2024-12-31"), title: "Ch3", path: "ch03.md", uuid: "ch3");
+
+        var workspace = CreateWorkspace(part1, ch1, ch2, part2, ch3);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+
+        Assert.Equal(5, gantt.Rows.Count);
+        var row1 = gantt.Rows[0]; // Part 1 rollup
+        var row4 = gantt.Rows[3]; // Part 2 rollup
+
+        Assert.True(row1.IsPart);
+        // Part 1 spans ch1+ch2 only: 2024-01-01 to 2024-04-30
+        Assert.Equal(new DateOnly(2024, 1, 1),  row1.StartDate);
+        Assert.Equal(new DateOnly(2024, 4, 30), row1.EndDate);
+
+        Assert.True(row4.IsPart);
+        // Part 2 spans ch3 only: 2024-06-01 to 2024-12-31
+        Assert.Equal(new DateOnly(2024, 6, 1),   row4.StartDate);
+        Assert.Equal(new DateOnly(2024, 12, 31), row4.EndDate);
+    }
+
+    // ── Helpers for Part rollup tests ─────────────────────────────────────────
+
+    private static void InjectNode(ChapterViewModel vm, ChapterNode node)
+    {
+        // ChapterViewModel.Node has a 'private set' backed by '_node'.
+        var field = typeof(ChapterViewModel).GetField(
+            "_node",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Unable to locate ChapterViewModel._node backing field.");
+        field.SetValue(vm, node);
     }
 }

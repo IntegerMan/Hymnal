@@ -144,13 +144,7 @@ public sealed class GanttCanvas : Control
             // ── Draw time axis ────────────────────────────────────────────────
             DrawTimeAxis(ctx, axisStart, axisEnd, chartWidth, w, h);
 
-            if (!hasDateRange)
-            {
-                DrawEmptyState(ctx, w, h, "No phase dates set — open chapters and set Start/End dates.");
-                return;
-            }
-
-            // ── Draw rows ─────────────────────────────────────────────────────
+            // If no valid dates exist, still render muted rows against the fallback axis.
             for (int i = 0; i < rows.Count; i++)
             {
                 double rowY = HeaderHeight + i * RowHeight;
