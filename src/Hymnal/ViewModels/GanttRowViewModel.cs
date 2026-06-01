@@ -1,5 +1,7 @@
 using System;
+using System.Reactive;
 using Hymnal.Core.Models;
+using ReactiveUI;
 
 namespace Hymnal.ViewModels;
 
@@ -48,17 +50,29 @@ public sealed class GanttRowViewModel : ViewModelBase
     public bool IsChapter => Kind == NodeKind.Chapter;
     public bool IsPart    => Kind == NodeKind.Part;
 
+    // ── Commands ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fired by <see cref="Hymnal.Views.GanttCanvas"/> when the user clicks this
+    /// chapter row to edit its phase dates. Part rows also carry this command but
+    /// the canvas only invokes it on chapter rows. Observers (typically
+    /// <see cref="GanttViewModel"/>) subscribe and open the date-picker popup.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> EditDatesCommand { get; }
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public GanttRowViewModel(GanttRowData data)
     {
-        RelativePath       = data.RelativePath;
-        Title              = data.Title;
-        Kind               = data.Kind;
-        Status             = data.Status;
-        StartDate          = data.StartDate;
-        EndDate            = data.EndDate;
-        IsMissingDates     = data.IsMissingDates;
+        RelativePath         = data.RelativePath;
+        Title                = data.Title;
+        Kind                 = data.Kind;
+        Status               = data.Status;
+        StartDate            = data.StartDate;
+        EndDate              = data.EndDate;
+        IsMissingDates       = data.IsMissingDates;
         CompletionPercentage = data.CompletionPercentage;
+
+        EditDatesCommand = ReactiveCommand.Create(() => { });
     }
 }

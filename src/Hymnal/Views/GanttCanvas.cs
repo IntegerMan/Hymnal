@@ -4,6 +4,7 @@ using System.Collections.Specialized;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Hymnal.Core.Models;
 using Hymnal.ViewModels;
@@ -94,6 +95,36 @@ public sealed class GanttCanvas : Control
 
     private void OnRowsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         => InvalidateVisual();
+
+    // ── Pointer hit-test ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Hit-tests the pointer position against Gantt rows. When the click lands on a
+    /// chapter row (not the header, not a Part row), the row's
+    /// <see cref="GanttRowViewModel.EditDatesCommand"/> is executed so
+    /// <see cref="GanttViewModel.RowEditRequested"/> emits and the date-picker can open.
+    /// All exceptions are swallowed to keep the canvas crash-free.
+    /// </summary>
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        try
+        {
+            var rows = Rows;
+            if (rows == null || rows.Count == 0) return;
+
+            var pos = e.GetPosition(this);
+            if (pos.Y < HeaderHeight) return; // click inside the header — ignore
+
+            int rowIndex = (int)((pos.Y - HeaderHeight) / RowHeight);
+            if (rowIndex < 0 || rowIndex >= rows.Count) return;
+
+            var row = rows[rowIndex];
+            if (row.IsChapter)
+                row.EditDatesCommand.Execute().Subscribe();
+        }
+        catch { /* swallow — canvas must never crash the host */ }
+    }
 
     // ── MeasureOverride ───────────────────────────────────────────────────────
 

@@ -376,6 +376,73 @@ public class GanttViewModelTests
         Assert.Equal(new DateOnly(2024, 12, 31), row4.EndDate);
     }
 
+    // ── EditDatesCommand / RowEditRequested ───────────────────────────────────
+
+    [Fact]
+    public void GanttViewModel_RowEditRequested_FiresWhenEditDatesCommandExecutedOnChapterRow()
+    {
+        var chapter = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Drafting, start: "2024-01-01", end: "2024-06-30"),
+            title: "Chapter One", path: "ch01.md");
+        var workspace = CreateWorkspace(chapter);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+
+        GanttRowViewModel? received = null;
+        gantt.RowEditRequested.Subscribe(vm => received = vm);
+
+        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+
+        var fired = SpinWait.SpinUntil(() => received != null, TimeSpan.FromSeconds(2));
+        Assert.True(fired, "RowEditRequested did not emit after EditDatesCommand.Execute().");
+        Assert.Equal("Chapter One", received!.Title);
+        Assert.True(received.IsChapter);
+    }
+
+    [Fact]
+    public void GanttViewModel_RowEditRequested_DoesNotFireForPartRows()
+    {
+        var part = CreateChapterViewModel(phaseData: null, title: "Part One", path: "part-01.md", uuid: "p1");
+        InjectNode(part, new ChapterNode("part-01.md", "part-01.md", "Part One", NodeKind.Part, IsMissing: false, Index: 0));
+        var ch1 = CreateChapterViewModel(
+            phaseData: MakePhase(start: "2024-01-01", end: "2024-03-01"),
+            title: "Ch1", path: "ch01.md", uuid: "ch1");
+
+        var workspace = CreateWorkspace(part, ch1);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+
+        var editFired = false;
+        gantt.RowEditRequested.Subscribe(_ => editFired = true);
+
+        // Execute the Part row's command directly — should NOT propagate to RowEditRequested.
+        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+
+        // Allow 500 ms for any async dispatch; it should still be false.
+        Thread.Sleep(500);
+        Assert.False(editFired, "RowEditRequested should not fire when a Part row's EditDatesCommand is executed.");
+    }
+
+    [Fact]
+    public void GanttRowViewModel_EditDatesCommand_ExposedAndExecutable()
+    {
+        var data = new GanttRowData(
+            RelativePath: "ch01.md", Title: "Ch1", Kind: NodeKind.Chapter,
+            Status: ChapterStatus.Drafting,
+            StartDate: new DateOnly(2024, 1, 1), EndDate: new DateOnly(2024, 3, 1),
+            IsMissingDates: false);
+
+        var vm = new GanttRowViewModel(data);
+
+        Assert.NotNull(vm.EditDatesCommand);
+
+        // Subscribe to the command output, execute it, then wait for the result.
+        var executed = false;
+        vm.EditDatesCommand.Subscribe(_ => executed = true);
+        vm.EditDatesCommand.Execute().Subscribe();
+
+        var completed = SpinWait.SpinUntil(() => executed, TimeSpan.FromSeconds(2));
+        Assert.True(completed, "EditDatesCommand did not emit a result after Execute().");
+    }
+
     // ── Helpers for Part rollup tests ─────────────────────────────────────────
 
     private static void InjectNode(ChapterViewModel vm, ChapterNode node)

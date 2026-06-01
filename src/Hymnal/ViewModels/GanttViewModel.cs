@@ -5,6 +5,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Reactive.Disposables;
+using System.Reactive.Subjects;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 using ReactiveUI;
@@ -29,8 +30,19 @@ public sealed class GanttViewModel : ViewModelBase
     private readonly ObservableCollection<GanttRowViewModel> _rows = new();
     private readonly SerialDisposable _phaseSubscriptions = new();
 
+    // Subject that emits the chapter row the user wants to edit.
+    private readonly Subject<GanttRowViewModel> _rowEditRequested = new();
+
     /// <summary>Projected Gantt rows in manuscript order (Parts + Chapters).</summary>
     public ReadOnlyObservableCollection<GanttRowViewModel> Rows { get; }
+
+    /// <summary>
+    /// Emits a <see cref="GanttRowViewModel"/> whenever the user triggers
+    /// <see cref="GanttRowViewModel.EditDatesCommand"/> on a chapter row.
+    /// Only chapter rows (not Part rows) are forwarded.
+    /// Subscribers should open a date-picker popup bound to the emitted row.
+    /// </summary>
+    public IObservable<GanttRowViewModel> RowEditRequested => _rowEditRequested;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -49,6 +61,7 @@ public sealed class GanttViewModel : ViewModelBase
         nodesAsNotify.CollectionChanged += handler;
         Disposables.Add(Disposable.Create(() => nodesAsNotify.CollectionChanged -= handler));
         Disposables.Add(_phaseSubscriptions);
+        Disposables.Add(Disposable.Create(() => _rowEditRequested.OnCompleted()));
 
         // Build initial rows immediately.
         RebuildRows();
@@ -98,7 +111,18 @@ public sealed class GanttViewModel : ViewModelBase
                 rowData = GanttProjection.Project(vm.Node, vm.PhaseData);
             }
 
-            _rows.Add(new GanttRowViewModel(rowData));
+            var rowVm = new GanttRowViewModel(rowData);
+
+            // Wire EditDatesCommand: only chapter rows route to RowEditRequested.
+            if (rowVm.IsChapter)
+            {
+                var captured = rowVm;
+                phaseSubscriptions.Add(
+                    rowVm.EditDatesCommand
+                         .Subscribe(_ => _rowEditRequested.OnNext(captured)));
+            }
+
+            _rows.Add(rowVm);
         }
 
         _phaseSubscriptions.Disposable = phaseSubscriptions;
