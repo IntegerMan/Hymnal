@@ -97,7 +97,8 @@ public partial class App : Application
         services.AddSingleton<GanttViewModel>(sp =>
             new GanttViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
-                sp.GetRequiredService<PhaseDataService>()));
+                sp.GetRequiredService<PhaseDataService>(),
+                sp.GetRequiredService<INotificationService>()));
 
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(

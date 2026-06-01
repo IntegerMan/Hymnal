@@ -307,6 +307,31 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// Persists new phase start/end dates without changing the chapter's status.
+    /// Date strings must be ISO 8601 (yyyy-MM-dd) or null to clear the date.
+    /// Called by <see cref="GanttViewModel.CommitEditCommand"/> when the inline
+    /// date-picker overlay is committed.
+    /// </summary>
+    public async Task UpdateDatesAsync(string? startDate, string? endDate)
+    {
+        PhaseData? updated = null;
+        await _phaseDataService.UpsertAsync(_workspaceRoot, Uuid, current =>
+        {
+            var basePhaseData = current ?? _phaseData;
+            updated = new PhaseData
+            {
+                Status         = basePhaseData?.Status ?? ChapterStatus.Outlining,
+                PhaseStartDate = startDate,
+                PhaseEndDate   = endDate
+            };
+            return updated;
+        }).ConfigureAwait(false);
+
+        if (updated != null)
+            ApplyPhaseData(updated);
+    }
+
+    /// <summary>
     /// Re-syncs observable status and phase-data state after ChapterInfoViewModel
     /// has persisted a change via PhaseDataService directly.
     /// Safe to call from any thread — posts to UIThread if not already on it.

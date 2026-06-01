@@ -4,8 +4,12 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
+using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Threading.Tasks;
+using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 using ReactiveUI;
@@ -26,6 +30,7 @@ public sealed class GanttViewModel : ViewModelBase
     private readonly WorkspaceViewModel _workspace;
     // PhaseDataService retained for future refresh/filter operations.
     private readonly PhaseDataService _phaseDataService;
+    private readonly INotificationService _notificationService;
 
     private readonly ObservableCollection<GanttRowViewModel> _rows = new();
     private readonly SerialDisposable _phaseSubscriptions = new();
@@ -44,12 +49,68 @@ public sealed class GanttViewModel : ViewModelBase
     /// </summary>
     public IObservable<GanttRowViewModel> RowEditRequested => _rowEditRequested;
 
+    // ── Inline date-editing state ─────────────────────────────────────────────
+
+    private GanttRowViewModel? _editingRow;
+    /// <summary>The chapter row currently being edited, or null when the overlay is closed.</summary>
+    public GanttRowViewModel? EditingRow
+    {
+        get => _editingRow;
+        private set => this.RaiseAndSetIfChanged(ref _editingRow, value);
+    }
+
+    private bool _isEditingDates;
+    /// <summary>True while the inline date-edit overlay is open.</summary>
+    public bool IsEditingDates
+    {
+        get => _isEditingDates;
+        private set => this.RaiseAndSetIfChanged(ref _isEditingDates, value);
+    }
+
+    private DateTime? _editStartDate;
+    /// <summary>
+    /// Start date staged for editing. Settable so CalendarDatePicker can write back.
+    /// Null means the user has cleared the field.
+    /// </summary>
+    public DateTime? EditStartDate
+    {
+        get => _editStartDate;
+        set => this.RaiseAndSetIfChanged(ref _editStartDate, value);
+    }
+
+    private DateTime? _editEndDate;
+    /// <summary>
+    /// End date staged for editing. Settable so CalendarDatePicker can write back.
+    /// Null means the user has cleared the field.
+    /// </summary>
+    public DateTime? EditEndDate
+    {
+        get => _editEndDate;
+        set => this.RaiseAndSetIfChanged(ref _editEndDate, value);
+    }
+
+    // ── Edit commands ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Persists <see cref="EditStartDate"/> and <see cref="EditEndDate"/> to the
+    /// underlying <see cref="ChapterViewModel"/> and closes the overlay.
+    /// Errors are surfaced via <see cref="INotificationService"/>.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> CommitEditCommand { get; }
+
+    /// <summary>Closes the date-edit overlay without saving.</summary>
+    public ReactiveCommand<Unit, Unit> CancelEditCommand { get; }
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    public GanttViewModel(WorkspaceViewModel workspace, PhaseDataService phaseDataService)
+    public GanttViewModel(
+        WorkspaceViewModel workspace,
+        PhaseDataService phaseDataService,
+        INotificationService notificationService)
     {
-        _workspace        = workspace;
-        _phaseDataService = phaseDataService;
+        _workspace           = workspace;
+        _phaseDataService    = phaseDataService;
+        _notificationService = notificationService;
 
         Rows = new ReadOnlyObservableCollection<GanttRowViewModel>(_rows);
 
@@ -63,8 +124,80 @@ public sealed class GanttViewModel : ViewModelBase
         Disposables.Add(_phaseSubscriptions);
         Disposables.Add(Disposable.Create(() => _rowEditRequested.OnCompleted()));
 
+        // ── Editing commands ───────────────────────────────────────────────────
+
+        // Subscribe to RowEditRequested to populate the inline edit overlay.
+        // Called on the same thread as EditDatesCommand.Execute() (UI thread in app,
+        // test thread in unit tests) — no dispatch needed.
+        Disposables.Add(
+            _rowEditRequested.Subscribe(OpenEditForRow));
+
+        CommitEditCommand = ReactiveCommand.CreateFromTask(CommitEditAsync);
+        Disposables.Add(
+            CommitEditCommand.ThrownExceptions
+                .Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
+        CancelEditCommand = ReactiveCommand.Create(CancelEdit);
+        Disposables.Add(
+            CancelEditCommand.ThrownExceptions
+                .Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
         // Build initial rows immediately.
         RebuildRows();
+    }
+
+    // ── Editing helpers ───────────────────────────────────────────────────────
+
+    private void OpenEditForRow(GanttRowViewModel row)
+    {
+        EditingRow     = row;
+        EditStartDate  = row.StartDate.HasValue
+            ? row.StartDate.Value.ToDateTime(TimeOnly.MinValue)
+            : null;
+        EditEndDate    = row.EndDate.HasValue
+            ? row.EndDate.Value.ToDateTime(TimeOnly.MinValue)
+            : null;
+        IsEditingDates = true;
+    }
+
+    private void CancelEdit()
+    {
+        IsEditingDates = false;
+        EditingRow     = null;
+        EditStartDate  = null;
+        EditEndDate    = null;
+    }
+
+    private async Task CommitEditAsync()
+    {
+        var row = EditingRow;
+        if (row == null) return;
+
+        // Find the live ChapterViewModel by forward-slash-normalized relative path.
+        var chapterVm = _workspace.Nodes
+            .FirstOrDefault(n => n.Node.RelativePath == row.RelativePath);
+
+        if (chapterVm == null)
+        {
+            _notificationService.ShowError(
+                $"Could not find chapter '{row.Title}' to save dates.");
+            return;
+        }
+
+        var startStr = EditStartDate.HasValue
+            ? DateOnly.FromDateTime(EditStartDate.Value).ToString("yyyy-MM-dd")
+            : null;
+        var endStr = EditEndDate.HasValue
+            ? DateOnly.FromDateTime(EditEndDate.Value).ToString("yyyy-MM-dd")
+            : null;
+
+        await chapterVm.UpdateDatesAsync(startStr, endStr).ConfigureAwait(false);
+
+        // Clear editing state on the UI thread (mirrors ApplyPhaseData pattern).
+        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            CancelEdit();
+        else
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(CancelEdit);
     }
 
     // ── Projection ────────────────────────────────────────────────────────────

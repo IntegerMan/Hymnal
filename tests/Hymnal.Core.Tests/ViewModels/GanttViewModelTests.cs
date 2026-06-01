@@ -228,7 +228,7 @@ public class GanttViewModelTests
     {
         var chapter = CreateChapterViewModel(phaseData: MakePhase(start: null, end: null));
         var workspace = CreateWorkspace(chapter);
-        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
         Assert.Single(gantt.Rows);
         Assert.True(gantt.Rows[0].IsMissingDates);
@@ -241,7 +241,7 @@ public class GanttViewModelTests
         var initialPhase = MakePhase(status: ChapterStatus.Drafting, start: null, end: null);
         var chapter = CreateChapterViewModel(phaseData: initialPhase);
         var workspace = CreateWorkspace(chapter);
-        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
         Assert.Single(gantt.Rows);
         Assert.True(gantt.Rows[0].IsMissingDates);
@@ -286,7 +286,7 @@ public class GanttViewModelTests
         InjectNode(part, partNode);
 
         var workspace = CreateWorkspace(part, ch1, ch2);
-        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
         Assert.Equal(3, gantt.Rows.Count);
         var partRow = gantt.Rows[0];
@@ -318,7 +318,7 @@ public class GanttViewModelTests
             title: "Ch3", path: "ch03.md", uuid: "uuid-ch3");
 
         var workspace = CreateWorkspace(part, ch1, ch2, ch3);
-        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
         var partRow = gantt.Rows[0];
         Assert.True(partRow.IsPart);
@@ -335,7 +335,7 @@ public class GanttViewModelTests
         InjectNode(part, new ChapterNode("part-01.md", "part-01.md", "Part One", NodeKind.Part, IsMissing: false, Index: 0));
 
         var workspace = CreateWorkspace(part);
-        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
         var partRow = gantt.Rows[0];
         Assert.True(partRow.IsPart);
@@ -359,7 +359,7 @@ public class GanttViewModelTests
         var ch3 = CreateChapterViewModel(phaseData: MakePhase(start: "2024-06-01", end: "2024-12-31"), title: "Ch3", path: "ch03.md", uuid: "ch3");
 
         var workspace = CreateWorkspace(part1, ch1, ch2, part2, ch3);
-        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
         Assert.Equal(5, gantt.Rows.Count);
         var row1 = gantt.Rows[0]; // Part 1 rollup
@@ -385,7 +385,7 @@ public class GanttViewModelTests
             phaseData: MakePhase(status: ChapterStatus.Drafting, start: "2024-01-01", end: "2024-06-30"),
             title: "Chapter One", path: "ch01.md");
         var workspace = CreateWorkspace(chapter);
-        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
         GanttRowViewModel? received = null;
         gantt.RowEditRequested.Subscribe(vm => received = vm);
@@ -408,7 +408,7 @@ public class GanttViewModelTests
             title: "Ch1", path: "ch01.md", uuid: "ch1");
 
         var workspace = CreateWorkspace(part, ch1);
-        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()));
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
         var editFired = false;
         gantt.RowEditRequested.Subscribe(_ => editFired = true);
@@ -441,6 +441,124 @@ public class GanttViewModelTests
 
         var completed = SpinWait.SpinUntil(() => executed, TimeSpan.FromSeconds(2));
         Assert.True(completed, "EditDatesCommand did not emit a result after Execute().");
+    }
+
+    // ── IsEditingDates / editing state ────────────────────────────────────────
+
+    [Fact]
+    public void GanttViewModel_IsEditingDates_SetTrueWhenRowEditRequested()
+    {
+        var chapter = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Drafting, start: "2024-01-01", end: "2024-06-30"),
+            title: "Chapter One", path: "ch01.md");
+        var workspace = CreateWorkspace(chapter);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
+
+        Assert.False(gantt.IsEditingDates);
+
+        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+
+        var opened = SpinWait.SpinUntil(() => gantt.IsEditingDates, TimeSpan.FromSeconds(2));
+        Assert.True(opened, "IsEditingDates did not become true after EditDatesCommand.");
+        Assert.NotNull(gantt.EditingRow);
+        Assert.Equal("Chapter One", gantt.EditingRow!.Title);
+    }
+
+    [Fact]
+    public void GanttViewModel_OpenEditForRow_PopulatesEditDates_FromRowStartEnd()
+    {
+        var chapter = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Drafting, start: "2024-03-10", end: "2024-09-15"),
+            title: "Chapter Two", path: "ch02.md");
+        var workspace = CreateWorkspace(chapter);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
+
+        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+
+        SpinWait.SpinUntil(() => gantt.IsEditingDates, TimeSpan.FromSeconds(2));
+
+        Assert.True(gantt.EditStartDate.HasValue);
+        Assert.True(gantt.EditEndDate.HasValue);
+        Assert.Equal(new DateTime(2024, 3, 10), gantt.EditStartDate!.Value.Date);
+        Assert.Equal(new DateTime(2024, 9, 15), gantt.EditEndDate!.Value.Date);
+    }
+
+    [Fact]
+    public void GanttViewModel_OpenEditForRow_MissingDates_EditDatesAreNull()
+    {
+        var chapter = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Drafting, start: null, end: null),
+            title: "No Dates", path: "ch03.md");
+        var workspace = CreateWorkspace(chapter);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
+
+        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+
+        SpinWait.SpinUntil(() => gantt.IsEditingDates, TimeSpan.FromSeconds(2));
+
+        Assert.Null(gantt.EditStartDate);
+        Assert.Null(gantt.EditEndDate);
+    }
+
+    [Fact]
+    public void GanttViewModel_CancelEditCommand_ClearsState()
+    {
+        var chapter = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Drafting, start: "2024-01-01", end: "2024-06-30"),
+            title: "Chapter One", path: "ch01.md");
+        var workspace = CreateWorkspace(chapter);
+        var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
+
+        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+        SpinWait.SpinUntil(() => gantt.IsEditingDates, TimeSpan.FromSeconds(2));
+        Assert.True(gantt.IsEditingDates);
+
+        gantt.CancelEditCommand.Execute().Subscribe();
+
+        var cleared = SpinWait.SpinUntil(() => !gantt.IsEditingDates, TimeSpan.FromSeconds(2));
+        Assert.True(cleared, "IsEditingDates was not cleared by CancelEditCommand.");
+        Assert.Null(gantt.EditingRow);
+        Assert.Null(gantt.EditStartDate);
+        Assert.Null(gantt.EditEndDate);
+    }
+
+    // ── ChapterViewModel.UpdateDatesAsync ──────────────────────────────────────
+
+    [Fact]
+    public async Task ChapterViewModel_UpdateDatesAsync_PersistsAndAppliesPhaseData()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"hymnal-updateDates-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(tempRoot, ".hymnal-data"));
+        try
+        {
+            var store = new Hymnal.Core.Infrastructure.MetadataStore();
+            var phaseDataService = new PhaseDataService(store);
+            var targetsService = new TargetsService(store);
+            var settingsStore = Substitute.For<IAppSettingsStore>();
+            var notificationService = Substitute.For<INotificationService>();
+
+            var node = MakeNode(title: "Chapter A", path: "ch-a.md");
+            var initialPhase = MakePhase(status: ChapterStatus.Drafting, start: "2024-01-01", end: "2024-03-31");
+            var vm = new ChapterViewModel(
+                node, "uuid-a", initialPhase,
+                phaseDataService, targetsService, settingsStore,
+                notificationService, workspaceRoot: tempRoot);
+
+            await vm.UpdateDatesAsync("2025-06-01", "2025-09-30");
+
+            // Verify persistence by re-loading from the written file (avoids UIThread dispatch).
+            var phases = await phaseDataService.LoadAsync(tempRoot);
+            Assert.True(phases.TryGetValue("uuid-a", out var saved), "No entry found for uuid-a.");
+            Assert.Equal("2025-06-01", saved?.PhaseStartDate);
+            Assert.Equal("2025-09-30", saved?.PhaseEndDate);
+            // Status should be preserved from the initial phase.
+            Assert.Equal(ChapterStatus.Drafting, saved?.Status);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+                Directory.Delete(tempRoot, recursive: true);
+        }
     }
 
     // ── Helpers for Part rollup tests ─────────────────────────────────────────
