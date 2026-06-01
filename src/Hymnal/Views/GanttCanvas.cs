@@ -55,6 +55,11 @@ public sealed class GanttCanvas : Control
         [ChapterStatus.Done]      = Color.Parse("#34D399"),
     };
 
+    // Part rollup colours
+    private static readonly IBrush PartRollupTrackBrush  = new SolidColorBrush(Color.FromArgb(0x60, 0x47, 0x55, 0x69)); // muted slate
+    private static readonly IBrush PartRollupFillBrush   = new SolidColorBrush(Color.Parse("#34D399"));                  // Done green
+    private static readonly Pen    PartRollupStrokePen   = new(new SolidColorBrush(Color.FromArgb(0xA0, 0x34, 0xD3, 0x99)), 1.0);
+
     // ── AvaloniaProperty: Rows ────────────────────────────────────────────────
 
     public static readonly StyledProperty<IReadOnlyList<GanttRowViewModel>?> RowsProperty =
@@ -212,7 +217,7 @@ public sealed class GanttCanvas : Control
 
             if (row.IsPart)
             {
-                DrawPartRow(ctx, row, rowY, chartWidth);
+                DrawPartRow(ctx, row, rowY, axisStart, axisEnd, chartWidth);
                 return;
             }
 
@@ -263,7 +268,12 @@ public sealed class GanttCanvas : Control
         catch { /* swallow */ }
     }
 
-    private static void DrawPartRow(DrawingContext ctx, GanttRowViewModel row, double rowY, double chartWidth)
+    private static void DrawPartRow(
+        DrawingContext ctx,
+        GanttRowViewModel row,
+        double rowY,
+        DateOnly axisStart, DateOnly axisEnd,
+        double chartWidth)
     {
         try
         {
@@ -271,14 +281,56 @@ public sealed class GanttCanvas : Control
             ctx.FillRectangle(PartRowBgBrush,
                 new Rect(0, rowY, LabelColumnWidth + chartWidth, RowHeight));
 
-            // Part title.
-            var ft = MakeFormattedText(row.Title.ToUpperInvariant(), 9.5, LabelDimBrush);
-            ctx.DrawText(ft, new Point(8, rowY + (RowHeight - ft.Height) / 2));
-
-            // Horizontal divider line.
+            // Horizontal divider line at the top of the row.
             ctx.DrawLine(SeparatorPen,
                 new Point(0, rowY),
                 new Point(LabelColumnWidth + chartWidth, rowY));
+
+            // Part title (left label column).
+            var ft = MakeFormattedText(row.Title.ToUpperInvariant(), 9.5, LabelDimBrush);
+            ctx.DrawText(ft, new Point(8, rowY + (RowHeight - ft.Height) / 2));
+
+            // ── Rollup span box + progress fill ───────────────────────────────
+            // Only draw when the Part row has valid aggregated dates from its children.
+            if (!row.IsMissingDates && row.StartDate.HasValue && row.EndDate.HasValue)
+            {
+                double boxLeft  = LabelColumnWidth + DateToX(row.StartDate.Value, axisStart, axisEnd, chartWidth);
+                double boxRight = LabelColumnWidth + DateToX(row.EndDate.Value,   axisStart, axisEnd, chartWidth);
+                double boxW     = Math.Max(boxRight - boxLeft, 4.0);
+                double boxH     = RowHeight - BoxVPadding * 2;
+                double boxTop   = rowY + BoxVPadding;
+
+                var trackRect = new Rect(boxLeft, boxTop, boxW, boxH);
+
+                // Track (empty background of the span).
+                ctx.DrawRectangle(PartRollupTrackBrush, PartRollupStrokePen, trackRect, 3, 3);
+
+                // Progress fill — clipped to the track width.
+                double fillW = Math.Max(Math.Min(row.CompletionPercentage * boxW, boxW), 0.0);
+                if (fillW > 1.0)
+                {
+                    using (ctx.PushClip(trackRect))
+                    {
+                        ctx.FillRectangle(
+                            PartRollupFillBrush,
+                            new Rect(boxLeft, boxTop, fillW, boxH));
+                    }
+                }
+
+                // Percentage label inside the box when wide enough to fit.
+                if (boxW > 36)
+                {
+                    string pctLabel = $"{(int)Math.Round(row.CompletionPercentage * 100)}%";
+                    var pctFt = MakeFormattedText(pctLabel, 8.5, new SolidColorBrush(Colors.White));
+                    if (pctFt.Width + 4 < boxW)
+                    {
+                        ctx.DrawText(
+                            pctFt,
+                            new Point(boxLeft + (boxW - pctFt.Width) / 2,
+                                      boxTop  + (boxH  - pctFt.Height) / 2));
+                    }
+                }
+            }
         }
         catch { /* swallow */ }
     }
