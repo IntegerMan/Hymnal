@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reactive;
 using Hymnal.Core.Models;
 using ReactiveUI;
@@ -45,10 +47,113 @@ public sealed class GanttRowViewModel : ViewModelBase
     /// </summary>
     public double CompletionPercentage { get; }
 
+    /// <summary>
+    /// Per-phase timeline segments for rendering multiple colored bars on the Gantt canvas.
+    /// Empty for Part rows.
+    /// </summary>
+    public IReadOnlyList<PhaseSegment> PhaseSegments { get; }
+
     // ── Convenience ───────────────────────────────────────────────────────────
 
     public bool IsChapter => Kind == NodeKind.Chapter;
-    public bool IsPart    => Kind == NodeKind.Part;
+    public bool IsPart    => Kind == NodeKind.Part && !IsBook;
+    public bool IsBook    { get; }
+    public bool IsEditable => IsChapter && !IsBook;
+    public GanttEditableColumn PendingEditColumn { get; set; } = GanttEditableColumn.None;
+
+    public static IReadOnlyList<ChapterStatus> AvailableStatuses { get; } =
+        Enum.GetValues<ChapterStatus>();
+
+    private ChapterStatus _editableStatus;
+    public ChapterStatus EditableStatus
+    {
+        get => _editableStatus;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _editableStatus, value);
+            this.RaisePropertyChanged(nameof(StatusDisplay));
+            this.RaisePropertyChanged(nameof(StatusForeground));
+        }
+    }
+
+    private DateTime? _editableStartDate;
+    public DateTime? EditableStartDate
+    {
+        get => _editableStartDate;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _editableStartDate, value);
+            this.RaisePropertyChanged(nameof(StartDateDisplay));
+        }
+    }
+
+    private DateTime? _editableEndDate;
+    public DateTime? EditableEndDate
+    {
+        get => _editableEndDate;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _editableEndDate, value);
+            this.RaisePropertyChanged(nameof(EndDateDisplay));
+        }
+    }
+
+    private double? _editableProgressPercent;
+    public double? EditableProgressPercent
+    {
+        get => _editableProgressPercent;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _editableProgressPercent, value);
+            this.RaisePropertyChanged(nameof(ProgressDisplay));
+        }
+    }
+
+    public string RowBackground => IsBook
+        ? "#2A1D46"
+        : IsPart
+            ? "#1A1235"
+            : "Transparent";
+
+    public string RowForeground => IsBook
+        ? "#E9D5FF"
+        : IsPart
+            ? "#94A3B8"
+            : "#CBD5E1";
+
+    public string StatusForeground => IsEditable
+        ? StatusToColorHex(EditableStatus)
+        : RowForeground;
+
+    public string StatusDisplay => IsEditable ? EditableStatus.ToString() : "Rollup";
+
+    public string StartDateDisplay
+    {
+        get
+        {
+            return EditableStartDate?.ToString("yyyy-MM-dd") ?? "--";
+        }
+    }
+
+    public string EndDateDisplay
+    {
+        get
+        {
+            return EditableEndDate?.ToString("yyyy-MM-dd") ?? "--";
+        }
+    }
+
+    public string ProgressDisplay
+    {
+        get
+        {
+            var percent = EditableProgressPercent ?? 0;
+            if (percent <= 0)
+                return "--";
+
+            return $"{Math.Round(percent):0}%";
+        }
+    }
 
     // ── Commands ──────────────────────────────────────────────────────────────
 
@@ -72,7 +177,39 @@ public sealed class GanttRowViewModel : ViewModelBase
         EndDate              = data.EndDate;
         IsMissingDates       = data.IsMissingDates;
         CompletionPercentage = data.CompletionPercentage;
+        PhaseSegments        = data.PhaseSegments ?? Array.Empty<PhaseSegment>();
+        IsBook               = data.IsBook;
+
+        var currentSeg = GetCurrentStatusSegment(Status);
+        var initialStart = currentSeg?.StartDate ?? StartDate;
+        var initialEnd = currentSeg?.EndDate ?? EndDate;
+
+        _editableStatus = Status;
+        _editableStartDate = initialStart?.ToDateTime(TimeOnly.MinValue);
+        _editableEndDate = initialEnd?.ToDateTime(TimeOnly.MinValue);
+        _editableProgressPercent = currentSeg is null ? 0.0 : Math.Round(currentSeg.Progress * 100.0, 0);
 
         EditDatesCommand = ReactiveCommand.Create(() => { });
+    }
+
+    private PhaseSegment? GetCurrentStatusSegment(ChapterStatus status)
+    {
+        return PhaseSegments.FirstOrDefault(s =>
+            string.Equals(s.PhaseName, status.ToString(), StringComparison.Ordinal));
+    }
+
+    private static string StatusToColorHex(ChapterStatus status)
+    {
+        return status switch
+        {
+            ChapterStatus.Planned => "#FF6B35",
+            ChapterStatus.Outlining => "#9589B0",
+            ChapterStatus.Drafting => "#38BDF8",
+            ChapterStatus.Editing => "#9D4EDD",
+            ChapterStatus.Polishing => "#F5C842",
+            ChapterStatus.Reviewing => "#E91E8C",
+            ChapterStatus.Done => "#22D3A0",
+            _ => "#CBD5E1"
+        };
     }
 }

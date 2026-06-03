@@ -16,6 +16,8 @@ namespace Hymnal;
 public partial class App : Application
 {
     public static IServiceProvider? Services { get; private set; }
+    private ServiceProvider? _serviceProvider;
+    private bool _servicesDisposed;
 
     public override void Initialize()
     {
@@ -110,14 +112,27 @@ public partial class App : Application
                 sp.GetRequiredService<NotificationService>(),
                 sp.GetRequiredService<IAppSettingsStore>()));
 
-        Services = services.BuildServiceProvider();
+        _serviceProvider = services.BuildServiceProvider();
+        Services = _serviceProvider;
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            desktop.Exit += (_, _) => DisposeServices();
             var vm = Services.GetRequiredService<MainWindowViewModel>();
             desktop.MainWindow = new MainWindow { DataContext = vm };
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void DisposeServices()
+    {
+        if (_servicesDisposed)
+            return;
+
+        _servicesDisposed = true;
+        _serviceProvider?.Dispose();
+        _serviceProvider = null;
+        Services = null;
     }
 }

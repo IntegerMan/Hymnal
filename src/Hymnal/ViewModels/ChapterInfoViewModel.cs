@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
@@ -89,6 +90,13 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _phaseEndDate, value);
     }
 
+    /// <summary>
+    /// One row per authoring phase (Outlining → Reviewing). Bound to the per-phase
+    /// schedule table in ChapterInfoView. Edit in place; save via SaveScheduleCommand.
+    /// </summary>
+    public ObservableCollection<PhaseScheduleRowViewModel> PhaseScheduleRows { get; } = new(
+        GanttProjection.PhaseNames.Select(n => new PhaseScheduleRowViewModel(n)));
+
     private int _wordCount;
     public int WordCount
     {
@@ -165,6 +173,11 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> SaveDatesCommand { get; }
 
     /// <summary>
+    /// Persists the per-phase schedule rows to PhaseDataService and re-syncs ChapterViewModel.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> SaveScheduleCommand { get; }
+
+    /// <summary>
     /// Sets (or clears when null) the word-count target via ChapterViewModel.SetTargetCommand.
     /// </summary>
     public ReactiveCommand<int?, Unit> SetTargetCommand { get; }
@@ -233,6 +246,12 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         Disposables.Add(
             SaveDatesCommand.ThrownExceptions
                 .Subscribe(ex => notificationService.ShowError($"Save dates failed: {ex.Message}")));
+
+        // ── SaveScheduleCommand ──────────────────────────────────────────────
+        SaveScheduleCommand = ReactiveCommand.CreateFromTask(SaveScheduleAsync);
+        Disposables.Add(
+            SaveScheduleCommand.ThrownExceptions
+                .Subscribe(ex => notificationService.ShowError($"Save schedule failed: {ex.Message}")));
 
         // ── SetTargetCommand ─────────────────────────────────────────────────
         SetTargetCommand = ReactiveCommand.CreateFromTask<int?>(SetTargetAsync);
@@ -309,6 +328,7 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
                     {
                         PhaseStartDate = pd?.PhaseStartDate;
                         PhaseEndDate = pd?.PhaseEndDate;
+                        SyncScheduleRows(pd);
                     }));
 
             _chapterDisposables.Add(
@@ -336,10 +356,27 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         Status = vm.Status;
         PhaseStartDate = vm.PhaseData?.PhaseStartDate;
         PhaseEndDate = vm.PhaseData?.PhaseEndDate;
+        SyncScheduleRows(vm.PhaseData);
         WordCount = vm.WordCount;
         TargetDisplay = FormatTargetDisplay(vm.Target);
         HasTarget = vm.HasTarget;
         ProximityFill = vm.ProximityFill;
+    }
+
+    /// <summary>Syncs <see cref="PhaseScheduleRows"/> from the supplied <see cref="PhaseData"/>.</summary>
+    private void SyncScheduleRows(PhaseData? pd)
+    {
+        var segments = pd != null
+            ? GanttProjection.BuildSegments(pd)
+            : (IReadOnlyList<PhaseSegment>)Array.Empty<PhaseSegment>();
+
+        foreach (var row in PhaseScheduleRows)
+        {
+            var seg = segments.FirstOrDefault(s => s.PhaseName == row.PhaseName);
+            row.StartDate = seg?.StartDate?.ToString("yyyy-MM-dd");
+            row.EndDate   = seg?.EndDate?.ToString("yyyy-MM-dd");
+            row.Progress  = seg?.Progress > 0 ? seg.Progress * 100.0 : null;
+        }
     }
 
     // ── Command implementations ───────────────────────────────────────────────
@@ -408,6 +445,55 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
                 Status = current?.Status ?? currentStatus,
                 PhaseStartDate = startDate,
                 PhaseEndDate = endDate
+            };
+            return updated;
+        }).ConfigureAwait(false);
+
+        if (updated != null)
+            chapterVm.ApplyPhaseData(updated);
+    }
+
+    private async Task SaveScheduleAsync()
+    {
+        var chapterVm = _activeChapterVm;
+        var uuid = _loadedUuid;
+        var workspaceRoot = _workspaceViewModel.WorkspaceRoot;
+
+        if (chapterVm == null || string.IsNullOrEmpty(uuid) || string.IsNullOrEmpty(workspaceRoot))
+            return;
+
+        // Snapshot all rows before async gap.
+        var rows = PhaseScheduleRows.ToList();
+        var currentStatus = Status;
+
+        PhaseData? updated = null;
+        await _phaseDataService.UpsertAsync(workspaceRoot, uuid, current =>
+        {
+            var schedule = new Dictionary<string, PhaseScheduleEntry>();
+            foreach (var row in rows)
+            {
+                // Only persist rows that have at least some data entered.
+                if (!string.IsNullOrWhiteSpace(row.StartDate) ||
+                    !string.IsNullOrWhiteSpace(row.EndDate) ||
+                    row.Progress.HasValue)
+                {
+                    schedule[row.PhaseName] = new PhaseScheduleEntry
+                    {
+                        StartDate = string.IsNullOrWhiteSpace(row.StartDate) ? null : row.StartDate.Trim(),
+                        EndDate   = string.IsNullOrWhiteSpace(row.EndDate)   ? null : row.EndDate.Trim(),
+                        Progress  = row.Progress
+                    };
+                }
+            }
+
+            // Derive legacy fields from the current status phase for backward compat.
+            schedule.TryGetValue(currentStatus.ToString(), out var activeEntry);
+            updated = new PhaseData
+            {
+                Status         = current?.Status ?? currentStatus,
+                PhaseStartDate = activeEntry?.StartDate ?? current?.PhaseStartDate,
+                PhaseEndDate   = activeEntry?.EndDate   ?? current?.PhaseEndDate,
+                Schedule       = schedule.Count > 0 ? schedule : null
             };
             return updated;
         }).ConfigureAwait(false);

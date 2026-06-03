@@ -1,157 +1,296 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:models="using:Hymnal.Core.Models"
+             xmlns:conv="using:Hymnal.Views.Converters"
              xmlns:views="clr-namespace:Hymnal.Views"
+             xmlns:dg="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.DataGrid"
              x:Class="Hymnal.Views.GanttView"
              x:DataType="vm:GanttViewModel"
              Background="#0B0820">
 
-    <!-- Outer Panel lets the edit overlay layer on top of the Gantt grid -->
-    <Panel>
+    <UserControl.Styles>
+        <Style Selector="CalendarDatePicker.inline-date-editor /template/ Button">
+            <Setter Property="IsVisible" Value="False" />
+            <Setter Property="Width" Value="0" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+    </UserControl.Styles>
 
-        <Grid RowDefinitions="48,*">
+    <Grid RowDefinitions="48,*">
 
-            <!-- ── Header bar ─────────────────────────────────────────────────── -->
-            <Border Grid.Row="0"
-                    Background="#120932"
-                    BorderBrush="#2D1B5E"
-                    BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="*,Auto">
-                    <StackPanel Grid.Column="0"
-                                Orientation="Horizontal"
-                                VerticalAlignment="Center"
-                                Margin="16,0">
-                        <!-- Gantt icon (horizontal bars) -->
-                        <Path Data="M3 6h18M3 10h12M3 14h15M3 18h9"
-                              Stroke="#9D4EDD"
-                              StrokeThickness="1.5"
-                              StrokeLineCap="Round"
-                              Width="16" Height="16"
-                              Stretch="Uniform"
-                              VerticalAlignment="Center" />
-                        <TextBlock Text="GANTT"
-                                   Margin="10,0,0,0"
-                                   FontSize="10"
-                                   FontWeight="SemiBold"
-                                   LetterSpacing="2"
-                                   Foreground="#94A3B8"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                    <!-- Legend -->
-                    <StackPanel Grid.Column="1"
-                                Orientation="Horizontal"
-                                VerticalAlignment="Center"
-                                Margin="0,0,16,0"
-                                Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                            <Border Width="10" Height="10" CornerRadius="2" Background="#38BDF8" />
-                            <TextBlock Text="Drafting"  FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                            <Border Width="10" Height="10" CornerRadius="2" Background="#E91E8C" />
-                            <TextBlock Text="Editing"   FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                            <Border Width="10" Height="10" CornerRadius="2" Background="#F59E0B" />
-                            <TextBlock Text="Polishing" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                            <Border Width="10" Height="10" CornerRadius="2" Background="#34D399" />
-                            <TextBlock Text="Done"      FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- ── Scrollable canvas ─────────────────────────────────────────── -->
-            <ScrollViewer Grid.Row="1"
-                          HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Auto"
-                          Background="#0B0820">
-                <views:GanttCanvas x:Name="Canvas"
-                                   Rows="{Binding Rows}"
-                                   HorizontalAlignment="Stretch"
-                                   VerticalAlignment="Top" />
-            </ScrollViewer>
-
-        </Grid>
-
-        <!-- ── Inline date-edit overlay ─────────────────────────────────────── -->
-        <!--
-             Visible when IsEditingDates = true.
-             Floats in the top-right corner so it does not obscure the row label
-             column. The panel is outside the ScrollViewer so it stays on screen
-             regardless of scroll position.
-        -->
-        <Border IsVisible="{Binding IsEditingDates}"
-                HorizontalAlignment="Right"
-                VerticalAlignment="Top"
-                Margin="0,56,16,0"
-                Width="270"
-                Background="#1C103C"
-                BorderBrush="#3D2070"
-                BorderThickness="1"
-                CornerRadius="6"
-                Padding="14,10"
-                ZIndex="10">
-            <StackPanel Spacing="6">
-
-                <!-- Overlay title -->
-                <TextBlock Text="EDIT PHASE DATES"
-                           FontSize="9"
-                           FontWeight="SemiBold"
-                           LetterSpacing="2"
-                           Foreground="#9D4EDD" />
-
-                <!-- Chapter name -->
-                <TextBlock Text="{Binding EditingRow.Title, FallbackValue=''}"
-                           FontSize="12"
-                           Foreground="#CBD5E1"
-                           TextTrimming="CharacterEllipsis"
-                           Margin="0,0,0,4" />
-
-                <!-- Date pickers -->
-                <Grid ColumnDefinitions="50,*" RowDefinitions="Auto,Auto" RowSpacing="6">
-
-                    <TextBlock Grid.Row="0" Grid.Column="0"
-                               Text="Start"
-                               VerticalAlignment="Center"
-                               FontSize="11"
-                               Foreground="#94A3B8" />
-                    <CalendarDatePicker Grid.Row="0" Grid.Column="1"
-                                        SelectedDate="{Binding EditStartDate}"
-                                        FontSize="11"
-                                        MinWidth="0" />
-
-                    <TextBlock Grid.Row="1" Grid.Column="0"
-                               Text="End"
-                               VerticalAlignment="Center"
-                               FontSize="11"
-                               Foreground="#94A3B8" />
-                    <CalendarDatePicker Grid.Row="1" Grid.Column="1"
-                                        SelectedDate="{Binding EditEndDate}"
-                                        FontSize="11"
-                                        MinWidth="0" />
-                </Grid>
-
-                <!-- Action buttons -->
-                <StackPanel Orientation="Horizontal"
-                            Spacing="8"
-                            HorizontalAlignment="Right"
-                            Margin="0,6,0,0">
-                    <Button Content="Cancel"
-                            Command="{Binding CancelEditCommand}"
-                            FontSize="11"
-                            Padding="12,4" />
-                    <Button Content="Save"
-                            Command="{Binding CommitEditCommand}"
-                            FontSize="11"
-                            Padding="12,4" />
+        <Border Grid.Row="0"
+                Background="#120932"
+                BorderBrush="#2D1B5E"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="592,*">
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="16,0">
+                    <Path Data="M3 6h18M3 10h12M3 14h15M3 18h9"
+                          Stroke="#9D4EDD"
+                          StrokeThickness="1.5"
+                          StrokeLineCap="Round"
+                          Width="16" Height="16"
+                          Stretch="Uniform"
+                          VerticalAlignment="Center" />
+                    <TextBlock Text="TIMELINE"
+                               Margin="10,0,0,0"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="2"
+                               Foreground="#94A3B8"
+                               VerticalAlignment="Center" />
                 </StackPanel>
 
-            </StackPanel>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="16,0"
+                            Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#9589B0" />
+                        <TextBlock Text="Outlining" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#38BDF8" />
+                        <TextBlock Text="Drafting" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#9D4EDD" />
+                        <TextBlock Text="Editing" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#F5C842" />
+                        <TextBlock Text="Polishing" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="2" Background="#E91E8C" />
+                        <TextBlock Text="Reviewing" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
         </Border>
 
-    </Panel>
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Background="#0B0820">
+            <Grid ColumnDefinitions="592,6,*">
+                <dg:DataGrid Grid.Column="0"
+                             x:Name="ChapterGrid"
+                             ItemsSource="{Binding Rows}"
+                             AutoGenerateColumns="False"
+                             HeadersVisibility="Column"
+                             GridLinesVisibility="None"
+                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             CanUserResizeColumns="False"
+                             CanUserReorderColumns="False"
+                             CanUserSortColumns="False"
+                             IsReadOnly="False"
+                             SelectionMode="Single"
+                             RowHeight="28"
+                             ColumnHeaderHeight="36"
+                             Background="#0F0828"
+                             BorderBrush="#2D1B5E"
+                             BorderThickness="0,0,1,0"
+                             HorizontalAlignment="Stretch"
+                             VerticalAlignment="Top">
+
+                    <dg:DataGrid.Columns>
+                        <dg:DataGridTemplateColumn Header="CHAPTER" Width="220" IsReadOnly="True">
+                            <dg:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <Border Padding="8,0" Background="{Binding RowBackground}">
+                                        <TextBlock Text="{Binding Title}"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{Binding RowForeground}"
+                                                   FontSize="11.5" />
+                                    </Border>
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellTemplate>
+                        </dg:DataGridTemplateColumn>
+
+                        <dg:DataGridTemplateColumn Header="STATUS" Width="100">
+                            <dg:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <Border Padding="6,0" Background="{Binding RowBackground}">
+                                        <TextBlock Text="{Binding StatusDisplay}"
+                                                   Foreground="{Binding StatusForeground}"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="10.5" />
+                                    </Border>
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellTemplate>
+                            <dg:DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <ComboBox ItemsSource="{Binding AvailableStatuses}"
+                                              SelectedItem="{Binding EditableStatus, Mode=TwoWay}"
+                                              FontSize="10.5"
+                                              MinHeight="24"
+                                              Height="24"
+                                              Padding="6,0"
+                                              VerticalAlignment="Center"
+                                              IsEnabled="{Binding IsEditable}"
+                                              DropDownClosed="InlineStatus_DropDownClosed">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="models:ChapterStatus">
+                                                <StackPanel Orientation="Horizontal"
+                                                            Spacing="6"
+                                                            VerticalAlignment="Center">
+                                                    <Border Width="8"
+                                                            Height="8"
+                                                            CornerRadius="2"
+                                                            Background="{Binding Converter={x:Static conv:StatusToBrushConverter.Instance}}"
+                                                            VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding}"
+                                                               Foreground="{Binding Converter={x:Static conv:StatusToBrushConverter.Instance}}"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="10.5" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellEditingTemplate>
+                        </dg:DataGridTemplateColumn>
+
+                        <dg:DataGridTemplateColumn Header="START" Width="96">
+                            <dg:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <Border Padding="6,0" Background="{Binding RowBackground}">
+                                        <TextBlock Text="{Binding StartDateDisplay}"
+                                                   Foreground="{Binding RowForeground}"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="10" />
+                                    </Border>
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellTemplate>
+                            <dg:DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <Grid ColumnDefinitions="*,18">
+                                        <CalendarDatePicker x:Name="StartDatePicker"
+                                                            Grid.Column="0"
+                                                            SelectedDate="{Binding EditableStartDate, Mode=TwoWay}"
+                                                            Classes="inline-date-editor"
+                                                            FontSize="10"
+                                                            MinHeight="24"
+                                                            Height="24"
+                                                            VerticalAlignment="Center"
+                                                            IsEnabled="{Binding IsEditable}"
+                                                            LostFocus="InlineStart_LostFocus" />
+                                        <Button Grid.Column="1"
+                                                Content="v"
+                                                FontSize="10"
+                                                MinHeight="24"
+                                                Height="24"
+                                                Padding="0"
+                                                HorizontalContentAlignment="Center"
+                                                VerticalContentAlignment="Center"
+                                                IsEnabled="{Binding IsEditable}"
+                                                Click="InlineDateOpen_Click" />
+                                    </Grid>
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellEditingTemplate>
+                        </dg:DataGridTemplateColumn>
+
+                        <dg:DataGridTemplateColumn Header="END" Width="96">
+                            <dg:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <Border Padding="6,0" Background="{Binding RowBackground}">
+                                        <TextBlock Text="{Binding EndDateDisplay}"
+                                                   Foreground="{Binding RowForeground}"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="10" />
+                                    </Border>
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellTemplate>
+                            <dg:DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <Grid ColumnDefinitions="*,18">
+                                        <CalendarDatePicker x:Name="EndDatePicker"
+                                                            Grid.Column="0"
+                                                            SelectedDate="{Binding EditableEndDate, Mode=TwoWay}"
+                                                            Classes="inline-date-editor"
+                                                            FontSize="10"
+                                                            MinHeight="24"
+                                                            Height="24"
+                                                            VerticalAlignment="Center"
+                                                            IsEnabled="{Binding IsEditable}"
+                                                            LostFocus="InlineEnd_LostFocus" />
+                                        <Button Grid.Column="1"
+                                                Content="v"
+                                                FontSize="10"
+                                                MinHeight="24"
+                                                Height="24"
+                                                Padding="0"
+                                                HorizontalContentAlignment="Center"
+                                                VerticalContentAlignment="Center"
+                                                IsEnabled="{Binding IsEditable}"
+                                                Click="InlineDateOpen_Click" />
+                                    </Grid>
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellEditingTemplate>
+                        </dg:DataGridTemplateColumn>
+
+                        <dg:DataGridTemplateColumn Header="%" Width="58">
+                            <dg:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <Border Padding="6,0" Background="{Binding RowBackground}">
+                                        <TextBlock Text="{Binding ProgressDisplay}"
+                                                   Foreground="{Binding RowForeground}"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="10" />
+                                    </Border>
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellTemplate>
+                            <dg:DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="vm:GanttRowViewModel">
+                                    <TextBox Text="{Binding EditableProgressPercent, Mode=TwoWay,
+                                                   Converter={x:Static conv:NullableDoubleToStringConverter.Instance}}"
+                                             FontSize="10"
+                                             MinHeight="24"
+                                             Height="24"
+                                             Padding="6,0"
+                                             VerticalContentAlignment="Center"
+                                             IsEnabled="{Binding IsEditable}"
+                                             HorizontalContentAlignment="Right"
+                                             KeyUp="InlineProgress_KeyUp"
+                                             LostFocus="InlineProgress_LostFocus" />
+                                </DataTemplate>
+                            </dg:DataGridTemplateColumn.CellEditingTemplate>
+                        </dg:DataGridTemplateColumn>
+                    </dg:DataGrid.Columns>
+                </dg:DataGrid>
+
+                <GridSplitter Grid.Column="1"
+                              Width="6"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              Background="#2D1B5E"
+                              ResizeDirection="Columns"
+                              ResizeBehavior="PreviousAndNext"
+                              ShowsPreview="True" />
+
+                <ScrollViewer Grid.Column="2"
+                              x:Name="TimelineHorizontalScroll"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled"
+                              Background="#0B0820">
+                    <views:GanttCanvas x:Name="TimelineCanvas"
+                                       Rows="{Binding Rows}"
+                                       ShowTable="False"
+                                       HorizontalAlignment="Stretch"
+                                       VerticalAlignment="Top" />
+                </ScrollViewer>
+            </Grid>
+        </ScrollViewer>
+
+    </Grid>
 
 </UserControl>

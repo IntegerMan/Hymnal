@@ -61,18 +61,33 @@ public class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _bannerKind, value);
     }
 
-    // ── Gantt view toggle ─────────────────────────────────────────────────────
+    // ── Centre-panel mode ─────────────────────────────────────────────────────
 
-    private bool _isGanttVisible;
-    public bool IsGanttVisible
+    private ShellMode _activeMode = ShellMode.Write;
+    public ShellMode ActiveMode
     {
-        get => _isGanttVisible;
-        set => this.RaiseAndSetIfChanged(ref _isGanttVisible, value);
+        get => _activeMode;
+        private set
+        {
+            if (_activeMode == value)
+                return;
+
+            _activeMode = value;
+            this.RaisePropertyChanged(nameof(ActiveMode));
+            this.RaisePropertyChanged(nameof(IsEditorVisible));
+            this.RaisePropertyChanged(nameof(IsGanttVisible));
+        }
     }
 
-    /// <summary>True when the editor is the active centre-panel view.</summary>
-    public bool IsEditorVisible => !_isGanttVisible;
+    /// <summary>True when the writing/editor surface is the active centre-panel view.</summary>
+    public bool IsEditorVisible => ActiveMode == ShellMode.Write;
 
+    /// <summary>True when the Gantt/manage surface is the active centre-panel view.</summary>
+    public bool IsGanttVisible => ActiveMode == ShellMode.Manage;
+
+    public ReactiveCommand<Unit, Unit> SelectResearchCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectWriteCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectManageCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleGanttCommand { get; }
 
     // ── Sidebar visibility ────────────────────────────────────────────────────
@@ -141,10 +156,12 @@ public class MainWindowViewModel : ViewModelBase
             _ = PersistSidebarExpandedAsync(IsSidebarExpanded);
         });
 
+        SelectResearchCommand = ReactiveCommand.Create(() => { }, Observable.Return(false));
+        SelectWriteCommand = ReactiveCommand.Create(() => { ActiveMode = ShellMode.Write; });
+        SelectManageCommand = ReactiveCommand.Create(() => { ActiveMode = ShellMode.Manage; });
         ToggleGanttCommand = ReactiveCommand.Create(() =>
         {
-            IsGanttVisible = !IsGanttVisible;
-            this.RaisePropertyChanged(nameof(IsEditorVisible));
+            ActiveMode = IsGanttVisible ? ShellMode.Write : ShellMode.Manage;
         });
 
         // ── Right-rail pane aggregates ────────────────────────────────────────

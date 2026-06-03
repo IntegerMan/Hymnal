@@ -1,46 +1,127 @@
 using System;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Hymnal.Core.Models;
 using Hymnal.ViewModels;
 
 namespace Hymnal.Views;
 
-/// <summary>
-/// Code-behind for GanttView.
-/// Subscribes to <see cref="GanttViewModel.RowEditRequested"/> when the
-/// DataContext is set, giving a hook point for future view-side behaviour such
-/// as scrolling the canvas to the targeted row.
-/// The inline date-edit overlay itself is driven entirely via XAML bindings to
-/// <see cref="GanttViewModel.IsEditingDates"/>, <see cref="GanttViewModel.EditStartDate"/>,
-/// <see cref="GanttViewModel.EditEndDate"/>, <see cref="GanttViewModel.CommitEditCommand"/>,
-/// and <see cref="GanttViewModel.CancelEditCommand"/>.
-/// </summary>
 public partial class GanttView : UserControl
 {
-    private IDisposable? _rowEditSubscription;
-
     public GanttView()
     {
         InitializeComponent();
-        DataContextChanged += OnDataContextChanged;
-    }
-
-    private void OnDataContextChanged(object? sender, EventArgs e)
-    {
-        _rowEditSubscription?.Dispose();
-        _rowEditSubscription = null;
-
-        if (DataContext is GanttViewModel vm)
-        {
-            // Hook point: subscribe to RowEditRequested for view-level work
-            // (e.g. scroll canvas to the row being edited).
-            _rowEditSubscription = vm.RowEditRequested
-                .Subscribe(_ => { /* reserved for scroll-to-row behaviour */ });
-        }
     }
 
     private void InitializeComponent()
     {
         AvaloniaXamlLoader.Load(this);
+    }
+
+    private async void InlineStatus_DropDownClosed(object? sender, EventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not GanttRowViewModel row)
+            return;
+
+        if (!row.IsEditable)
+            return;
+
+        await vm.SaveInlineCellAsync(row, GanttEditableColumn.Status);
+    }
+
+    private async void InlineStart_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not GanttRowViewModel row)
+            return;
+
+        if (!row.IsEditable)
+            return;
+
+        await vm.SaveInlineCellAsync(row, GanttEditableColumn.StartDate);
+    }
+
+    private async void InlineEnd_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not GanttRowViewModel row)
+            return;
+
+        if (!row.IsEditable)
+            return;
+
+        await vm.SaveInlineCellAsync(row, GanttEditableColumn.EndDate);
+    }
+
+    private async void InlineProgress_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not GanttRowViewModel row)
+            return;
+
+        if (!row.IsEditable)
+            return;
+
+        await vm.SaveInlineCellAsync(row, GanttEditableColumn.Progress);
+    }
+
+    private async void InlineProgress_KeyUp(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not GanttRowViewModel row)
+            return;
+
+        if (!row.IsEditable)
+            return;
+
+        if (e.Key == Key.Enter)
+        {
+            await vm.SaveInlineCellAsync(row, GanttEditableColumn.Progress);
+            e.Handled = true;
+        }
+    }
+
+    private static void InlineDateOpen_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control control)
+            return;
+
+        if (control.Parent is not Control parent)
+            return;
+
+        var picker = FindDatePickerSibling(parent);
+        if (picker is null || !picker.IsEnabled)
+            return;
+
+        picker.IsDropDownOpen = true;
+        picker.Focus();
+        e.Handled = true;
+    }
+
+    private static CalendarDatePicker? FindDatePickerSibling(Control parent)
+    {
+        if (parent is not Panel panel)
+            return null;
+
+        foreach (var child in panel.Children)
+        {
+            if (child is CalendarDatePicker picker)
+                return picker;
+        }
+
+        return null;
     }
 }

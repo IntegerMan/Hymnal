@@ -68,50 +68,90 @@
                 </StackPanel>
 
                 <!-- Phase Start Date -->
-                <StackPanel Spacing="4">
-                    <TextBlock Text="PHASE START"
+                <StackPanel Spacing="6">
+                    <TextBlock Text="PHASE SCHEDULE"
                                FontSize="10"
                                FontWeight="SemiBold"
                                LetterSpacing="1.5"
                                Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                    <TextBox Text="{Binding PhaseStartDate, Mode=TwoWay}"
-                             PlaceholderText="YYYY-MM-DD"
-                             Background="{DynamicResource SurfaceBaseBrush}"
-                             Foreground="{DynamicResource OnSurfaceBrush}"
-                             BorderBrush="{DynamicResource BorderSubtleBrush}"
-                             BorderThickness="1"
-                             FontSize="12"
-                             Padding="8,6" />
-                </StackPanel>
 
-                <!-- Phase End Date -->
-                <StackPanel Spacing="4">
-                    <TextBlock Text="PHASE END"
-                               FontSize="10"
-                               FontWeight="SemiBold"
-                               LetterSpacing="1.5"
-                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                    <TextBox Text="{Binding PhaseEndDate, Mode=TwoWay}"
-                             PlaceholderText="YYYY-MM-DD"
-                             Background="{DynamicResource SurfaceBaseBrush}"
-                             Foreground="{DynamicResource OnSurfaceBrush}"
-                             BorderBrush="{DynamicResource BorderSubtleBrush}"
-                             BorderThickness="1"
-                             FontSize="12"
-                             Padding="8,6" />
-                </StackPanel>
+                    <!-- Column header row -->
+                    <Grid ColumnDefinitions="80,*,*,44">
+                        <TextBlock Grid.Column="0" Text="Phase"
+                                   FontSize="9" FontWeight="SemiBold" LetterSpacing="1"
+                                   Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                        <TextBlock Grid.Column="1" Text="Start"
+                                   FontSize="9" FontWeight="SemiBold" LetterSpacing="1"
+                                   Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                        <TextBlock Grid.Column="2" Text="End"
+                                   FontSize="9" FontWeight="SemiBold" LetterSpacing="1"
+                                   Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                        <TextBlock Grid.Column="3" Text="%"
+                                   FontSize="9" FontWeight="SemiBold" LetterSpacing="1"
+                                   Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                                   HorizontalAlignment="Center" />
+                    </Grid>
 
-                <!-- Apply Dates -->
-                <Button Content="Apply Dates"
-                        Command="{Binding SaveDatesCommand}"
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Center"
-                        Background="{DynamicResource SurfaceHighBrush}"
-                        Foreground="{DynamicResource SynthwavePurpleBrush}"
-                        BorderThickness="0"
-                        CornerRadius="4"
-                        Padding="8,6"
-                        FontSize="12" />
+                    <!-- One row per phase; bound to PhaseScheduleRows -->
+                    <ItemsControl ItemsSource="{Binding PhaseScheduleRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PhaseScheduleRowViewModel">
+                                <Grid ColumnDefinitions="80,*,*,44"
+                                      Margin="0,2,0,0">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding PhaseName}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding StartDate, Mode=TwoWay}"
+                                             PlaceholderText="YYYY-MM-DD"
+                                             Background="{DynamicResource SurfaceBaseBrush}"
+                                             Foreground="{DynamicResource OnSurfaceBrush}"
+                                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                             BorderThickness="1"
+                                             FontSize="11"
+                                             Padding="4,4"
+                                             Margin="0,0,4,0" />
+                                    <TextBox Grid.Column="2"
+                                             Text="{Binding EndDate, Mode=TwoWay}"
+                                             PlaceholderText="YYYY-MM-DD"
+                                             Background="{DynamicResource SurfaceBaseBrush}"
+                                             Foreground="{DynamicResource OnSurfaceBrush}"
+                                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                             BorderThickness="1"
+                                             FontSize="11"
+                                             Padding="4,4"
+                                             Margin="0,0,4,0" />
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding Progress, Mode=TwoWay,
+                                                            Converter={x:Static conv:NullableDoubleToStringConverter.Instance}}"
+                                             PlaceholderText="—"
+                                             Background="{DynamicResource SurfaceBaseBrush}"
+                                             Foreground="{DynamicResource OnSurfaceBrush}"
+                                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                             BorderThickness="1"
+                                             FontSize="11"
+                                             Padding="4,4"
+                                             TextAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Save Schedule button -->
+                    <Button Content="Save Schedule"
+                            Command="{Binding SaveScheduleCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Background="{DynamicResource SurfaceHighBrush}"
+                            Foreground="{DynamicResource SynthwavePurpleBrush}"
+                            BorderThickness="0"
+                            CornerRadius="4"
+                            Padding="8,6"
+                            FontSize="12"
+                            Margin="0,4,0,0" />
+                </StackPanel>
 
                 <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
 

@@ -6,53 +6,33 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
-using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading.Tasks;
+using Avalonia;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 using ReactiveUI;
-using ReactiveUI.Avalonia;
 
 namespace Hymnal.ViewModels;
 
 /// <summary>
-/// Read-only projection of the current workspace's chapter list into Gantt rows.
-/// Observes <see cref="WorkspaceViewModel.Nodes"/> and rebuilds the row list whenever
-/// chapters are added, removed, or their phase metadata changes.
-///
-/// PhaseData is already loaded onto each <see cref="ChapterViewModel"/> by the time
-/// Nodes is populated; <see cref="GanttProjection"/> is used for the actual mapping.
+/// Projection of the current workspace chapter list into Gantt rows with cell-driven editing.
 /// </summary>
 public sealed class GanttViewModel : ViewModelBase
 {
     private readonly WorkspaceViewModel _workspace;
-    // PhaseDataService retained for future refresh/filter operations.
     private readonly PhaseDataService _phaseDataService;
     private readonly INotificationService _notificationService;
 
     private readonly ObservableCollection<GanttRowViewModel> _rows = new();
     private readonly SerialDisposable _phaseSubscriptions = new();
-
-    // Subject that emits the chapter row the user wants to edit.
     private readonly Subject<GanttRowViewModel> _rowEditRequested = new();
 
-    /// <summary>Projected Gantt rows in manuscript order (Parts + Chapters).</summary>
     public ReadOnlyObservableCollection<GanttRowViewModel> Rows { get; }
-
-    /// <summary>
-    /// Emits a <see cref="GanttRowViewModel"/> whenever the user triggers
-    /// <see cref="GanttRowViewModel.EditDatesCommand"/> on a chapter row.
-    /// Only chapter rows (not Part rows) are forwarded.
-    /// Subscribers should open a date-picker popup bound to the emitted row.
-    /// </summary>
     public IObservable<GanttRowViewModel> RowEditRequested => _rowEditRequested;
 
-    // ── Inline date-editing state ─────────────────────────────────────────────
-
     private GanttRowViewModel? _editingRow;
-    /// <summary>The chapter row currently being edited, or null when the overlay is closed.</summary>
     public GanttRowViewModel? EditingRow
     {
         get => _editingRow;
@@ -60,18 +40,49 @@ public sealed class GanttViewModel : ViewModelBase
     }
 
     private bool _isEditingDates;
-    /// <summary>True while the inline date-edit overlay is open.</summary>
     public bool IsEditingDates
     {
         get => _isEditingDates;
         private set => this.RaiseAndSetIfChanged(ref _isEditingDates, value);
     }
 
+    private GanttEditableColumn _editingColumn = GanttEditableColumn.None;
+    public GanttEditableColumn EditingColumn
+    {
+        get => _editingColumn;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _editingColumn, value);
+            this.RaisePropertyChanged(nameof(IsStatusEditorOpen));
+            this.RaisePropertyChanged(nameof(IsStartEditorOpen));
+            this.RaisePropertyChanged(nameof(IsEndEditorOpen));
+            this.RaisePropertyChanged(nameof(IsProgressEditorOpen));
+        }
+    }
+
+    public bool IsStatusEditorOpen => EditingColumn == GanttEditableColumn.Status;
+    public bool IsStartEditorOpen => EditingColumn == GanttEditableColumn.StartDate;
+    public bool IsEndEditorOpen => EditingColumn == GanttEditableColumn.EndDate;
+    public bool IsProgressEditorOpen => EditingColumn == GanttEditableColumn.Progress;
+
+    private ChapterStatus _editingStatus = ChapterStatus.Outlining;
+    public ChapterStatus EditingStatus
+    {
+        get => _editingStatus;
+        private set => this.RaiseAndSetIfChanged(ref _editingStatus, value);
+    }
+
+    public static IReadOnlyList<ChapterStatus> EditableStatuses { get; } =
+        Enum.GetValues<ChapterStatus>();
+
+    private string _editingPhaseName = string.Empty;
+    public string EditingPhaseName
+    {
+        get => _editingPhaseName;
+        private set => this.RaiseAndSetIfChanged(ref _editingPhaseName, value);
+    }
+
     private DateTime? _editStartDate;
-    /// <summary>
-    /// Start date staged for editing. Settable so CalendarDatePicker can write back.
-    /// Null means the user has cleared the field.
-    /// </summary>
     public DateTime? EditStartDate
     {
         get => _editStartDate;
@@ -79,135 +90,318 @@ public sealed class GanttViewModel : ViewModelBase
     }
 
     private DateTime? _editEndDate;
-    /// <summary>
-    /// End date staged for editing. Settable so CalendarDatePicker can write back.
-    /// Null means the user has cleared the field.
-    /// </summary>
     public DateTime? EditEndDate
     {
         get => _editEndDate;
         set => this.RaiseAndSetIfChanged(ref _editEndDate, value);
     }
 
-    // ── Edit commands ─────────────────────────────────────────────────────────
+    private double? _editProgressPercent;
+    public double? EditProgressPercent
+    {
+        get => _editProgressPercent;
+        set => this.RaiseAndSetIfChanged(ref _editProgressPercent, value);
+    }
 
-    /// <summary>
-    /// Persists <see cref="EditStartDate"/> and <see cref="EditEndDate"/> to the
-    /// underlying <see cref="ChapterViewModel"/> and closes the overlay.
-    /// Errors are surfaced via <see cref="INotificationService"/>.
-    /// </summary>
+    private Thickness _editPopupMargin = new(0);
+    public Thickness EditPopupMargin
+    {
+        get => _editPopupMargin;
+        private set => this.RaiseAndSetIfChanged(ref _editPopupMargin, value);
+    }
+
+    private double _editCellWidth;
+    public double EditCellWidth
+    {
+        get => _editCellWidth;
+        private set => this.RaiseAndSetIfChanged(ref _editCellWidth, value);
+    }
+
+    private double _editCellHeight;
+    public double EditCellHeight
+    {
+        get => _editCellHeight;
+        private set => this.RaiseAndSetIfChanged(ref _editCellHeight, value);
+    }
+
     public ReactiveCommand<Unit, Unit> CommitEditCommand { get; }
-
-    /// <summary>Closes the date-edit overlay without saving.</summary>
     public ReactiveCommand<Unit, Unit> CancelEditCommand { get; }
-
-    // ── Constructor ───────────────────────────────────────────────────────────
+    public ReactiveCommand<ChapterStatus, Unit> SetEditingStatusCommand { get; }
+    public ReactiveCommand<Unit, Unit> ClearStartDateCommand { get; }
+    public ReactiveCommand<Unit, Unit> ClearEndDateCommand { get; }
 
     public GanttViewModel(
         WorkspaceViewModel workspace,
         PhaseDataService phaseDataService,
         INotificationService notificationService)
     {
-        _workspace           = workspace;
-        _phaseDataService    = phaseDataService;
+        _workspace = workspace;
+        _phaseDataService = phaseDataService;
         _notificationService = notificationService;
 
         Rows = new ReadOnlyObservableCollection<GanttRowViewModel>(_rows);
 
-        // ReadOnlyObservableCollection implements INotifyCollectionChanged explicitly —
-        // cast to subscribe to collection changes.
         var nodesAsNotify = (INotifyCollectionChanged)workspace.Nodes;
-
         NotifyCollectionChangedEventHandler handler = (_, _) => RebuildRows();
         nodesAsNotify.CollectionChanged += handler;
+
         Disposables.Add(Disposable.Create(() => nodesAsNotify.CollectionChanged -= handler));
         Disposables.Add(_phaseSubscriptions);
         Disposables.Add(Disposable.Create(() => _rowEditRequested.OnCompleted()));
-
-        // ── Editing commands ───────────────────────────────────────────────────
-
-        // Subscribe to RowEditRequested to populate the inline edit overlay.
-        // Called on the same thread as EditDatesCommand.Execute() (UI thread in app,
-        // test thread in unit tests) — no dispatch needed.
-        Disposables.Add(
-            _rowEditRequested.Subscribe(OpenEditForRow));
+        Disposables.Add(_rowEditRequested.Subscribe(OpenEditForRow));
 
         CommitEditCommand = ReactiveCommand.CreateFromTask(CommitEditAsync);
-        Disposables.Add(
-            CommitEditCommand.ThrownExceptions
-                .Subscribe(ex => _notificationService.ShowError(ex.Message)));
-
         CancelEditCommand = ReactiveCommand.Create(CancelEdit);
-        Disposables.Add(
-            CancelEditCommand.ThrownExceptions
-                .Subscribe(ex => _notificationService.ShowError(ex.Message)));
+        SetEditingStatusCommand = ReactiveCommand.Create<ChapterStatus>(SetEditingStatus);
+        ClearStartDateCommand = ReactiveCommand.Create(() => { EditStartDate = null; });
+        ClearEndDateCommand = ReactiveCommand.Create(() => { EditEndDate = null; });
 
-        // Build initial rows immediately.
+        Disposables.Add(CommitEditCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+        Disposables.Add(CancelEditCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+        Disposables.Add(SetEditingStatusCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+        Disposables.Add(ClearStartDateCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+        Disposables.Add(ClearEndDateCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
         RebuildRows();
     }
 
-    // ── Editing helpers ───────────────────────────────────────────────────────
-
     private void OpenEditForRow(GanttRowViewModel row)
     {
-        EditingRow     = row;
-        EditStartDate  = row.StartDate.HasValue
-            ? row.StartDate.Value.ToDateTime(TimeOnly.MinValue)
-            : null;
-        EditEndDate    = row.EndDate.HasValue
-            ? row.EndDate.Value.ToDateTime(TimeOnly.MinValue)
-            : null;
+        EditingRow = row;
+        EditingColumn = row.PendingEditColumn == GanttEditableColumn.None
+            ? GanttEditableColumn.Status
+            : row.PendingEditColumn;
+        EditingStatus = row.Status;
+        LoadEditorValuesForStatus(row, EditingStatus);
         IsEditingDates = true;
     }
 
-    private void CancelEdit()
+    public void BeginCellEdit(GanttRowViewModel row, GanttEditableColumn column, Rect cellBounds)
     {
-        IsEditingDates = false;
-        EditingRow     = null;
-        EditStartDate  = null;
-        EditEndDate    = null;
+        row.PendingEditColumn = column;
+        EditPopupMargin = new Thickness(cellBounds.X, cellBounds.Y, 0, 0);
+        EditCellWidth = cellBounds.Width;
+        EditCellHeight = cellBounds.Height;
+        OpenEditForRow(row);
     }
 
-    private async Task CommitEditAsync()
+    public async Task SaveInlineCellAsync(GanttRowViewModel row, GanttEditableColumn column)
     {
-        var row = EditingRow;
-        if (row == null) return;
+        if (!row.IsEditable)
+            return;
 
-        // Find the live ChapterViewModel by forward-slash-normalized relative path.
         var chapterVm = _workspace.Nodes
             .FirstOrDefault(n => n.Node.RelativePath == row.RelativePath);
 
         if (chapterVm == null)
         {
-            _notificationService.ShowError(
-                $"Could not find chapter '{row.Title}' to save dates.");
+            _notificationService.ShowError($"Could not find chapter '{row.Title}' to save edits.");
             return;
         }
 
-        var startStr = EditStartDate.HasValue
-            ? DateOnly.FromDateTime(EditStartDate.Value).ToString("yyyy-MM-dd")
-            : null;
-        var endStr = EditEndDate.HasValue
-            ? DateOnly.FromDateTime(EditEndDate.Value).ToString("yyyy-MM-dd")
-            : null;
+        var start = row.EditableStartDate.HasValue
+            ? DateOnly.FromDateTime(row.EditableStartDate.Value)
+            : (DateOnly?)null;
+        var end = row.EditableEndDate.HasValue
+            ? DateOnly.FromDateTime(row.EditableEndDate.Value)
+            : (DateOnly?)null;
 
-        await chapterVm.UpdateDatesAsync(startStr, endStr).ConfigureAwait(false);
+        if (start.HasValue && end.HasValue && end.Value < start.Value)
+        {
+            _notificationService.ShowError("End date cannot be before start date.");
+            return;
+        }
 
-        // Clear editing state on the UI thread (mirrors ApplyPhaseData pattern).
+        var status = row.EditableStatus;
+        var phaseName = status.ToString();
+        var startStr = start?.ToString("yyyy-MM-dd");
+        var endStr = end?.ToString("yyyy-MM-dd");
+        var progress = Math.Clamp(row.EditableProgressPercent ?? 0.0, 0.0, 100.0);
+
+        PhaseData? updated = null;
+        await _phaseDataService.UpsertAsync(_workspace.WorkspaceRoot, chapterVm.Uuid, current =>
+        {
+            var basePhaseData = current ?? chapterVm.PhaseData ?? PhaseDataService.DefaultPhaseData;
+            var schedule = new Dictionary<string, PhaseScheduleEntry>(
+                basePhaseData.Schedule ?? new Dictionary<string, PhaseScheduleEntry>(),
+                StringComparer.Ordinal);
+
+            string? phaseStart = basePhaseData.PhaseStartDate;
+            string? phaseEnd = basePhaseData.PhaseEndDate;
+
+            if (IsPhaseStatus(status))
+            {
+                schedule.TryGetValue(phaseName, out var existing);
+
+                var entry = new PhaseScheduleEntry
+                {
+                    StartDate = column == GanttEditableColumn.StartDate
+                        ? startStr
+                        : existing?.StartDate,
+                    EndDate = column == GanttEditableColumn.EndDate
+                        ? endStr
+                        : existing?.EndDate,
+                    Progress = column == GanttEditableColumn.Progress
+                        ? progress
+                        : existing?.Progress ?? 0.0
+                };
+
+                schedule[phaseName] = entry;
+
+                phaseStart = entry.StartDate;
+                phaseEnd = entry.EndDate;
+            }
+            else
+            {
+                if (column == GanttEditableColumn.StartDate)
+                    phaseStart = startStr;
+                if (column == GanttEditableColumn.EndDate)
+                    phaseEnd = endStr;
+            }
+
+            updated = new PhaseData
+            {
+                Status = status,
+                PhaseStartDate = phaseStart,
+                PhaseEndDate = phaseEnd,
+                Schedule = schedule
+            };
+
+            return updated;
+        }).ConfigureAwait(false);
+
+        if (updated != null)
+            chapterVm.ApplyPhaseData(updated);
+    }
+
+    private void SetEditingStatus(ChapterStatus status)
+    {
+        EditingStatus = status;
+        if (EditingRow != null)
+            LoadEditorValuesForStatus(EditingRow, status);
+    }
+
+    private void LoadEditorValuesForStatus(GanttRowViewModel row, ChapterStatus status)
+    {
+        var phaseName = status.ToString();
+        var seg = row.PhaseSegments.FirstOrDefault(s =>
+            string.Equals(s.PhaseName, phaseName, StringComparison.Ordinal));
+
+        EditingPhaseName = phaseName;
+        EditStartDate = seg?.StartDate.HasValue == true
+            ? seg.StartDate!.Value.ToDateTime(TimeOnly.MinValue)
+            : null;
+        EditEndDate = seg?.EndDate.HasValue == true
+            ? seg.EndDate!.Value.ToDateTime(TimeOnly.MinValue)
+            : null;
+        EditProgressPercent = seg is null ? 0.0 : Math.Round(seg.Progress * 100.0, 0);
+    }
+
+    private void CancelEdit()
+    {
+        IsEditingDates = false;
+        EditingRow = null;
+        EditingColumn = GanttEditableColumn.None;
+        EditingStatus = ChapterStatus.Outlining;
+        EditingPhaseName = string.Empty;
+        EditStartDate = null;
+        EditEndDate = null;
+        EditProgressPercent = null;
+        EditPopupMargin = new Thickness(0);
+        EditCellWidth = 0;
+        EditCellHeight = 0;
+    }
+
+    private async Task CommitEditAsync()
+    {
+        var row = EditingRow;
+        if (row == null)
+            return;
+
+        var chapterVm = _workspace.Nodes
+            .FirstOrDefault(n => n.Node.RelativePath == row.RelativePath);
+
+        if (chapterVm == null)
+        {
+            _notificationService.ShowError($"Could not find chapter '{row.Title}' to save edits.");
+            return;
+        }
+
+        var start = EditStartDate.HasValue
+            ? DateOnly.FromDateTime(EditStartDate.Value)
+            : (DateOnly?)null;
+        var end = EditEndDate.HasValue
+            ? DateOnly.FromDateTime(EditEndDate.Value)
+            : (DateOnly?)null;
+
+        if (start.HasValue && end.HasValue && end.Value < start.Value)
+        {
+            _notificationService.ShowError("End date cannot be before start date.");
+            return;
+        }
+
+        var startStr = start?.ToString("yyyy-MM-dd");
+        var endStr = end?.ToString("yyyy-MM-dd");
+        var progress = Math.Clamp(EditProgressPercent ?? 0.0, 0.0, 100.0);
+
+        var editingStatus = EditingStatus;
+        var phaseName = editingStatus.ToString();
+
+        PhaseData? updated = null;
+        await _phaseDataService.UpsertAsync(_workspace.WorkspaceRoot, chapterVm.Uuid, current =>
+        {
+            var basePhaseData = current ?? chapterVm.PhaseData ?? PhaseDataService.DefaultPhaseData;
+            var schedule = new Dictionary<string, PhaseScheduleEntry>(
+                basePhaseData.Schedule ?? new Dictionary<string, PhaseScheduleEntry>(),
+                StringComparer.Ordinal);
+
+            string? phaseStart = basePhaseData.PhaseStartDate;
+            string? phaseEnd = basePhaseData.PhaseEndDate;
+
+            if (IsPhaseStatus(editingStatus))
+            {
+                schedule[phaseName] = new PhaseScheduleEntry
+                {
+                    StartDate = startStr,
+                    EndDate = endStr,
+                    Progress = progress
+                };
+                phaseStart = startStr;
+                phaseEnd = endStr;
+            }
+            else
+            {
+                phaseStart = startStr;
+                phaseEnd = endStr;
+            }
+
+            updated = new PhaseData
+            {
+                Status = editingStatus,
+                PhaseStartDate = phaseStart,
+                PhaseEndDate = phaseEnd,
+                Schedule = schedule
+            };
+
+            return updated;
+        }).ConfigureAwait(false);
+
+        if (updated != null)
+            chapterVm.ApplyPhaseData(updated);
+
         if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
             CancelEdit();
         else
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(CancelEdit);
     }
 
-    // ── Projection ────────────────────────────────────────────────────────────
+    private static bool IsPhaseStatus(ChapterStatus status) =>
+        status is ChapterStatus.Outlining
+            or ChapterStatus.Drafting
+            or ChapterStatus.Editing
+            or ChapterStatus.Polishing
+            or ChapterStatus.Reviewing;
 
-    /// <summary>
-    /// Rebuilds the <see cref="Rows"/> collection from the current workspace nodes.
-    /// Part rows are rendered as rollup summaries whose dates and completion percentage
-    /// are derived from the child Chapter rows that follow them.
-    /// Must be called on the UI thread.
-    /// </summary>
     private void RebuildRows()
     {
         _rows.Clear();
@@ -215,9 +409,16 @@ public sealed class GanttViewModel : ViewModelBase
         var phaseSubscriptions = new CompositeDisposable();
         var nodes = _workspace.Nodes.ToList();
 
+        var allChapters = nodes
+            .Where(n => !n.Node.IsMissing && n.Node.Kind == NodeKind.Chapter)
+            .ToList();
+        var bookRowData = BuildBookRollup(allChapters);
+        _rows.Add(new GanttRowViewModel(bookRowData));
+
         for (int i = 0; i < nodes.Count; i++)
         {
             var vm = nodes[i];
+            if (vm.Node.IsMissing) continue;
 
             PropertyChangedEventHandler handler = (_, e) =>
             {
@@ -230,7 +431,6 @@ public sealed class GanttViewModel : ViewModelBase
             GanttRowData rowData;
             if (vm.Node.Kind == NodeKind.Part)
             {
-                // Collect child chapters: nodes after this Part until the next Part (or end).
                 var children = new List<ChapterViewModel>();
                 for (int j = i + 1; j < nodes.Count; j++)
                 {
@@ -245,14 +445,11 @@ public sealed class GanttViewModel : ViewModelBase
             }
 
             var rowVm = new GanttRowViewModel(rowData);
-
-            // Wire EditDatesCommand: only chapter rows route to RowEditRequested.
             if (rowVm.IsChapter)
             {
                 var captured = rowVm;
                 phaseSubscriptions.Add(
-                    rowVm.EditDatesCommand
-                         .Subscribe(_ => _rowEditRequested.OnNext(captured)));
+                    rowVm.EditDatesCommand.Subscribe(_ => _rowEditRequested.OnNext(captured)));
             }
 
             _rows.Add(rowVm);
@@ -261,17 +458,11 @@ public sealed class GanttViewModel : ViewModelBase
         _phaseSubscriptions.Disposable = phaseSubscriptions;
     }
 
-    /// <summary>
-    /// Aggregates child chapter data into a rollup <see cref="GanttRowData"/> for a Part node.
-    /// StartDate = min of child StartDates; EndDate = max of child EndDates.
-    /// CompletionPercentage = fraction of children with <see cref="ChapterStatus.Done"/>.
-    /// IsMissingDates is true when no child has both a start and end date.
-    /// </summary>
     private static GanttRowData BuildPartRollup(ChapterNode partNode, IReadOnlyList<ChapterViewModel> children)
     {
         DateOnly? minStart = null;
-        DateOnly? maxEnd   = null;
-        int done  = 0;
+        DateOnly? maxEnd = null;
+        int done = 0;
         int total = children.Count;
 
         foreach (var child in children)
@@ -291,17 +482,59 @@ public sealed class GanttViewModel : ViewModelBase
         }
 
         double completion = total > 0 ? (double)done / total : 0.0;
-        bool isMissing    = minStart is null || maxEnd is null;
+        bool isMissing = minStart is null || maxEnd is null;
 
-        // Status is not meaningful for a Part rollup row; use Outlining as a neutral default.
         return new GanttRowData(
-            RelativePath:        partNode.RelativePath,
-            Title:               partNode.Title,
-            Kind:                partNode.Kind,
-            Status:              ChapterStatus.Outlining,
-            StartDate:           minStart,
-            EndDate:             maxEnd,
-            IsMissingDates:      isMissing,
+            RelativePath: partNode.RelativePath,
+            Title: partNode.Title,
+            Kind: partNode.Kind,
+            Status: ChapterStatus.Outlining,
+            StartDate: minStart,
+            EndDate: maxEnd,
+            IsMissingDates: isMissing,
             CompletionPercentage: completion);
+    }
+
+    private static GanttRowData BuildBookRollup(IReadOnlyList<ChapterViewModel> chapters)
+    {
+        DateOnly? minStart = null;
+        DateOnly? maxEnd = null;
+        int done = 0;
+        int total = chapters.Count;
+
+        foreach (var ch in chapters)
+        {
+            var row = GanttProjection.Project(ch.Node, ch.PhaseData);
+
+            foreach (var seg in row.PhaseSegments ?? Array.Empty<PhaseSegment>())
+            {
+                if (seg.StartDate.HasValue && (minStart is null || seg.StartDate.Value < minStart.Value))
+                    minStart = seg.StartDate;
+                if (seg.EndDate.HasValue && (maxEnd is null || seg.EndDate.Value > maxEnd.Value))
+                    maxEnd = seg.EndDate;
+            }
+
+            if (row.StartDate.HasValue && (minStart is null || row.StartDate.Value < minStart.Value))
+                minStart = row.StartDate;
+            if (row.EndDate.HasValue && (maxEnd is null || row.EndDate.Value > maxEnd.Value))
+                maxEnd = row.EndDate;
+
+            if (row.Status == ChapterStatus.Done)
+                done++;
+        }
+
+        double completion = total > 0 ? (double)done / total : 0.0;
+        bool isMissing = minStart is null || maxEnd is null;
+
+        return new GanttRowData(
+            RelativePath: "__book__",
+            Title: "BOOK",
+            Kind: NodeKind.Part,
+            Status: ChapterStatus.Outlining,
+            StartDate: minStart,
+            EndDate: maxEnd,
+            IsMissingDates: isMissing,
+            CompletionPercentage: completion,
+            IsBook: true);
     }
 }

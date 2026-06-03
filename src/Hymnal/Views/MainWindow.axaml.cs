@@ -16,13 +16,15 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        Closed += (_, _) => _layoutDisposables.Dispose();
+
         // RightPaneGrid row heights must track ChapterInfoViewModel.IsVisible and
         // NotesViewModel.IsVisible so that a hidden pane collapses to 0 and the
         // visible pane fills all available space.  RowDefinition.Height binding in
         // AXAML does not reliably inherit DataContext; we drive it from code-behind.
         //
-        // ShellGrid column 0 must also follow the sidebar toggle so the left rail
-        // can collapse to 48px and expand back to its stored session width.
+        // ShellGrid column widths must also follow sidebar/pane visibility and the
+        // active shell mode so Manage can hide both sidebars entirely.
         //
         // InitializeComponent() populates the named fields before DataContextChanged
         // fires, so the grid references are always valid.
@@ -32,6 +34,7 @@ public partial class MainWindow : Window
 
             if (DataContext is MainWindowViewModel vm)
             {
+                SetupModeChrome(vm);
                 SetupSidebarWidth(vm);
                 SetupRightPaneRowHeights(vm);
                 SetupRightPaneColumnWidth(vm);
@@ -47,6 +50,35 @@ public partial class MainWindow : Window
         };
     }
 
+    private void SetupModeChrome(MainWindowViewModel vm)
+    {
+        var grid = ShellGrid;
+        if (grid is null || grid.ColumnDefinitions.Count < 5) return;
+
+        void ApplyMode(ShellMode mode)
+        {
+            if (mode == ShellMode.Manage)
+            {
+                grid.ColumnDefinitions[0].Width = new GridLength(0);
+                grid.ColumnDefinitions[1].Width = new GridLength(0);
+                grid.ColumnDefinitions[3].Width = new GridLength(0);
+                grid.ColumnDefinitions[4].Width = new GridLength(0);
+                return;
+            }
+
+            grid.ColumnDefinitions[0].Width = new GridLength(vm.IsSidebarExpanded ? 220 : 48);
+            grid.ColumnDefinitions[1].Width = new GridLength(4);
+            grid.ColumnDefinitions[3].Width = new GridLength(4);
+            grid.ColumnDefinitions[4].Width = new GridLength(vm.IsAnyRightPaneOpen ? 280 : 48);
+        }
+
+        ApplyMode(vm.ActiveMode);
+
+        _layoutDisposables.Add(
+            vm.WhenAnyValue(x => x.ActiveMode, x => x.IsSidebarExpanded, x => x.IsAnyRightPaneOpen)
+                .Subscribe(_ => ApplyMode(vm.ActiveMode), _ => { /* non-fatal */ }));
+    }
+
     private void SetupSidebarWidth(MainWindowViewModel vm)
     {
         var grid = ShellGrid;   // x:Name="ShellGrid" field from generated partial class
@@ -54,6 +86,9 @@ public partial class MainWindow : Window
 
         void ApplyWidth(bool expanded)
         {
+            if (vm.ActiveMode == ShellMode.Manage)
+                return;
+
             grid.ColumnDefinitions[0].Width = new GridLength(expanded ? 220 : 48);
         }
 
@@ -73,6 +108,9 @@ public partial class MainWindow : Window
 
         void ApplyWidth(bool anyOpen)
         {
+            if (vm.ActiveMode == ShellMode.Manage)
+                return;
+
             // Column 4 is the right pane: 280px when expanded, 48px icon-rail when collapsed.
             grid.ColumnDefinitions[4].Width = new GridLength(anyOpen ? 280 : 48);
         }

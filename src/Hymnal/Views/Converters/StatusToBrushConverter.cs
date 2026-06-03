@@ -99,3 +99,22 @@ public sealed class NullableIntToStringConverter : IValueConverter
         return (int?)null;
     }
 }
+
+/// <summary>
+/// Converts <see cref="double?"/> ↔ <see cref="string"/> for phase progress TextBoxes.
+/// ConvertBack returns null for empty input; clamps to 0–100 range.
+/// </summary>
+public sealed class NullableDoubleToStringConverter : IValueConverter
+{
+    public static readonly NullableDoubleToStringConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is double d ? d.ToString("G", CultureInfo.InvariantCulture) : string.Empty;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is string s && double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+            return (double?)Math.Clamp(parsed, 0.0, 100.0);
+        return (double?)null;
+    }
+}
