@@ -198,21 +198,27 @@ public class MainWindowViewModel : ViewModelBase
                 }));
 
         // ── Reactive window title ────────────────────────────────────────────
-        // Format: "Hymnal", "Hymnal - StoryTitle", "Hymnal - StoryTitle - file.md", or with " *" when dirty.
+        // Format: "Hymnal", "Hymnal - Workspace", "Hymnal - Workspace - file.md", or with " *" when dirty.
         Disposables.Add(
             Observable.CombineLatest(
                 editorViewModel.WhenAnyValue(x => x.IsDirty),
                 editorViewModel.WhenAnyValue(x => x.ActiveNode),
+                editorViewModel.WhenAnyValue(x => x.ActiveFilePath),
                 workspaceViewModel.WhenAnyValue(x => x.WorkspaceName),
-                (dirty, node, workspaceName) =>
+                (dirty, node, activeFilePath, workspaceName) =>
                 {
                     if (string.IsNullOrEmpty(workspaceName))
                         return "Hymnal";
 
-                    if (node == null)
+                    var fileName = node != null
+                        ? Path.GetFileName(node.RelativePath)
+                        : activeFilePath != null
+                            ? Path.GetFileName(activeFilePath)
+                            : null;
+
+                    if (string.IsNullOrEmpty(fileName))
                         return $"Hymnal \u2014 {workspaceName}";
 
-                    var fileName = Path.GetFileName(node.RelativePath);
                     return dirty
                         ? $"Hymnal \u2014 {workspaceName} \u2014 {fileName} *"
                         : $"Hymnal \u2014 {workspaceName} \u2014 {fileName}";

@@ -172,12 +172,14 @@ public class EditorViewModel : ViewModelBase, IDisposable
             .ToProperty(this, x => x.ShowWorkspacePrompt);
 
         _showNoChapterPrompt = this.WhenAnyValue(
-                x => x.HasWorkspace, x => x.ActiveNode, x => x.IsBookSelected, x => x.ShowMissingChapterPrompt,
-                (hasWorkspace, node, isBook, isMissing) => hasWorkspace && node == null && !isBook && !isMissing)
+                x => x.HasWorkspace, x => x.ActiveNode, x => x.ActiveFilePath, x => x.IsBookSelected,
+                x => x.ShowMissingChapterPrompt,
+                (hasWorkspace, node, path, isBook, isMissing) =>
+                    hasWorkspace && node == null && path == null && !isBook && !isMissing)
             .ToProperty(this, x => x.ShowNoChapterPrompt);
 
-        _showEditor = this.WhenAnyValue(x => x.HasActiveChapter, x => x.IsBookSelected,
-                (ch, book) => ch || book)
+        _showEditor = this.WhenAnyValue(x => x.HasActiveChapter, x => x.IsBookSelected, x => x.ActiveFilePath,
+                (ch, book, path) => ch || book || path != null)
             .ToProperty(this, x => x.ShowEditor);
         Disposables.Add(_showEditor);
 
@@ -247,6 +249,28 @@ public class EditorViewModel : ViewModelBase, IDisposable
         Text = content;
         OriginalText = content;
         ActiveNode = node;
+        ActiveFilePath = absolutePath;
+        HasConflict = false;
+        ConflictMessage = null;
+        ShowMissingChapterPrompt = false;
+        IsBookSelected = false;
+
+        StartWatcher(absolutePath);
+    }
+
+    /// <summary>
+    /// Opens an arbitrary workspace file in the single-buffer editor without associating it
+    /// with a Book.txt chapter node. Used by supplemental docs and preserves the same save,
+    /// dirty-state, and watcher lifecycle as chapter files.
+    /// </summary>
+    public async Task OpenArbitraryFileAsync(string absolutePath)
+    {
+        StopWatcher();
+
+        var content = await File.ReadAllTextAsync(absolutePath);
+        Text = content;
+        OriginalText = content;
+        ActiveNode = null;
         ActiveFilePath = absolutePath;
         HasConflict = false;
         ConflictMessage = null;
@@ -397,36 +421,38 @@ public class EditorViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ApplyExternalFileChange(content!));
+    }
+
+    private void ApplyExternalFileChange(string content)
+    {
+        // Guard again after the async read — state may have changed.
+        if (_watcher == null || ActiveFilePath == null) return;
+
+        if (IsBookSelected)
         {
-            // Guard again after the async read — state may have changed.
-            if (_watcher == null || ActiveFilePath == null) return;
+            // Book.txt: always silently reload, never prompt, never notify.
+            Text = content;
+            OriginalText = content;
+            HasConflict = false;
+            ConflictMessage = null;
+            return;
+        }
 
-            if (IsBookSelected)
-            {
-                // Book.txt: always silently reload, never prompt, never notify.
-                Text = content!;
-                OriginalText = content!;
-                HasConflict = false;
-                ConflictMessage = null;
-                return;
-            }
-
-            if (!IsDirty)
-            {
-                Text = content!;
-                OriginalText = content!;
-                _notificationService.ShowInfo(
-                    $"'{Path.GetFileName(ActiveFilePath)}' was changed externally and reloaded.");
-            }
-            else
-            {
-                HasConflict = true;
-                ConflictMessage =
-                    $"'{Path.GetFileName(ActiveFilePath)}' was changed externally. " +
-                    "Choose 'Reload from disk' to accept the external version, or 'Keep my edits' to discard it.";
-            }
-        });
+        if (!IsDirty)
+        {
+            Text = content;
+            OriginalText = content;
+            _notificationService.ShowInfo(
+                $"'{Path.GetFileName(ActiveFilePath)}' was changed externally and reloaded.");
+        }
+        else
+        {
+            HasConflict = true;
+            ConflictMessage =
+                $"'{Path.GetFileName(ActiveFilePath)}' was changed externally. " +
+                "Choose 'Reload from disk' to accept the external version, or 'Keep my edits' to discard it.";
+        }
     }
 
     private void StopWatcher()
