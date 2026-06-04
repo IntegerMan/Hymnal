@@ -39,6 +39,8 @@ public partial class App : Application
         services.AddSingleton<ManuscriptService>();
 
         // S03 services
+        services.AddSingleton<IProcessRunner, GitProcessRunner>();
+        services.AddSingleton<IGitService, ProcessGitService>();
         services.AddSingleton<IMetadataStore, MetadataStore>();
 
         // M002/S01 services — chapter registry and phase data
@@ -121,6 +123,13 @@ public partial class App : Application
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<INotificationService>()));
 
+        services.AddSingleton<GitPanelViewModel>(sp =>
+            new GitPanelViewModel(
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<IGitService>(),
+                sp.GetRequiredService<INotificationService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
@@ -130,6 +139,7 @@ public partial class App : Application
                 sp.GetRequiredService<GanttViewModel>(),
                 sp.GetRequiredService<CorkboardViewModel>(),
                 sp.GetRequiredService<SupplementalDocsViewModel>(),
+                sp.GetRequiredService<GitPanelViewModel>(),
                 sp.GetRequiredService<NotificationService>(),
                 sp.GetRequiredService<IAppSettingsStore>()));
 

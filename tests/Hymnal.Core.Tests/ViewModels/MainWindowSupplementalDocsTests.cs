@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Reactive;
+using System.Threading;
 using System.Threading.Tasks;
 using Hymnal.Core.Common;
 using Hymnal.Core.Interfaces;
@@ -98,6 +99,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
         public MainWindowViewModel CreateMainWindow()
         {
             var docs = new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), Editor, NotificationService);
+            var gitPanel = new GitPanelViewModel(Workspace, Editor, new FakeGitService(), NotificationService);
             return new MainWindowViewModel(
                 Workspace,
                 Editor,
@@ -106,6 +108,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), NotificationService),
                 new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService),
                 docs,
+                gitPanel,
                 NotificationService,
                 SettingsStore);
         }
@@ -168,6 +171,23 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
     private sealed class FakeFolderPickerService : IFolderPickerService
     {
         public Task<string?> PickFolderAsync() => Task.FromResult<string?>(null);
+    }
+
+    private sealed class FakeGitService : IGitService
+    {
+        public Task<Result<GitCommandResult>> CheckGitAvailableAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitCommandResult>.Ok(new GitCommandResult("git", new[] { "--version" }, null, 0, "git version\n", string.Empty)));
+
+        public Task<Result<GitRepositoryStatus>> GetRepositoryStatusAsync(string workspaceRoot, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitRepositoryStatus>.Ok(GitRepositoryStatus.Hidden(
+                GitCommandResult.Failure("git", Array.Empty<string>(), workspaceRoot, string.Empty),
+                isGitAvailable: false)));
+
+        public Task<Result<GitCommandResult>> StageAllAndCommitAsync(string workspaceRoot, string commitMessage, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitCommandResult>.Ok(GitCommandResult.Failure("git", Array.Empty<string>(), workspaceRoot, string.Empty)));
+
+        public Task<Result<GitCommandResult>> StageAllCommitAndPushAsync(string workspaceRoot, string commitMessage, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitCommandResult>.Ok(GitCommandResult.Failure("git", Array.Empty<string>(), workspaceRoot, string.Empty)));
     }
 
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService

@@ -1,0 +1,75 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Hymnal.Views.GitCommitDialog"
+        Title="Commit changes"
+        Width="560" Height="260"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#0B0820"
+        FontFamily="{DynamicResource InterFont}">
+
+    <Grid RowDefinitions="5,*">
+        <Border Grid.Row="0" Height="5">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                    <GradientStop Color="#9D4EDD" Offset="0" />
+                    <GradientStop Color="#E91E8C" Offset="0.5" />
+                    <GradientStop Color="#38BDF8" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <Grid Grid.Row="1"
+              Margin="24"
+              RowDefinitions="Auto,Auto,*"
+              ColumnDefinitions="*">
+            <StackPanel Grid.Row="0" Spacing="6">
+                <TextBlock Text="Commit message"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource OnSurfaceBrush}" />
+                <TextBlock Text="Choose a commit-only or commit-and-push action after reviewing the staged changes."
+                           FontSize="12"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+
+            <TextBox Grid.Row="1"
+                     x:Name="CommitMessageBox"
+                     Margin="0,18,0,0"
+                     Height="100"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     VerticalContentAlignment="Top"
+                     PlaceholderText="Describe the change"
+                     Background="{DynamicResource SurfaceElevatedBrush}"
+                     BorderBrush="{DynamicResource BorderSubtleBrush}"
+                     Foreground="{DynamicResource OnSurfaceBrush}" />
+
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Spacing="10"
+                        Margin="0,18,0,0">
+                <Button Content="Cancel"
+                        Padding="16,6"
+                        Background="{DynamicResource SurfaceHighBrush}"
+                        Foreground="{DynamicResource OnSurfaceBrush}"
+                        Click="CancelButton_Click" />
+                <Button Content="Commit &amp; Push"
+                        Padding="16,6"
+                        Background="{DynamicResource SurfaceHighBrush}"
+                        Foreground="{DynamicResource OnSurfaceBrush}"
+                        Click="CommitAndPushButton_Click" />
+                <Button Content="Commit only"
+                        Padding="16,6"
+                        Background="{DynamicResource SynthwavePurpleBrush}"
+                        Foreground="{DynamicResource OnSurfaceBrush}"
+                        Click="CommitOnlyButton_Click" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+
+</Window>

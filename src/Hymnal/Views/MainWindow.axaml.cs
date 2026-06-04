@@ -1,8 +1,10 @@
 using System;
+using System.Threading.Tasks;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Hymnal.ViewModels;
 using ReactiveUI;
 
@@ -48,6 +50,33 @@ public partial class MainWindow : Window
                     }));
             }
         };
+    }
+
+    public static async Task ExecuteGitCommitActionAsync(GitPanelViewModel gitPanelViewModel, GitCommitDialogAction action, string? commitMessage)
+    {
+        switch (action)
+        {
+            case GitCommitDialogAction.CommitOnly:
+                await gitPanelViewModel.CommitOnlyAsync(commitMessage);
+                break;
+            case GitCommitDialogAction.CommitAndPush:
+                await gitPanelViewModel.CommitAndPushAsync(commitMessage);
+                break;
+        }
+    }
+
+    private async void CommitGitButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || !vm.GitPanelViewModel.IsVisible)
+            return;
+
+        var dialog = new GitCommitDialog(vm.GitPanelViewModel.CreateDefaultCommitMessage());
+        await dialog.ShowDialog(this);
+
+        if (dialog.Result is not GitCommitDialogAction action)
+            return;
+
+        await ExecuteGitCommitActionAsync(vm.GitPanelViewModel, action, dialog.CommitMessage);
     }
 
     private void SetupModeChrome(MainWindowViewModel vm)

@@ -21,6 +21,7 @@ public class MainWindowViewModel : ViewModelBase
     public GanttViewModel GanttViewModel { get; }
     public CorkboardViewModel CorkboardViewModel { get; }
     public SupplementalDocsViewModel SupplementalDocsViewModel { get; }
+    public GitPanelViewModel GitPanelViewModel { get; }
 
     private readonly IAppSettingsStore _settingsStore;
 
@@ -140,6 +141,7 @@ public class MainWindowViewModel : ViewModelBase
         GanttViewModel ganttViewModel,
         CorkboardViewModel corkboardViewModel,
         SupplementalDocsViewModel supplementalDocsViewModel,
+        GitPanelViewModel gitPanelViewModel,
         NotificationService notificationService,
         IAppSettingsStore settingsStore)
     {
@@ -150,6 +152,7 @@ public class MainWindowViewModel : ViewModelBase
         GanttViewModel = ganttViewModel;
         CorkboardViewModel = corkboardViewModel;
         SupplementalDocsViewModel = supplementalDocsViewModel;
+        GitPanelViewModel = gitPanelViewModel;
         _settingsStore = settingsStore;
 
         try

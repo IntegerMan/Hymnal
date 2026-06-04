@@ -202,6 +202,7 @@ public sealed class MainWindowPlanModeTests
                 new GanttViewModel(Workspace, PhaseDataService, NotificationService),
                 new CorkboardViewModel(Workspace, StructureService, NotificationService),
                 new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), EditorViewModel, NotificationService),
+                new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
                 NotificationService,
                 SettingsStore);
 
@@ -308,6 +309,23 @@ public sealed class MainWindowPlanModeTests
 
         public Task<Result<Unit>> DeleteChapterFileAsync(string bookTxtPath, string chapterPath)
             => Task.FromResult(Result<Unit>.Ok(Unit.Default));
+    }
+
+    private sealed class FakeGitService : IGitService
+    {
+        public Task<Result<GitCommandResult>> CheckGitAvailableAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitCommandResult>.Ok(new GitCommandResult("git", new[] { "--version" }, null, 0, "git version\n", string.Empty)));
+
+        public Task<Result<GitRepositoryStatus>> GetRepositoryStatusAsync(string workspaceRoot, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitRepositoryStatus>.Ok(GitRepositoryStatus.Hidden(
+                GitCommandResult.Failure("git", Array.Empty<string>(), workspaceRoot, string.Empty),
+                isGitAvailable: false)));
+
+        public Task<Result<GitCommandResult>> StageAllAndCommitAsync(string workspaceRoot, string commitMessage, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitCommandResult>.Ok(GitCommandResult.Failure("git", Array.Empty<string>(), workspaceRoot, string.Empty)));
+
+        public Task<Result<GitCommandResult>> StageAllCommitAndPushAsync(string workspaceRoot, string commitMessage, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitCommandResult>.Ok(GitCommandResult.Failure("git", Array.Empty<string>(), workspaceRoot, string.Empty)));
     }
 
     private static IList GetWorkspaceNodeCollection(WorkspaceViewModel workspace)
