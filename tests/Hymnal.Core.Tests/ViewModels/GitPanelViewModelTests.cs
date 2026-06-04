@@ -178,6 +178,24 @@ public sealed class GitPanelViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task PushFailure_ShowsRawStderrAndStillRefreshes()
+    {
+        _context.EnableWorkspace();
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 2)));
+        _context.GitService.EnqueuePush(Result<GitCommandResult>.Ok(PushFailure("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host")));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 2)));
+        var vm = _context.CreateGitPanel();
+
+        await vm.RefreshAsync();
+        await vm.CommitAndPushAsync("Save draft");
+
+        Assert.Contains("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host", _context.Notifications.Errors);
+        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
+        Assert.Equal("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host", vm.LastError);
+        Assert.True(vm.IsVisible);
+    }
+
+    [Fact]
     public async Task WorkspaceChange_DisposesOldWatcherBeforeNewRootRefreshes()
     {
         _context.EnableWorkspace();
@@ -235,6 +253,9 @@ public sealed class GitPanelViewModelTests : IDisposable
 
     private static GitCommandResult CommitFailure(string stderr)
         => new("git", new[] { "-C", "workspace", "commit", "-m", "message" }, "workspace", 1, string.Empty, stderr);
+
+    private static GitCommandResult PushFailure(string stderr)
+        => new("git", new[] { "-C", "workspace", "push" }, "workspace", 1, string.Empty, stderr);
 
     public void Dispose() => _context.Dispose();
 
