@@ -5,7 +5,9 @@
              x:Class="Hymnal.Views.CorkboardView"
              x:Name="Root"
              x:DataType="vm:CorkboardViewModel"
-             Background="#0B0820">
+             Background="#0B0820"
+             Focusable="True"
+             KeyDown="Root_KeyDown">
 
     <UserControl.Resources>
         <conv:StatusToBrushConverter x:Key="StatusToBrushConverter" />
@@ -16,22 +18,40 @@
             <Setter Property="Background" Value="{DynamicResource SurfaceElevatedBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="CornerRadius" Value="12" />
             <Setter Property="Padding" Value="14,12" />
             <Setter Property="HorizontalAlignment" Value="Left" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="VerticalContentAlignment" Value="Stretch" />
             <Setter Property="MinWidth" Value="320" />
             <Setter Property="MaxWidth" Value="520" />
-            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,12,12" />
         </Style>
         <Style Selector="Button.cork-card:pointerover">
             <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
         </Style>
         <Style Selector="Button.cork-card.selected">
-            <Setter Property="Background" Value="#1A1230" />
+            <Setter Property="Background" Value="#191233" />
             <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+        <Style Selector="Border.cork-divider">
+            <Setter Property="Background" Value="#15102A" />
+            <Setter Property="BorderBrush" Value="#2D1B5E" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+        </Style>
+        <Style Selector="Border.cork-hint">
+            <Setter Property="Background" Value="#100D1F" />
+            <Setter Property="BorderBrush" Value="#3A245D" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="0,0,0,2" />
         </Style>
     </UserControl.Styles>
 
@@ -46,14 +66,11 @@
                             Orientation="Horizontal"
                             VerticalAlignment="Center"
                             Spacing="10">
-                    <Path Data="M4 6h16M4 12h12M4 18h8"
-                          Stroke="#9D4EDD"
-                          StrokeThickness="1.5"
-                          StrokeLineCap="Round"
-                          Width="16"
-                          Height="16"
-                          Stretch="Uniform"
-                          VerticalAlignment="Center" />
+                    <TextBlock Text="▤"
+                               FontSize="16"
+                               Foreground="#9D4EDD"
+                               VerticalAlignment="Center"
+                               Margin="0,0,0,1" />
                     <TextBlock Text="PLAN BOARD"
                                FontSize="10"
                                FontWeight="SemiBold"
@@ -70,31 +87,40 @@
             </Grid>
         </Border>
 
-        <ScrollViewer Grid.Row="1"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      Background="#0B0820">
-            <ItemsControl ItemsSource="{Binding Items}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Margin="16"
-                                    Spacing="12" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-            </ItemsControl>
-        </ScrollViewer>
+        <Grid Grid.Row="1">
+            <TextBlock x:Name="EmptyBoardState"
+                       Text="No chapters in this board yet. Open Book.txt or add chapters to see Plan mode cards."
+                       IsVisible="{Binding !HasItems}"
+                       Margin="24"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="12"
+                       Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+
+            <ScrollViewer x:Name="BoardScroll"
+                          IsVisible="{Binding HasItems}"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Background="#0B0820">
+                <ItemsControl x:Name="BoardItems"
+                              ItemsSource="{Binding Items}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Margin="16"
+                                       Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 
     <UserControl.DataTemplates>
         <DataTemplate DataType="vm:PartDividerItemViewModel">
-            <Border Background="#15102A"
-                    BorderBrush="#2D1B5E"
-                    BorderThickness="1"
-                    CornerRadius="8"
-                    Padding="12,10"
-                    HorizontalAlignment="Left"
-                    MinWidth="320"
-                    MaxWidth="520">
+            <Border Classes="cork-divider"
+                    Width="{Binding Bounds.Width, ElementName=Root}">
                 <StackPanel Spacing="2">
                     <TextBlock Text="{Binding Title}"
                                FontSize="14"
@@ -108,14 +134,8 @@
         </DataTemplate>
 
         <DataTemplate DataType="vm:EmptyPartHintItemViewModel">
-            <Border Background="#100D1F"
-                    BorderBrush="#3A245D"
-                    BorderThickness="1"
-                    CornerRadius="8"
-                    Padding="12,10"
-                    HorizontalAlignment="Left"
-                    MinWidth="320"
-                    MaxWidth="520">
+            <Border Classes="cork-hint"
+                    Width="{Binding Bounds.Width, ElementName=Root}">
                 <TextBlock Text="{Binding HintText}"
                            FontSize="11"
                            FontStyle="Italic"
@@ -127,12 +147,35 @@
             <Button Classes="cork-card"
                     Classes.selected="{Binding Card.IsSelected}"
                     Command="{Binding DataContext.OpenCardCommand, ElementName=Root}"
-                    CommandParameter="{Binding}">
-                <Grid RowDefinitions="Auto,Auto,Auto,Auto"
-                      ColumnDefinitions="*,Auto"
+                    CommandParameter="{Binding}"
+                    PointerPressed="Card_PointerPressed"
+                    PointerMoved="Card_PointerMoved"
+                    PointerReleased="Card_PointerReleased"
+                    Loaded="Card_Loaded">
+
+                <Button.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Open"
+                                  Command="{Binding DataContext.OpenCardCommand, ElementName=Root}"
+                                  CommandParameter="{Binding}" />
+                        <Separator />
+                        <MenuItem Header="Rename…"
+                                  Click="RenameCard_Click" />
+                        <MenuItem Header="New Chapter…"
+                                  Click="NewChapter_Click" />
+                        <MenuItem Header="Include Existing Chapter…"
+                                  Click="IncludeExistingChapter_Click" />
+                        <Separator />
+                        <MenuItem Header="Remove from Book"
+                                  Click="RemoveFromBook_Click" />
+                        <MenuItem Header="Delete Chapter File…"
+                                  Click="DeleteChapter_Click" />
+                    </ContextMenu>
+                </Button.ContextMenu>
+
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
                       RowSpacing="8">
                     <StackPanel Grid.Row="0"
-                                Grid.ColumnSpan="2"
                                 Spacing="2">
                         <TextBlock Text="{Binding Title}"
                                    FontSize="15"
@@ -146,7 +189,6 @@
                     </StackPanel>
 
                     <Grid Grid.Row="1"
-                          Grid.ColumnSpan="2"
                           ColumnDefinitions="*,Auto,Auto"
                           ColumnSpacing="12">
                         <StackPanel Grid.Column="0"
@@ -161,7 +203,7 @@
                         </StackPanel>
                         <StackPanel Grid.Column="1"
                                     Spacing="2">
-                            <TextBlock Text="Word count"
+                            <TextBlock Text="Words"
                                        FontSize="9"
                                        LetterSpacing="1.5"
                                        Foreground="#94A3B8" />
@@ -182,7 +224,32 @@
                     </Grid>
 
                     <Grid Grid.Row="2"
-                          Grid.ColumnSpan="2"
+                          ColumnDefinitions="72,*,84"
+                          ColumnSpacing="8"
+                          VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0"
+                                   Text="Progress"
+                                   FontSize="9"
+                                   LetterSpacing="1.5"
+                                   Foreground="#94A3B8"
+                                   VerticalAlignment="Center" />
+                        <ProgressBar Grid.Column="1"
+                                     Value="{Binding Card.ProximityFill}"
+                                     Minimum="0"
+                                     Maximum="1"
+                                     Height="6"
+                                     VerticalAlignment="Center"
+                                     Background="{DynamicResource SurfaceHighBrush}"
+                                     Foreground="{DynamicResource SynthwavePurpleBrush}" />
+                        <TextBlock Grid.Column="2"
+                                   Text="{Binding Card.ProximityFill, StringFormat={}{0:P0}}"
+                                   FontSize="11"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+
+                    <Grid Grid.Row="3"
                           ColumnDefinitions="*,*"
                           ColumnSpacing="12">
                         <StackPanel Grid.Column="0" Spacing="2">
@@ -205,8 +272,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <TextBlock Grid.Row="3"
-                               Grid.ColumnSpan="2"
+                    <TextBlock Grid.Row="4"
                                Text="{Binding Card.MissingStateDisplay}"
                                FontSize="10"
                                Foreground="{DynamicResource OrangeBrush}"

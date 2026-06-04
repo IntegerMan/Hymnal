@@ -48,6 +48,8 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
     public ReadOnlyObservableCollection<CorkboardItemViewModel> Items { get; }
 
+    public bool HasItems => _items.Count > 0;
+
     public IObservable<ChapterViewModel> OpenChapterRequested => _openChapterRequested.AsObservable();
 
     private CardViewModel? _selectedCard;
@@ -128,6 +130,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         foreach (var item in CorkboardItemViewModel.Project(_workspace.Nodes))
             _items.Add(item);
 
+        this.RaisePropertyChanged(nameof(HasItems));
         RestoreSelection(selectedPath);
     }
 
