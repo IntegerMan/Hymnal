@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Reactive.Threading.Tasks;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
@@ -12,6 +12,18 @@ namespace Hymnal.Core.Tests.ViewModels;
 
 public class CorkboardProjectionTests
 {
+    private sealed class FakeMetadataStore : IMetadataStore
+    {
+        public Task WriteTextAtomicAsync(string absolutePath, string content)
+        {
+            var directory = Path.GetDirectoryName(absolutePath)!;
+            Directory.CreateDirectory(directory);
+            var tempPath = absolutePath + ".tmp";
+            return File.WriteAllTextAsync(tempPath, content)
+                .ContinueWith(_ => File.Move(tempPath, absolutePath, overwrite: true));
+        }
+    }
+
     static CorkboardProjectionTests()
     {
         RxAppBuilder.CreateReactiveUIBuilder()
@@ -42,7 +54,7 @@ public class CorkboardProjectionTests
         bool missing = false,
         NodeKind kind = NodeKind.Chapter)
     {
-        var metadataStore = Substitute.For<IMetadataStore>();
+        var metadataStore = new FakeMetadataStore();
         var phaseDataService = new PhaseDataService(metadataStore);
         var targetsService = new TargetsService(metadataStore);
         var settingsStore = Substitute.For<IAppSettingsStore>();
@@ -115,7 +127,7 @@ public class CorkboardProjectionTests
     }
 
     [Fact]
-    public void CardViewModel_ProjectsLiveDisplayValuesAndFallbacks()
+    public async Task CardViewModel_ProjectsLiveDisplayValuesAndFallbacks()
     {
         var chapter = CreateChapterViewModel(
             phaseData: MakePhase(status: ChapterStatus.Drafting, start: "bad-date", end: null),
@@ -155,7 +167,10 @@ public class CorkboardProjectionTests
         Assert.True(card.IsMissing);
         Assert.Equal("Missing file", card.MissingStateDisplay);
 
-        chapter.SetTargetCommand.Execute(new WordCountTarget { MinWords = 1000, MaxWords = 2000 }).ToTask().Wait();
+        typeof(ChapterViewModel)
+            .GetProperty(nameof(ChapterViewModel.Target), BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
+            .SetValue(chapter, new WordCountTarget { MinWords = 1000, MaxWords = 2000 });
+
         var targetRefreshed = SpinWait.SpinUntil(
             () => card.TargetDisplay == "1,000–2,000 w"
                && card.ProximityFill == 0.6,

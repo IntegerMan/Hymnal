@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using System.Reactive.Disposables;
 using DynamicData;
 using DynamicData.Binding;
+using Hymnal.Core.Common;
+using Unit = Hymnal.Core.Common.Unit;
 using PathHelper = Hymnal.Core.Common.PathHelper;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
@@ -67,6 +69,8 @@ public class WorkspaceViewModel : ViewModelBase
 
     public string WorkspaceRoot => _model?.WorkspaceRoot ?? string.Empty;
 
+    public string BookTxtPath => _model?.BookTxtPath ?? string.Empty;
+
     private string? _workspaceName;
     public string? WorkspaceName
     {
@@ -89,9 +93,9 @@ public class WorkspaceViewModel : ViewModelBase
     /// <summary>Full tooltip for the book total word count label.</summary>
     public string TotalWordCountTooltip => _totalWordCountTooltip.Value;
 
-    public ReactiveCommand<Unit, Unit> OpenWorkspaceCommand { get; }
-    public ReactiveCommand<Unit, Unit> CloseWorkspaceCommand { get; }
-    public ReactiveCommand<Unit, Unit> SelectBookCommand { get; }
+    public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenWorkspaceCommand { get; }
+    public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> CloseWorkspaceCommand { get; }
+    public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SelectBookCommand { get; }
 
     public WorkspaceViewModel(
         ManuscriptService manuscriptService,
@@ -281,23 +285,40 @@ public class WorkspaceViewModel : ViewModelBase
     // ── Workspace open ────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Reload the current workspace from disk and rebuild the chapter list without
+    /// changing the editor's active file.
+    /// </summary>
+    public virtual async Task<Result<Unit>> ReloadCurrentWorkspaceAsync()
+    {
+        if (_model == null)
+            return Result<Unit>.Ok(Unit.Default);
+
+        return await ReloadWorkspaceAsync(_model.WorkspaceRoot, _model.BookTxtPath, reselectBook: false);
+    }
+
+    /// <summary>
     /// Reload the workspace from disk (called after Book.txt is saved) without disturbing
     /// the editor. Keeps Book.txt open so the user can continue editing.
     /// </summary>
-    private async Task ReloadWorkspaceAsync(string workspaceRoot, string bookTxtPath)
+    private async Task<Result<Unit>> ReloadWorkspaceAsync(string workspaceRoot, string bookTxtPath, bool reselectBook = true)
     {
         var result = await _manuscriptService.LoadWorkspaceAsync(workspaceRoot);
         if (!result.IsSuccess)
         {
             _notificationService.ShowError($"Failed to reload workspace: {result.Error}");
-            return;
+            return Result<Unit>.Fail(result.Error!);
         }
 
         // Rebuild node list without closing the editor.
         BindModel(result.Value!);
 
-        // Re-open Book.txt in the editor so the title bar and watcher stay current.
-        await _editor.SelectBookAsync(bookTxtPath);
+        if (reselectBook)
+        {
+            // Re-open Book.txt in the editor so the title bar and watcher stay current.
+            await _editor.SelectBookAsync(bookTxtPath);
+        }
+
+        return Result<Unit>.Ok(Unit.Default);
     }
 
     private async Task OpenWorkspaceAsync()

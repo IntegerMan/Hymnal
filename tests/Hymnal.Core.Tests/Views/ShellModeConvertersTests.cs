@@ -8,8 +8,10 @@ public class ShellModeConvertersTests
     [Theory]
     [InlineData(ShellMode.Write, "Write", true)]
     [InlineData(ShellMode.Manage, "Manage", true)]
+    [InlineData(ShellMode.Plan, "Plan", true)]
     [InlineData(ShellMode.Write, "Manage", false)]
     [InlineData(ShellMode.Manage, "Write", false)]
+    [InlineData(ShellMode.Plan, "Write", false)]
     public void ShellModeEqualsConverter_ReportsMatchCorrectly(ShellMode mode, string parameter, bool expected)
     {
         var converter = new ShellModeEqualsConverter();

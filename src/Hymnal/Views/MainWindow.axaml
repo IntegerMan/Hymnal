@@ -149,9 +149,9 @@
                                   ToolTip.Tip="Reserved for later" />
                     <ToggleButton Classes="nav-mode"
                                   Content="PLAN"
-                                  IsEnabled="False"
+                                  Command="{Binding SelectPlanCommand}"
                                   IsChecked="{Binding ActiveMode, Mode=OneWay, Converter={StaticResource ShellModeEqualsConverter}, ConverterParameter=Plan}"
-                                  ToolTip.Tip="Reserved for later" />
+                                  ToolTip.Tip="Corkboard planning board" />
                     <ToggleButton Classes="nav-mode"
                                   Content="WRITE"
                                   Command="{Binding SelectWriteCommand}"
@@ -289,6 +289,10 @@
                     <Border IsVisible="{Binding IsEditorVisible}">
                         <views:EditorView DataContext="{Binding EditorViewModel}"
                                           Background="Transparent" />
+                    </Border>
+                    <!-- Plan corkboard — visible when Plan is active -->
+                    <Border IsVisible="{Binding IsCorkboardVisible}">
+                        <views:CorkboardView DataContext="{Binding CorkboardViewModel}" />
                     </Border>
                     <!-- Gantt — visible when toggled on (F5) -->
                     <Border IsVisible="{Binding IsGanttVisible}">

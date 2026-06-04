@@ -19,6 +19,7 @@ public class MainWindowViewModel : ViewModelBase
     public NotesViewModel NotesViewModel { get; }
     public ChapterInfoViewModel ChapterInfoViewModel { get; }
     public GanttViewModel GanttViewModel { get; }
+    public CorkboardViewModel CorkboardViewModel { get; }
 
     private readonly IAppSettingsStore _settingsStore;
 
@@ -76,16 +77,21 @@ public class MainWindowViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(ActiveMode));
             this.RaisePropertyChanged(nameof(IsEditorVisible));
             this.RaisePropertyChanged(nameof(IsGanttVisible));
+            this.RaisePropertyChanged(nameof(IsCorkboardVisible));
         }
     }
 
     /// <summary>True when the writing/editor surface is the active centre-panel view.</summary>
     public bool IsEditorVisible => ActiveMode == ShellMode.Write;
 
+    /// <summary>True when the corkboard/plan surface is the active centre-panel view.</summary>
+    public bool IsCorkboardVisible => ActiveMode == ShellMode.Plan;
+
     /// <summary>True when the Gantt/manage surface is the active centre-panel view.</summary>
     public bool IsGanttVisible => ActiveMode == ShellMode.Manage;
 
     public ReactiveCommand<Unit, Unit> SelectResearchCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectPlanCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectWriteCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectManageCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleGanttCommand { get; }
@@ -131,6 +137,7 @@ public class MainWindowViewModel : ViewModelBase
         NotesViewModel notesViewModel,
         ChapterInfoViewModel chapterInfoViewModel,
         GanttViewModel ganttViewModel,
+        CorkboardViewModel corkboardViewModel,
         NotificationService notificationService,
         IAppSettingsStore settingsStore)
     {
@@ -139,6 +146,7 @@ public class MainWindowViewModel : ViewModelBase
         NotesViewModel = notesViewModel;
         ChapterInfoViewModel = chapterInfoViewModel;
         GanttViewModel = ganttViewModel;
+        CorkboardViewModel = corkboardViewModel;
         _settingsStore = settingsStore;
 
         try
@@ -157,6 +165,7 @@ public class MainWindowViewModel : ViewModelBase
         });
 
         SelectResearchCommand = ReactiveCommand.Create(() => { }, Observable.Return(false));
+        SelectPlanCommand = ReactiveCommand.Create(() => { ActiveMode = ShellMode.Plan; });
         SelectWriteCommand = ReactiveCommand.Create(() => { ActiveMode = ShellMode.Write; });
         SelectManageCommand = ReactiveCommand.Create(() => { ActiveMode = ShellMode.Manage; });
         ToggleGanttCommand = ReactiveCommand.Create(() =>
@@ -181,8 +190,12 @@ public class MainWindowViewModel : ViewModelBase
 
         EditorViewModel.HasWorkspace = WorkspaceViewModel.HasWorkspace;
         Disposables.Add(
-            WorkspaceViewModel.WhenAnyValue(x => x.HasWorkspace)
-                .Subscribe(hasWorkspace => EditorViewModel.HasWorkspace = hasWorkspace));
+            CorkboardViewModel.OpenChapterRequested
+                .Subscribe(chapter =>
+                {
+                    WorkspaceViewModel.SelectedNode = chapter;
+                    ActiveMode = ShellMode.Write;
+                }));
 
         // ── Reactive window title ────────────────────────────────────────────
         // Format: "Hymnal", "Hymnal - StoryTitle", "Hymnal - StoryTitle - file.md", or with " *" when dirty.

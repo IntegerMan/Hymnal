@@ -1,0 +1,219 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:conv="using:Hymnal.Views.Converters"
+             x:Class="Hymnal.Views.CorkboardView"
+             x:Name="Root"
+             x:DataType="vm:CorkboardViewModel"
+             Background="#0B0820">
+
+    <UserControl.Resources>
+        <conv:StatusToBrushConverter x:Key="StatusToBrushConverter" />
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Button.cork-card">
+            <Setter Property="Background" Value="{DynamicResource SurfaceElevatedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="14,12" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="MinWidth" Value="320" />
+            <Setter Property="MaxWidth" Value="520" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.cork-card:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+        <Style Selector="Button.cork-card.selected">
+            <Setter Property="Background" Value="#1A1230" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="48,*">
+        <Border Grid.Row="0"
+                Background="#120932"
+                BorderBrush="#2D1B5E"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  Margin="16,0">
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="10">
+                    <Path Data="M4 6h16M4 12h12M4 18h8"
+                          Stroke="#9D4EDD"
+                          StrokeThickness="1.5"
+                          StrokeLineCap="Round"
+                          Width="16"
+                          Height="16"
+                          Stretch="Uniform"
+                          VerticalAlignment="Center" />
+                    <TextBlock Text="PLAN BOARD"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="2"
+                               Foreground="#94A3B8"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+
+                <TextBlock Grid.Column="2"
+                           Text="Click a chapter card to open it in Write mode"
+                           FontSize="10"
+                           Foreground="#94A3B8"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Background="#0B0820">
+            <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Margin="16"
+                                    Spacing="12" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="vm:PartDividerItemViewModel">
+            <Border Background="#15102A"
+                    BorderBrush="#2D1B5E"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="12,10"
+                    HorizontalAlignment="Left"
+                    MinWidth="320"
+                    MaxWidth="520">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Title}"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                    <TextBlock Text="Section divider"
+                               FontSize="10"
+                               Foreground="#94A3B8" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate DataType="vm:EmptyPartHintItemViewModel">
+            <Border Background="#100D1F"
+                    BorderBrush="#3A245D"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="12,10"
+                    HorizontalAlignment="Left"
+                    MinWidth="320"
+                    MaxWidth="520">
+                <TextBlock Text="{Binding HintText}"
+                           FontSize="11"
+                           FontStyle="Italic"
+                           Foreground="#94A3B8" />
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate DataType="vm:ChapterCardItemViewModel">
+            <Button Classes="cork-card"
+                    Classes.selected="{Binding Card.IsSelected}"
+                    Command="{Binding DataContext.OpenCardCommand, ElementName=Root}"
+                    CommandParameter="{Binding}">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+                      ColumnDefinitions="*,Auto"
+                      RowSpacing="8">
+                    <StackPanel Grid.Row="0"
+                                Grid.ColumnSpan="2"
+                                Spacing="2">
+                        <TextBlock Text="{Binding Title}"
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource OnSurfaceBrush}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding RelativePath}"
+                                   FontSize="10"
+                                   Foreground="#94A3B8"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1"
+                          Grid.ColumnSpan="2"
+                          ColumnDefinitions="*,Auto,Auto"
+                          ColumnSpacing="12">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="2">
+                            <TextBlock Text="Status"
+                                       FontSize="9"
+                                       LetterSpacing="1.5"
+                                       Foreground="#94A3B8" />
+                            <TextBlock Text="{Binding Card.StatusDisplay}"
+                                       FontSize="11"
+                                       Foreground="{Binding Card.Status, Converter={StaticResource StatusToBrushConverter}}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1"
+                                    Spacing="2">
+                            <TextBlock Text="Word count"
+                                       FontSize="9"
+                                       LetterSpacing="1.5"
+                                       Foreground="#94A3B8" />
+                            <TextBlock Text="{Binding Card.WordCountDisplay}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2"
+                                    Spacing="2">
+                            <TextBlock Text="Target"
+                                       FontSize="9"
+                                       LetterSpacing="1.5"
+                                       Foreground="#94A3B8" />
+                            <TextBlock Text="{Binding Card.TargetDisplay}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceBrush}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Grid.Row="2"
+                          Grid.ColumnSpan="2"
+                          ColumnDefinitions="*,*"
+                          ColumnSpacing="12">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="Phase start"
+                                       FontSize="9"
+                                       LetterSpacing="1.5"
+                                       Foreground="#94A3B8" />
+                            <TextBlock Text="{Binding Card.PhaseStartDateDisplay}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Phase end"
+                                       FontSize="9"
+                                       LetterSpacing="1.5"
+                                       Foreground="#94A3B8" />
+                            <TextBlock Text="{Binding Card.PhaseEndDateDisplay}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceBrush}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Grid.Row="3"
+                               Grid.ColumnSpan="2"
+                               Text="{Binding Card.MissingStateDisplay}"
+                               FontSize="10"
+                               Foreground="{DynamicResource OrangeBrush}"
+                               IsVisible="{Binding Card.IsMissing}" />
+                </Grid>
+            </Button>
+        </DataTemplate>
+    </UserControl.DataTemplates>
+
+</UserControl>

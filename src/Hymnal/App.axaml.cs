@@ -102,6 +102,15 @@ public partial class App : Application
                 sp.GetRequiredService<PhaseDataService>(),
                 sp.GetRequiredService<INotificationService>()));
 
+        // S01 services — plan corkboard structural editing
+        services.AddSingleton<IBookTxtStructureService, BookTxtStructureService>();
+
+        services.AddSingleton<CorkboardViewModel>(sp =>
+            new CorkboardViewModel(
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<IBookTxtStructureService>(),
+                sp.GetRequiredService<INotificationService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
@@ -109,6 +118,7 @@ public partial class App : Application
                 sp.GetRequiredService<NotesViewModel>(),
                 sp.GetRequiredService<ChapterInfoViewModel>(),
                 sp.GetRequiredService<GanttViewModel>(),
+                sp.GetRequiredService<CorkboardViewModel>(),
                 sp.GetRequiredService<NotificationService>(),
                 sp.GetRequiredService<IAppSettingsStore>()));
 
