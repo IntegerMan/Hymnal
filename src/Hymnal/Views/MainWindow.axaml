@@ -227,7 +227,7 @@
                                     Margin="0,8,0,0">
                             <Button Classes="nav-icon"
                                     Command="{Binding ToggleSidebarCommand}"
-                                    ToolTip.Tip="Chapters (Ctrl+B)">
+                                    ToolTip.Tip="Chapters and docs (Ctrl+B)">
                                 <Path Data="M3 12h18M3 6h18M3 18h18"
                                       Stroke="{DynamicResource OnSurfaceDimBrush}"
                                       StrokeThickness="1.5"
@@ -237,11 +237,11 @@
                             </Button>
                         </StackPanel>
 
-                        <!-- EXPANDED: 220px pane with integrated header -->
+                        <!-- EXPANDED: 220px pane with distinct CHAPTERS and DOCS sections -->
                         <Grid IsVisible="{Binding IsSidebarExpanded}"
-                              RowDefinitions="48,*">
+                              RowDefinitions="48,*,4,48,180">
 
-                            <!-- Header: icon (active) + panel title -->
+                            <!-- Header: icon (active) + CHAPTERS panel title -->
                             <Border Grid.Row="0"
                                     BorderBrush="{DynamicResource BorderSubtleBrush}"
                                     BorderThickness="0,0,0,1">
@@ -249,7 +249,7 @@
                                 <Button Grid.Column="0"
                                         Classes="nav-icon"
                                         Command="{Binding ToggleSidebarCommand}"
-                                        ToolTip.Tip="Collapse chapters (Ctrl+B)">
+                                        ToolTip.Tip="Collapse chapters and docs (Ctrl+B)">
                                     <Path Data="M3 12h18M3 6h18M3 18h18"
                                           Stroke="{DynamicResource SynthwavePurpleBrush}"
                                           StrokeThickness="1.5"
@@ -268,9 +268,45 @@
                             </Grid>
                             </Border>
 
-                            <!-- Chapter list -->
+                            <!-- Chapter list: still binds only to WorkspaceViewModel.Nodes -->
                             <views:SidebarView Grid.Row="1"
                                                DataContext="{Binding WorkspaceViewModel}" />
+
+                            <GridSplitter Grid.Row="2"
+                                          Height="4"
+                                          ResizeDirection="Rows"
+                                          Background="{DynamicResource BorderSubtleBrush}" />
+
+                            <!-- DOCS header -->
+                            <Border Grid.Row="3"
+                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                    BorderThickness="0,1,0,1">
+                                <Grid ColumnDefinitions="48,*">
+                                    <Path Grid.Column="0"
+                                          Data="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"
+                                          Stroke="{DynamicResource SynthwavePurpleBrush}"
+                                          StrokeThickness="1.5"
+                                          StrokeLineCap="Round"
+                                          Width="18" Height="18"
+                                          Stretch="Uniform"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                                    <TextBlock x:Name="DocsHeader"
+                                               Grid.Column="1"
+                                               Text="DOCS"
+                                               VerticalAlignment="Center"
+                                               Margin="4,0,0,0"
+                                               FontSize="10"
+                                               FontWeight="SemiBold"
+                                               LetterSpacing="1.5"
+                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Supplemental documents tree: separate from manuscript chapters -->
+                            <views:SupplementalDocsView Grid.Row="4"
+                                                         x:Name="SupplementalDocsViewContent"
+                                                         DataContext="{Binding SupplementalDocsViewModel}" />
                         </Grid>
 
                     </Panel>
