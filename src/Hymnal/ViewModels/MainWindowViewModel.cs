@@ -20,6 +20,7 @@ public class MainWindowViewModel : ViewModelBase
     public ChapterInfoViewModel ChapterInfoViewModel { get; }
     public GanttViewModel GanttViewModel { get; }
     public CorkboardViewModel CorkboardViewModel { get; }
+    public SupplementalDocsViewModel SupplementalDocsViewModel { get; }
 
     private readonly IAppSettingsStore _settingsStore;
 
@@ -138,6 +139,7 @@ public class MainWindowViewModel : ViewModelBase
         ChapterInfoViewModel chapterInfoViewModel,
         GanttViewModel ganttViewModel,
         CorkboardViewModel corkboardViewModel,
+        SupplementalDocsViewModel supplementalDocsViewModel,
         NotificationService notificationService,
         IAppSettingsStore settingsStore)
     {
@@ -147,6 +149,7 @@ public class MainWindowViewModel : ViewModelBase
         ChapterInfoViewModel = chapterInfoViewModel;
         GanttViewModel = ganttViewModel;
         CorkboardViewModel = corkboardViewModel;
+        SupplementalDocsViewModel = supplementalDocsViewModel;
         _settingsStore = settingsStore;
 
         try
@@ -196,6 +199,10 @@ public class MainWindowViewModel : ViewModelBase
                     WorkspaceViewModel.SelectedNode = chapter;
                     ActiveMode = ShellMode.Write;
                 }));
+
+        Disposables.Add(
+            SupplementalDocsViewModel.DocumentOpened
+                .Subscribe(_ => ActiveMode = ShellMode.Write));
 
         // ── Reactive window title ────────────────────────────────────────────
         // Format: "Hymnal", "Hymnal - Workspace", "Hymnal - Workspace - file.md", or with " *" when dirty.

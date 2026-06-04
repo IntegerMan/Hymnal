@@ -53,6 +53,9 @@ public partial class App : Application
         // S04 services
         services.AddSingleton<INotesService, NotesService>();
 
+        // M004/S02 services — supplemental docs sidebar tree
+        services.AddSingleton<ISupplementalDocsService, SupplementalDocsService>();
+
         // S03 view-models (order matters: EditorViewModel before WorkspaceViewModel)
         services.AddSingleton<EditorViewModel>(sp =>
             new EditorViewModel(
@@ -111,6 +114,13 @@ public partial class App : Application
                 sp.GetRequiredService<IBookTxtStructureService>(),
                 sp.GetRequiredService<INotificationService>()));
 
+        services.AddSingleton<SupplementalDocsViewModel>(sp =>
+            new SupplementalDocsViewModel(
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<ISupplementalDocsService>(),
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<INotificationService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
@@ -119,6 +129,7 @@ public partial class App : Application
                 sp.GetRequiredService<ChapterInfoViewModel>(),
                 sp.GetRequiredService<GanttViewModel>(),
                 sp.GetRequiredService<CorkboardViewModel>(),
+                sp.GetRequiredService<SupplementalDocsViewModel>(),
                 sp.GetRequiredService<NotificationService>(),
                 sp.GetRequiredService<IAppSettingsStore>()));
 

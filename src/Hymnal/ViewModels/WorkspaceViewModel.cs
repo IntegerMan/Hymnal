@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Threading.Tasks;
 using System.Reactive.Disposables;
 using DynamicData;
@@ -35,7 +36,9 @@ public class WorkspaceViewModel : ViewModelBase
     private int _workspaceGeneration;
     private Task? _hydrationTask;
     private bool _isSwitching;
+    private readonly Subject<Unit> _workspaceChanged = new();
 
+    public IObservable<Unit> WorkspaceChanged => _workspaceChanged.AsObservable();
     private readonly ObservableCollectionExtended<ChapterViewModel> _nodes = new();
     public ReadOnlyObservableCollection<ChapterViewModel> Nodes { get; }
 
@@ -136,6 +139,7 @@ public class WorkspaceViewModel : ViewModelBase
         Disposables.Add(
             SelectBookCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(Disposable.Create(() => _workspaceChanged.Dispose()));
 
         Disposables.Add(
             this.WhenAnyValue(x => x.SelectedNode)
@@ -282,6 +286,13 @@ public class WorkspaceViewModel : ViewModelBase
     private string ResolveAbsolutePath(ChapterNode node) =>
         Path.Combine(_model!.ManuscriptRoot, node.RelativePath);
 
+    public void ClearChapterSelectionForExternalDocument()
+    {
+        _isSwitching = true;
+        SelectedNode = null;
+        _isSwitching = false;
+    }
+
     // ── Workspace open ────────────────────────────────────────────────────────
 
     /// <summary>
@@ -370,6 +381,9 @@ public class WorkspaceViewModel : ViewModelBase
         SelectedNode = null;
         HasWorkspace = false;
         WorkspaceName = null;
+        this.RaisePropertyChanged(nameof(WorkspaceRoot));
+        this.RaisePropertyChanged(nameof(BookTxtPath));
+        _workspaceChanged.OnNext(Unit.Default);
         ErrorMessage = null;
         IsLoading = false;
 
@@ -443,6 +457,9 @@ public class WorkspaceViewModel : ViewModelBase
         HasWorkspace = true;
         WorkspaceName = Path.GetFileName(model.WorkspaceRoot.TrimEnd(
             Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        this.RaisePropertyChanged(nameof(WorkspaceRoot));
+        this.RaisePropertyChanged(nameof(BookTxtPath));
+        _workspaceChanged.OnNext(Unit.Default);
 
         // Track registry/phase hydration so restore waits for the active workspace.
         var generation = ++_workspaceGeneration;
