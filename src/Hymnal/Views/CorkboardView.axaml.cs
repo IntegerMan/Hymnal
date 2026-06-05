@@ -8,7 +8,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using Hymnal.ViewModels;
 
 namespace Hymnal.Views;
@@ -24,11 +23,6 @@ public partial class CorkboardView : UserControl
     public CorkboardView()
     {
         InitializeComponent();
-    }
-
-    private void InitializeComponent()
-    {
-        AvaloniaXamlLoader.Load(this);
     }
 
     private async void Root_KeyDown(object? sender, KeyEventArgs e)

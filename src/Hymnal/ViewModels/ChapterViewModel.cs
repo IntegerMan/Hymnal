@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
@@ -144,6 +145,18 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     private readonly ObservableAsPropertyHelper<bool> _hasTarget;
     public bool HasTarget => _hasTarget.Value;
 
+    private readonly ObservableAsPropertyHelper<bool> _canCompletePhase;
+    public bool CanCompletePhase => _canCompletePhase.Value;
+
+    private readonly ObservableAsPropertyHelper<string> _currentPhaseStartDisplay;
+    public string CurrentPhaseStartDisplay => _currentPhaseStartDisplay.Value;
+
+    private readonly ObservableAsPropertyHelper<string> _currentPhaseEndDisplay;
+    public string CurrentPhaseEndDisplay => _currentPhaseEndDisplay.Value;
+
+    private readonly ObservableAsPropertyHelper<string> _currentPhaseProgressDisplay;
+    public string CurrentPhaseProgressDisplay => _currentPhaseProgressDisplay.Value;
+
     // ── Flyout open/close state ───────────────────────────────────────────────
 
     private bool _isTargetFlyoutOpen;
@@ -172,6 +185,11 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
 
     /// <summary>Cancels without saving (sets IsTargetFlyoutOpen = false).</summary>
     public ReactiveCommand<Unit, Unit> CancelTargetFlyoutCommand { get; }
+
+    /// <summary>
+    /// Marks the current phase 100% complete with dates and advances to the next status.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> CompletePhaseCommand { get; }
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -261,6 +279,32 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
             .ToProperty(this, x => x.HasTarget, out _hasTarget);
         Disposables.Add(_hasTarget);
 
+        // ── OAPH: CanCompletePhase ────────────────────────────────────────────
+        _canCompletePhase = this
+            .WhenAnyValue(x => x.Status, x => x.Node.Kind,
+                (status, kind) => kind == NodeKind.Chapter && status != ChapterStatus.Done)
+            .ToProperty(this, x => x.CanCompletePhase, out _canCompletePhase);
+        Disposables.Add(_canCompletePhase);
+
+        // ── OAPH: Current phase display (for editor bar) ──────────────────────
+        _currentPhaseStartDisplay = this
+            .WhenAnyValue(x => x.Status, x => x.PhaseData)
+            .Select(t => FormatCurrentPhaseDate(t.Item1, t.Item2, seg => seg?.StartDate))
+            .ToProperty(this, x => x.CurrentPhaseStartDisplay, out _currentPhaseStartDisplay);
+        Disposables.Add(_currentPhaseStartDisplay);
+
+        _currentPhaseEndDisplay = this
+            .WhenAnyValue(x => x.Status, x => x.PhaseData)
+            .Select(t => FormatCurrentPhaseDate(t.Item1, t.Item2, seg => seg?.EndDate))
+            .ToProperty(this, x => x.CurrentPhaseEndDisplay, out _currentPhaseEndDisplay);
+        Disposables.Add(_currentPhaseEndDisplay);
+
+        _currentPhaseProgressDisplay = this
+            .WhenAnyValue(x => x.Status, x => x.PhaseData)
+            .Select(t => FormatCurrentPhaseProgress(t.Item1, t.Item2))
+            .ToProperty(this, x => x.CurrentPhaseProgressDisplay, out _currentPhaseProgressDisplay);
+        Disposables.Add(_currentPhaseProgressDisplay);
+
         // ── Commands ──────────────────────────────────────────────────────────
 
         ChangeStatusCommand = ReactiveCommand.CreateFromTask<ChapterStatus>(ChangeStatusAsync);
@@ -291,6 +335,13 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
         CancelTargetFlyoutCommand = ReactiveCommand.Create(() => { IsTargetFlyoutOpen = false; });
         Disposables.Add(
             CancelTargetFlyoutCommand.ThrownExceptions
+                .Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
+        CompletePhaseCommand = ReactiveCommand.CreateFromTask(
+            CompletePhaseAsync,
+            this.WhenAnyValue(x => x.CanCompletePhase));
+        Disposables.Add(
+            CompletePhaseCommand.ThrownExceptions
                 .Subscribe(ex => _notificationService.ShowError(ex.Message)));
     }
 
@@ -406,6 +457,68 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     {
         await SetTargetAsync(null).ConfigureAwait(false);
         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => IsTargetFlyoutOpen = false);
+    }
+
+    /// <summary>Marks the current phase complete and advances status. Callable from other ViewModels.</summary>
+    public Task CompleteCurrentPhaseAsync() => CompletePhaseAsync();
+
+    private async Task CompletePhaseAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        PhaseData? updated = null;
+        string? error = null;
+
+        await _phaseDataService.UpsertAsync(_workspaceRoot, Uuid, current =>
+        {
+            var basePhaseData = current ?? _phaseData ?? PhaseDataService.DefaultPhaseData;
+            var result = PhaseCompletion.CompleteAndAdvance(basePhaseData, today);
+            if (!result.IsSuccess)
+            {
+                error = result.Error;
+                return basePhaseData;
+            }
+
+            updated = result.Value!;
+            return updated!;
+        }).ConfigureAwait(false);
+
+        if (error != null)
+        {
+            _notificationService.ShowError(error);
+            return;
+        }
+
+        if (updated != null)
+            ApplyPhaseData(updated);
+    }
+
+    private static string FormatCurrentPhaseDate(
+        ChapterStatus status,
+        PhaseData? phaseData,
+        Func<PhaseSegment?, DateOnly?> selector)
+    {
+        var seg = GetCurrentPhaseSegment(status, phaseData);
+        var date = selector(seg);
+        return date?.ToString("yyyy-MM-dd") ?? "—";
+    }
+
+    private static string FormatCurrentPhaseProgress(ChapterStatus status, PhaseData? phaseData)
+    {
+        var seg = GetCurrentPhaseSegment(status, phaseData);
+        if (seg is null || seg.Progress <= 0)
+            return "—";
+
+        return $"{Math.Round(seg.Progress * 100.0):0}%";
+    }
+
+    private static PhaseSegment? GetCurrentPhaseSegment(ChapterStatus status, PhaseData? phaseData)
+    {
+        if (phaseData is null)
+            return null;
+
+        return GanttProjection.BuildSegments(phaseData)
+            .FirstOrDefault(s => string.Equals(s.PhaseName, status.ToString(), StringComparison.Ordinal));
     }
 
     // ── IDisposable ───────────────────────────────────────────────────────────

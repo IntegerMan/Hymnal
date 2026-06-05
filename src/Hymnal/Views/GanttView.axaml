@@ -9,6 +9,10 @@
              x:DataType="vm:GanttViewModel"
              Background="#0B0820">
 
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Shift+Enter" Command="{Binding CompleteSelectedRowCommand}" />
+    </UserControl.KeyBindings>
+
     <UserControl.Styles>
         <Style Selector="CalendarDatePicker.inline-date-editor /template/ Button">
             <Setter Property="IsVisible" Value="False" />
@@ -84,6 +88,8 @@
                 <dg:DataGrid Grid.Column="0"
                              x:Name="ChapterGrid"
                              ItemsSource="{Binding Rows}"
+                             SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                             KeyDown="ChapterGrid_KeyDown"
                              AutoGenerateColumns="False"
                              HeadersVisibility="Column"
                              GridLinesVisibility="None"
@@ -101,6 +107,13 @@
                              BorderThickness="0,0,1,0"
                              HorizontalAlignment="Stretch"
                              VerticalAlignment="Top">
+
+                    <dg:DataGrid.ContextMenu>
+                        <ContextMenu Opening="ChapterGrid_ContextMenuOpening">
+                            <MenuItem Header="Mark complete"
+                                      Click="MarkComplete_Click" />
+                        </ContextMenu>
+                    </dg:DataGrid.ContextMenu>
 
                     <dg:DataGrid.Columns>
                         <dg:DataGridTemplateColumn Header="CHAPTER" Width="220" IsReadOnly="True">

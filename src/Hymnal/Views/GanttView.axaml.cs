@@ -1,8 +1,13 @@
 using System;
+using System.ComponentModel;
+using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
+using Avalonia.VisualTree;
 using Hymnal.Core.Models;
 using Hymnal.ViewModels;
 
@@ -13,11 +18,26 @@ public partial class GanttView : UserControl
     public GanttView()
     {
         InitializeComponent();
+        ArgumentNullException.ThrowIfNull(ChapterGrid);
     }
 
-    private void InitializeComponent()
+    private void ChapterGrid_ContextMenuOpening(object? sender, CancelEventArgs e)
     {
-        AvaloniaXamlLoader.Load(this);
+        if (sender is not ContextMenu menu || menu.Items[0] is not MenuItem markComplete)
+            throw new InvalidOperationException("GanttView context menu is misconfigured.");
+
+        markComplete.IsVisible = ChapterGrid.SelectedItem is GanttRowViewModel { IsEditable: true };
+    }
+
+    private async void MarkComplete_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (ChapterGrid.SelectedItem is not GanttRowViewModel row || !row.IsEditable)
+            return;
+
+        await vm.MarkRowCompleteAsync(row);
     }
 
     private async void InlineStatus_DropDownClosed(object? sender, EventArgs e)
@@ -94,6 +114,43 @@ public partial class GanttView : UserControl
         }
     }
 
+    private async void ChapterGrid_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (IsEditingControlFocused())
+            return;
+
+        if (ChapterGrid.SelectedItem is not GanttRowViewModel row || !row.IsEditable)
+            return;
+
+        var column = GetCurrentColumn();
+        if (column == GanttEditableColumn.None)
+            return;
+
+        if (e.Key == Key.C && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            var value = vm.GetCellCopyValue(row, column);
+            if (value != null)
+            {
+                await CopyToClipboardAsync(value);
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            var clipboardText = await GetClipboardTextAsync();
+            if (!string.IsNullOrWhiteSpace(clipboardText))
+            {
+                await vm.ApplyClipboardValueAsync(row, column, clipboardText);
+                e.Handled = true;
+            }
+        }
+    }
+
     private static void InlineDateOpen_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control control)
@@ -121,6 +178,43 @@ public partial class GanttView : UserControl
             if (child is CalendarDatePicker picker)
                 return picker;
         }
+
+        return null;
+    }
+
+    private bool IsEditingControlFocused()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.FocusManager?.GetFocusedElement() is not Visual focused)
+            return false;
+
+        return focused.FindAncestorOfType<TextBox>() != null
+               || focused.FindAncestorOfType<ComboBox>() != null
+               || focused.FindAncestorOfType<CalendarDatePicker>() != null;
+    }
+
+    private GanttEditableColumn GetCurrentColumn()
+    {
+        var index = ChapterGrid.CurrentColumn?.DisplayIndex ?? -1;
+        return index switch
+        {
+            2 => GanttEditableColumn.StartDate,
+            3 => GanttEditableColumn.EndDate,
+            4 => GanttEditableColumn.Progress,
+            _ => GanttEditableColumn.None
+        };
+    }
+
+    private async Task CopyToClipboardAsync(string text)
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+            await clipboard.SetTextAsync(text);
+    }
+
+    private async Task<string?> GetClipboardTextAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+            return await clipboard.TryGetTextAsync();
 
         return null;
     }

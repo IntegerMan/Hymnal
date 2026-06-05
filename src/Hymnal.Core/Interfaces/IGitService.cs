@@ -13,6 +13,19 @@ public interface IGitService
 
     Task<Result<GitRepositoryStatus>> GetRepositoryStatusAsync(
         string workspaceRoot,
+        bool includeRemoteState = false,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<GitCommandResult>> FetchAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<GitCommandResult>> PullAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<GitCommandResult>> PushAsync(
+        string workspaceRoot,
         CancellationToken cancellationToken = default);
 
     Task<Result<GitCommandResult>> StageAllAndCommitAsync(
@@ -21,6 +34,11 @@ public interface IGitService
         CancellationToken cancellationToken = default);
 
     Task<Result<GitCommandResult>> StageAllCommitAndPushAsync(
+        string workspaceRoot,
+        string commitMessage,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<GitCommandResult>> StageAllCommitPullAndPushAsync(
         string workspaceRoot,
         string commitMessage,
         CancellationToken cancellationToken = default);

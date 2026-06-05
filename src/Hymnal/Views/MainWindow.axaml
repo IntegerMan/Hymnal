@@ -18,6 +18,7 @@
     <Window.Resources>
         <conv:ActiveIconBrushConverter x:Key="ActiveIconBrushConverter" />
         <conv:ShellModeEqualsConverter x:Key="ShellModeEqualsConverter" />
+        <conv:BoolToOpacityConverter x:Key="BoolToOpacityConverter" />
     </Window.Resources>
 
     <Window.Styles>
@@ -180,23 +181,19 @@
                     <StackPanel Orientation="Horizontal"
                                 VerticalAlignment="Center"
                                 Spacing="12">
-                        <StackPanel Spacing="1"
-                                    VerticalAlignment="Center">
-                            <TextBlock Text="{Binding GitPanelViewModel.BranchName}"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource OnSurfaceBrush}" />
-                            <TextBlock Text="{Binding GitPanelViewModel.UncommittedChangeCount, StringFormat='{}{0} uncommitted changes'}"
-                                       FontSize="11"
-                                       Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                        </StackPanel>
-                        <Button Content="Commit"
-                                Click="CommitGitButton_Click"
+                        <TextBlock Text="{Binding GitPanelViewModel.ChangeSummaryText}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                        <Button Content="{Binding GitPanelViewModel.PrimaryActionText}"
+                                Click="SyncButton_Click"
+                                IsEnabled="{Binding GitPanelViewModel.CanSync}"
                                 Padding="18,6"
                                 CornerRadius="6"
                                 Background="{DynamicResource SynthwavePurpleBrush}"
                                 Foreground="{DynamicResource OnSurfaceBrush}"
-                                ToolTip.Tip="Open Git commit dialog" />
+                                Opacity="{Binding GitPanelViewModel.IsFullySynced, Converter={StaticResource BoolToOpacityConverter}}"
+                                ToolTip.Tip="Sync local changes, or pull when already up to date" />
                     </StackPanel>
                 </Border>
             </Grid>
@@ -356,8 +353,14 @@
                 <Panel Grid.Column="2">
                     <!-- Editor — visible when Gantt is off -->
                     <Border IsVisible="{Binding IsEditorVisible}">
-                        <views:EditorView DataContext="{Binding EditorViewModel}"
-                                          Background="Transparent" />
+                        <DockPanel>
+                            <Border DockPanel.Dock="Top"
+                                    IsVisible="{Binding IsEditorChapterBarVisible}">
+                                <views:EditorChapterBar DataContext="{Binding WorkspaceViewModel.SelectedNode}" />
+                            </Border>
+                            <views:EditorView DataContext="{Binding EditorViewModel}"
+                                              Background="Transparent" />
+                        </DockPanel>
                     </Border>
                     <!-- Plan corkboard — visible when Plan is active -->
                     <Border IsVisible="{Binding IsCorkboardVisible}">

@@ -1,8 +1,10 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Hymnal.ViewModels"
         x:Class="Hymnal.Views.GitCommitDialog"
-        Title="Commit changes"
-        Width="560" Height="260"
+        x:DataType="vm:GitCommitDialogViewModel"
+        Title="Sync changes"
+        Width="560" Height="420"
         CanResize="False"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
@@ -22,14 +24,14 @@
 
         <Grid Grid.Row="1"
               Margin="24"
-              RowDefinitions="Auto,Auto,*"
+              RowDefinitions="Auto,Auto,*,Auto"
               ColumnDefinitions="*">
             <StackPanel Grid.Row="0" Spacing="6">
                 <TextBlock Text="Commit message"
                            FontSize="18"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource OnSurfaceBrush}" />
-                <TextBlock Text="Choose a commit-only or commit-and-push action after reviewing the staged changes."
+                <TextBlock Text="Review the changed files below, then sync to commit, pull, and push."
                            FontSize="12"
                            Foreground="{DynamicResource OnSurfaceDimBrush}"
                            TextWrapping="Wrap" />
@@ -38,7 +40,7 @@
             <TextBox Grid.Row="1"
                      x:Name="CommitMessageBox"
                      Margin="0,18,0,0"
-                     Height="100"
+                     Height="80"
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
                      VerticalContentAlignment="Top"
@@ -47,7 +49,44 @@
                      BorderBrush="{DynamicResource BorderSubtleBrush}"
                      Foreground="{DynamicResource OnSurfaceBrush}" />
 
-            <StackPanel Grid.Row="2"
+            <Border Grid.Row="2"
+                    Margin="0,14,0,0"
+                    Padding="8"
+                    CornerRadius="8"
+                    Background="{DynamicResource SurfaceElevatedBrush}"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="1">
+                <DockPanel LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Changed files"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}"
+                               Margin="0,0,0,8" />
+                    <ListBox ItemsSource="{Binding ChangedFileLabels}"
+                             IsVisible="{Binding HasChangedFiles}"
+                             Background="Transparent"
+                             MaxHeight="160"
+                             BorderThickness="0">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}"
+                                           Foreground="{DynamicResource OnSurfaceBrush}"
+                                           FontSize="12"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,2" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Text="No changed files detected."
+                               IsVisible="{Binding !HasChangedFiles}"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}"
+                               FontSize="12"
+                               VerticalAlignment="Center" />
+                </DockPanel>
+            </Border>
+
+            <StackPanel Grid.Row="3"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
@@ -58,16 +97,12 @@
                         Background="{DynamicResource SurfaceHighBrush}"
                         Foreground="{DynamicResource OnSurfaceBrush}"
                         Click="CancelButton_Click" />
-                <Button Content="Commit &amp; Push"
-                        Padding="16,6"
-                        Background="{DynamicResource SurfaceHighBrush}"
-                        Foreground="{DynamicResource OnSurfaceBrush}"
-                        Click="CommitAndPushButton_Click" />
-                <Button Content="Commit only"
+                <Button x:Name="SyncButton"
+                        Content="Sync"
                         Padding="16,6"
                         Background="{DynamicResource SynthwavePurpleBrush}"
                         Foreground="{DynamicResource OnSurfaceBrush}"
-                        Click="CommitOnlyButton_Click" />
+                        Click="SyncButton_Click" />
             </StackPanel>
         </Grid>
     </Grid>

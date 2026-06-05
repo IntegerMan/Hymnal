@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Hymnal.Core.Interfaces;
+using Hymnal.Core.Models;
 using Hymnal.Infrastructure;
 using ReactiveUI;
 using System;
@@ -119,6 +120,10 @@ public class MainWindowViewModel : ViewModelBase
     /// <summary>True when both the Notes and Chapter Info panes are visible.</summary>
     public bool IsBothRightPanesOpen => _isBothRightPanesOpen.Value;
 
+    private readonly ObservableAsPropertyHelper<bool> _isEditorChapterBarVisible;
+    /// <summary>True when the editor chapter metadata bar should be shown.</summary>
+    public bool IsEditorChapterBarVisible => _isEditorChapterBarVisible.Value;
+
     // ── Exit ─────────────────────────────────────────────────────────────────
 
     public ReactiveCommand<Unit, Unit> ExitCommand { get; } =
@@ -193,6 +198,17 @@ public class MainWindowViewModel : ViewModelBase
                 (a, b) => a && b)
             .ToProperty(this, x => x.IsBothRightPanesOpen);
         Disposables.Add(_isBothRightPanesOpen);
+
+        _isEditorChapterBarVisible = Observable.CombineLatest(
+                this.WhenAnyValue(x => x.ActiveMode),
+                workspaceViewModel.WhenAnyValue(x => x.SelectedNode),
+                editorViewModel.WhenAnyValue(x => x.ShowBookTxtWarning),
+                (mode, selected, bookTxt) =>
+                    mode == ShellMode.Write
+                    && selected?.Node.Kind == NodeKind.Chapter
+                    && !bookTxt)
+            .ToProperty(this, x => x.IsEditorChapterBarVisible);
+        Disposables.Add(_isEditorChapterBarVisible);
 
         EditorViewModel.HasWorkspace = WorkspaceViewModel.HasWorkspace;
         Disposables.Add(

@@ -26,6 +26,7 @@ public sealed class ProcessGitService : IGitService
 
     public async Task<Result<GitRepositoryStatus>> GetRepositoryStatusAsync(
         string workspaceRoot,
+        bool includeRemoteState = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(workspaceRoot))
@@ -65,16 +66,82 @@ public sealed class ProcessGitService : IGitService
         if (string.IsNullOrEmpty(branchName))
             branchName = "HEAD";
 
-        var changeCount = status.IsSuccess ? CountPorcelainStatusLines(status.Stdout) : 0;
+        var allChangedFiles = status.IsSuccess
+            ? GitPorcelainParser.Parse(status.Stdout)
+            : Array.Empty<GitChangedFile>();
+        var changedFiles = GitChangeDisplayFilter.Apply(allChangedFiles);
+        var changeCount = changedFiles.Count;
+
+        var conflictedFiles = await GetConflictedFilesAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+        var hasMergeConflict = conflictedFiles.Count > 0;
+
+        var behindRemoteCount = 0;
+        var aheadRemoteCount = 0;
+        if (includeRemoteState)
+        {
+            await FetchAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+            var divergence = await GetRemoteDivergenceAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+            behindRemoteCount = divergence.Behind;
+            aheadRemoteCount = divergence.Ahead;
+        }
 
         return Result<GitRepositoryStatus>.Ok(new GitRepositoryStatus(
             true,
             true,
             branchName,
             changeCount,
+            changedFiles,
+            behindRemoteCount,
+            aheadRemoteCount,
+            hasMergeConflict,
+            conflictedFiles,
             repoProbe,
             branch,
             status));
+    }
+
+    public async Task<Result<GitCommandResult>> FetchAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+            return Result<GitCommandResult>.Fail("Workspace root is required for Git fetch operations.");
+
+        var fetch = await RunWorkspaceGitAsync(workspaceRoot, new[] { "fetch", "--quiet" }, cancellationToken).ConfigureAwait(false);
+        return Result<GitCommandResult>.Ok(fetch);
+    }
+
+    public async Task<Result<GitCommandResult>> PullAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+            return Result<GitCommandResult>.Fail("Workspace root is required for Git pull operations.");
+
+        var pull = await RunWorkspaceGitAsync(workspaceRoot, new[] { "pull", "--no-edit" }, cancellationToken).ConfigureAwait(false);
+        if (pull.IsSuccess)
+            return Result<GitCommandResult>.Ok(pull);
+
+        var conflictedFiles = await GetConflictedFilesAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+        if (conflictedFiles.Count > 0)
+        {
+            var message = BuildMergeConflictMessage(conflictedFiles);
+            return Result<GitCommandResult>.Fail(message);
+        }
+
+        var stderr = !string.IsNullOrWhiteSpace(pull.Stderr) ? pull.Stderr : $"Git pull failed (exit code {pull.ExitCode}).";
+        return Result<GitCommandResult>.Fail(stderr);
+    }
+
+    public async Task<Result<GitCommandResult>> PushAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+            return Result<GitCommandResult>.Fail("Workspace root is required for Git push operations.");
+
+        var push = await RunWorkspaceGitAsync(workspaceRoot, new[] { "push" }, cancellationToken).ConfigureAwait(false);
+        return Result<GitCommandResult>.Ok(push);
     }
 
     public async Task<Result<GitCommandResult>> StageAllAndCommitAsync(
@@ -103,9 +170,89 @@ public sealed class ProcessGitService : IGitService
         if (!commit.IsSuccess || !commit.Value!.IsSuccess)
             return commit;
 
-        var push = await RunWorkspaceGitAsync(workspaceRoot, new[] { "push" }, cancellationToken).ConfigureAwait(false);
-        return Result<GitCommandResult>.Ok(push);
+        var push = await PushAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+        if (!push.IsSuccess)
+            return push;
+
+        return Result<GitCommandResult>.Ok(push.Value!);
     }
+
+    public async Task<Result<GitCommandResult>> StageAllCommitPullAndPushAsync(
+        string workspaceRoot,
+        string commitMessage,
+        CancellationToken cancellationToken = default)
+    {
+        var commit = await StageAllAndCommitAsync(workspaceRoot, commitMessage, cancellationToken).ConfigureAwait(false);
+        if (!commit.IsSuccess || !commit.Value!.IsSuccess)
+            return commit;
+
+        var pull = await PullAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+        if (!pull.IsSuccess)
+            return pull;
+
+        var push = await PushAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+        if (!push.IsSuccess)
+            return push;
+
+        return Result<GitCommandResult>.Ok(push.Value!);
+    }
+
+    private async Task<(int Behind, int Ahead)> GetRemoteDivergenceAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken)
+    {
+        var upstream = await RunWorkspaceGitAsync(
+            workspaceRoot,
+            new[] { "rev-parse", "--abbrev-ref", "@{upstream}" },
+            cancellationToken).ConfigureAwait(false);
+
+        if (!upstream.IsSuccess || string.IsNullOrWhiteSpace(upstream.Stdout))
+            return (0, 0);
+
+        var behindResult = await RunWorkspaceGitAsync(
+            workspaceRoot,
+            new[] { "rev-list", "--count", "HEAD..@{upstream}" },
+            cancellationToken).ConfigureAwait(false);
+
+        var aheadResult = await RunWorkspaceGitAsync(
+            workspaceRoot,
+            new[] { "rev-list", "--count", "@{upstream}..HEAD" },
+            cancellationToken).ConfigureAwait(false);
+
+        var behind = ParseCount(behindResult.Stdout);
+        var ahead = ParseCount(aheadResult.Stdout);
+        return (behind, ahead);
+    }
+
+    private async Task<IReadOnlyList<string>> GetConflictedFilesAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken)
+    {
+        var result = await RunWorkspaceGitAsync(
+            workspaceRoot,
+            new[] { "diff", "--name-only", "--diff-filter=U" },
+            cancellationToken).ConfigureAwait(false);
+
+        if (!result.IsSuccess || string.IsNullOrWhiteSpace(result.Stdout))
+            return Array.Empty<string>();
+
+        return result.Stdout
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(path => path.Replace('\\', '/'))
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string BuildMergeConflictMessage(IReadOnlyList<string> conflictedFiles)
+    {
+        var fileList = string.Join(Environment.NewLine, conflictedFiles.Select(path => $"  • {path}"));
+        return $"Merge conflict in one or more files. Resolve using your preferred Git tooling before syncing:{Environment.NewLine}{fileList}";
+    }
+
+    private static int ParseCount(string stdout)
+        => int.TryParse(stdout.Trim(), out var count) ? count : 0;
 
     private async Task<GitCommandResult> StageAllAsync(string workspaceRoot, CancellationToken cancellationToken)
         => await RunWorkspaceGitAsync(workspaceRoot, new[] { "add", "--all" }, cancellationToken).ConfigureAwait(false);
@@ -154,9 +301,4 @@ public sealed class ProcessGitService : IGitService
 
         return Result<GitCommandResult>.Ok(GitCommandResult.Failure(GitExecutable, Array.Empty<string>(), null, string.Empty));
     }
-
-    private static int CountPorcelainStatusLines(string stdout)
-        => stdout
-            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-            .Count(line => !string.IsNullOrWhiteSpace(line));
 }

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
@@ -10,19 +12,21 @@ using System.Threading.Tasks;
 using Hymnal.Core.Common;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
+using Hymnal.Core.Services;
 using ReactiveUI;
 using Unit = System.Reactive.Unit;
 
 namespace Hymnal.ViewModels;
 
 /// <summary>
-/// Git toolbar state for the workspace header. Keeps the branch / change-count display fresh,
+/// Git toolbar state for the workspace header. Keeps the sync summary fresh,
 /// hides itself when Git is unavailable or the workspace is not a repository, and debounces
 /// workspace/save/watch refresh signals so file saves and git metadata writes do not spam status.
 /// </summary>
 public sealed class GitPanelViewModel : ViewModelBase, IDisposable
 {
     private const int RefreshDebounceMilliseconds = 250;
+    private const int RemoteFetchIntervalSeconds = 60;
 
     private readonly WorkspaceViewModel _workspaceViewModel;
     private readonly EditorViewModel _editorViewModel;
@@ -35,6 +39,11 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
     private string? _watchedRoot;
     private int _busyDepth;
     private bool _disposed;
+    private bool _conflictNotified;
+    private bool _isPulling;
+    private DateTimeOffset? _lastRemoteFetchUtc;
+    private string? _transientSummary;
+    private DateTimeOffset? _transientSummaryUntil;
 
     private bool _isVisible;
     public bool IsVisible
@@ -57,11 +66,73 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _uncommittedChangeCount, value);
     }
 
+    private int _behindRemoteCount;
+    public int BehindRemoteCount
+    {
+        get => _behindRemoteCount;
+        private set => this.RaiseAndSetIfChanged(ref _behindRemoteCount, value);
+    }
+
+    private int _aheadRemoteCount;
+    public int AheadRemoteCount
+    {
+        get => _aheadRemoteCount;
+        private set => this.RaiseAndSetIfChanged(ref _aheadRemoteCount, value);
+    }
+
+    private bool _hasMergeConflict;
+    public bool HasMergeConflict
+    {
+        get => _hasMergeConflict;
+        private set => this.RaiseAndSetIfChanged(ref _hasMergeConflict, value);
+    }
+
+    private string _changeSummaryText = string.Empty;
+    public string ChangeSummaryText
+    {
+        get => _changeSummaryText;
+        private set => this.RaiseAndSetIfChanged(ref _changeSummaryText, value);
+    }
+
     private string _statusText = string.Empty;
     public string StatusText
     {
         get => _statusText;
         private set => this.RaiseAndSetIfChanged(ref _statusText, value);
+    }
+
+    private IReadOnlyList<GitChangedFile> _changedFiles = Array.Empty<GitChangedFile>();
+    public IReadOnlyList<GitChangedFile> ChangedFiles
+    {
+        get => _changedFiles;
+        private set => this.RaiseAndSetIfChanged(ref _changedFiles, value);
+    }
+
+    private IReadOnlyList<GitChangeTreeNode> _changedFileTree = Array.Empty<GitChangeTreeNode>();
+    public IReadOnlyList<GitChangeTreeNode> ChangedFileTree
+    {
+        get => _changedFileTree;
+        private set => this.RaiseAndSetIfChanged(ref _changedFileTree, value);
+    }
+
+    private bool _canSync;
+    public bool CanSync
+    {
+        get => _canSync;
+        private set => this.RaiseAndSetIfChanged(ref _canSync, value);
+    }
+
+    public bool IsFullySynced =>
+        UncommittedChangeCount == 0
+        && BehindRemoteCount == 0
+        && AheadRemoteCount == 0
+        && !HasMergeConflict;
+
+    private string _primaryActionText = "Sync";
+    public string PrimaryActionText
+    {
+        get => _primaryActionText;
+        private set => this.RaiseAndSetIfChanged(ref _primaryActionText, value);
     }
 
     private bool _isBusy;
@@ -79,8 +150,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
     }
 
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
-    public ReactiveCommand<string?, Unit> CommitOnlyCommand { get; }
-    public ReactiveCommand<string?, Unit> CommitAndPushCommand { get; }
+    public ReactiveCommand<string?, Unit> SyncCommand { get; }
 
     public GitPanelViewModel(
         WorkspaceViewModel workspaceViewModel,
@@ -93,16 +163,14 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         _gitService = gitService;
         _notificationService = notificationService;
 
-        var canMutate = this.WhenAnyValue(x => x.IsVisible, x => x.IsBusy, (visible, busy) => visible && !busy);
+        var canMutate = this.WhenAnyValue(x => x.CanSync);
         var canRefresh = this.WhenAnyValue(x => x.IsBusy, busy => !busy);
 
         RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync, canRefresh);
-        CommitOnlyCommand = ReactiveCommand.CreateFromTask<string?>(CommitOnlyAsync, canMutate);
-        CommitAndPushCommand = ReactiveCommand.CreateFromTask<string?>(CommitAndPushAsync, canMutate);
+        SyncCommand = ReactiveCommand.CreateFromTask<string?>(SyncAsync, canMutate);
 
         Disposables.Add(RefreshCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to refresh Git status: {ex.Message}"))));
-        Disposables.Add(CommitOnlyCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to commit changes: {ex.Message}"))));
-        Disposables.Add(CommitAndPushCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to push changes: {ex.Message}"))));
+        Disposables.Add(SyncCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to sync changes: {ex.Message}"))));
 
         Disposables.Add(
             _workspaceViewModel.WorkspaceChanged
@@ -130,15 +198,118 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
     public string CreateDefaultCommitMessage()
         => $"Hymnal: save progress {DateTime.UtcNow:O}";
 
-    public async Task CommitOnlyAsync(string? commitMessage)
-        => await ExecuteGitMutationAsync(
-            () => _gitService.StageAllAndCommitAsync(_workspaceViewModel.WorkspaceRoot, NormalizeCommitMessage(commitMessage)),
-            "commit").ConfigureAwait(false);
+    public bool ShouldOpenSyncDialog()
+        => UncommittedChangeCount > 0;
 
-    public async Task CommitAndPushAsync(string? commitMessage)
-        => await ExecuteGitMutationAsync(
-            () => _gitService.StageAllCommitAndPushAsync(_workspaceViewModel.WorkspaceRoot, NormalizeCommitMessage(commitMessage)),
-            "push").ConfigureAwait(false);
+    public async Task SyncAsync(string? commitMessage)
+    {
+        if (HasMergeConflict || IsBusy || !IsVisible)
+            return;
+
+        var workspaceRoot = _workspaceViewModel.WorkspaceRoot;
+        if (UncommittedChangeCount > 0)
+        {
+            await ExecuteGitMutationAsync(
+                () => _gitService.StageAllCommitPullAndPushAsync(workspaceRoot, NormalizeCommitMessage(commitMessage)),
+                "sync").ConfigureAwait(false);
+            return;
+        }
+
+        if (BehindRemoteCount > 0)
+        {
+            var commitsToPull = BehindRemoteCount;
+            await ExecuteGitMutationAsync(
+                async () =>
+                {
+                    var pull = await _gitService.PullAsync(workspaceRoot).ConfigureAwait(false);
+                    if (!pull.IsSuccess)
+                        return pull;
+
+                    SetTransientSummary(GitSyncSummary.FormatPullResult(commitsToPull));
+
+                    if (AheadRemoteCount <= 0)
+                        return pull;
+
+                    var push = await _gitService.PushAsync(workspaceRoot).ConfigureAwait(false);
+                    return push.IsSuccess
+                        ? push
+                        : Result<GitCommandResult>.Fail(push.Error ?? "Git push failed.");
+                },
+                "sync").ConfigureAwait(false);
+            return;
+        }
+
+        if (AheadRemoteCount > 0)
+        {
+            await ExecuteGitMutationAsync(
+                () => _gitService.PushAsync(workspaceRoot),
+                "sync").ConfigureAwait(false);
+            return;
+        }
+
+        await PullLatestAsync(workspaceRoot).ConfigureAwait(false);
+    }
+
+    public async Task PullLatestAsync(string? workspaceRoot = null)
+    {
+        if (HasMergeConflict || IsBusy || !IsVisible)
+            return;
+
+        workspaceRoot ??= _workspaceViewModel.WorkspaceRoot;
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+            return;
+
+        _isPulling = true;
+        UpdatePrimaryActionText();
+        SetTransientSummary(GitSyncSummary.Pulling, persistThroughRefresh: true);
+        EnterBusy();
+
+        try
+        {
+            await _gitService.FetchAsync(workspaceRoot).ConfigureAwait(false);
+            var statusResult = await _gitService.GetRepositoryStatusAsync(workspaceRoot, includeRemoteState: true).ConfigureAwait(false);
+            var behindBefore = statusResult.IsSuccess ? statusResult.Value!.BehindRemoteCount : 0;
+
+            var pull = await _gitService.PullAsync(workspaceRoot).ConfigureAwait(false);
+            if (!pull.IsSuccess)
+            {
+                var message = pull.Error ?? "Git pull failed.";
+                LastError = message;
+                _notificationService.ShowError(message);
+                ClearTransientSummary();
+                return;
+            }
+
+            if (!pull.Value!.IsSuccess)
+            {
+                var message = !string.IsNullOrWhiteSpace(pull.Value.Stderr)
+                    ? pull.Value.Stderr
+                    : $"Git pull failed (exit code {pull.Value.ExitCode}).";
+                LastError = message;
+                _notificationService.ShowError(message);
+                ClearTransientSummary();
+                return;
+            }
+
+            LastError = null;
+            _lastRemoteFetchUtc = DateTimeOffset.UtcNow;
+            SetTransientSummary(GitSyncSummary.FormatPullResult(behindBefore));
+        }
+        catch (Exception ex)
+        {
+            var message = $"Git pull failed: {ex.Message}";
+            LastError = message;
+            _notificationService.ShowError(message);
+            ClearTransientSummary();
+        }
+        finally
+        {
+            _isPulling = false;
+            QueueRefresh();
+            ExitBusy();
+            UpdatePrimaryActionText();
+        }
+    }
 
     public async Task RefreshAsync()
     {
@@ -155,7 +326,8 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
             }
 
             var workspaceRoot = _workspaceViewModel.WorkspaceRoot;
-            var result = await _gitService.GetRepositoryStatusAsync(workspaceRoot).ConfigureAwait(false);
+            var includeRemoteState = ShouldFetchRemoteState();
+            var result = await _gitService.GetRepositoryStatusAsync(workspaceRoot, includeRemoteState).ConfigureAwait(false);
             if (!result.IsSuccess)
             {
                 var message = result.Error ?? "Failed to read Git repository status.";
@@ -164,6 +336,9 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
                 DisposeWatcher();
                 return;
             }
+
+            if (includeRemoteState)
+                _lastRemoteFetchUtc = DateTimeOffset.UtcNow;
 
             var status = result.Value!;
             if (!status.IsGitAvailable)
@@ -181,10 +356,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
             }
 
             EnsureWatcher(workspaceRoot);
-            BranchName = status.BranchName;
-            UncommittedChangeCount = status.UncommittedChangeCount;
-            StatusText = FormatStatusText(status.BranchName, status.UncommittedChangeCount);
-            IsVisible = true;
+            ApplyStatus(status);
         }
         catch (Exception ex)
         {
@@ -200,8 +372,112 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private void ApplyStatus(GitRepositoryStatus status)
+    {
+        BranchName = status.BranchName;
+        UncommittedChangeCount = status.UncommittedChangeCount;
+        BehindRemoteCount = status.BehindRemoteCount;
+        AheadRemoteCount = status.AheadRemoteCount;
+        HasMergeConflict = status.HasMergeConflict;
+        ChangedFiles = status.ChangedFiles;
+        ChangedFileTree = GitChangeTreeBuilder.Build(status.ChangedFiles);
+        ApplySummaryText(status);
+        CanSync = IsVisible && !HasMergeConflict && !IsBusy;
+        UpdatePrimaryActionText();
+        IsVisible = true;
+
+        if (status.HasMergeConflict)
+        {
+            var message = status.ConflictedFiles.Count > 0
+                ? BuildMergeConflictMessage(status.ConflictedFiles)
+                : "Merge conflict detected. Resolve using your preferred Git tooling before syncing.";
+            LastError = message;
+            if (!_conflictNotified)
+            {
+                _notificationService.ShowError(message);
+                _conflictNotified = true;
+            }
+        }
+        else if (!status.HasMergeConflict && HasMergeConflict)
+        {
+            _conflictNotified = false;
+        }
+    }
+
+    private void ApplySummaryText(GitRepositoryStatus status)
+    {
+        if (TryGetActiveTransientSummary(out var transientSummary))
+        {
+            ChangeSummaryText = transientSummary;
+            StatusText = transientSummary;
+            return;
+        }
+
+        var summary = GitSyncSummary.Format(
+            status.UncommittedChangeCount,
+            status.BehindRemoteCount,
+            status.AheadRemoteCount,
+            status.HasMergeConflict);
+        ChangeSummaryText = summary;
+        StatusText = summary;
+    }
+
+    private bool TryGetActiveTransientSummary(out string summary)
+    {
+        if (_transientSummary != null
+            && _transientSummaryUntil.HasValue
+            && DateTimeOffset.UtcNow <= _transientSummaryUntil.Value)
+        {
+            summary = _transientSummary;
+            return true;
+        }
+
+        _transientSummary = null;
+        _transientSummaryUntil = null;
+        summary = string.Empty;
+        return false;
+    }
+
+    private void SetTransientSummary(string summary, TimeSpan? duration = null, bool persistThroughRefresh = false)
+    {
+        _transientSummary = summary;
+        _transientSummaryUntil = persistThroughRefresh
+            ? DateTimeOffset.UtcNow.AddMinutes(1)
+            : DateTimeOffset.UtcNow.Add(duration ?? TimeSpan.FromSeconds(8));
+        ChangeSummaryText = summary;
+        StatusText = summary;
+    }
+
+    private void ClearTransientSummary()
+    {
+        _transientSummary = null;
+        _transientSummaryUntil = null;
+    }
+
+    private void UpdatePrimaryActionText()
+    {
+        if (IsBusy && _isPulling)
+        {
+            PrimaryActionText = "Pulling…";
+            return;
+        }
+
+        PrimaryActionText = IsFullySynced ? "Pull" : "Sync";
+    }
+
+    private bool ShouldFetchRemoteState()
+    {
+        if (_lastRemoteFetchUtc == null)
+            return true;
+
+        return DateTimeOffset.UtcNow - _lastRemoteFetchUtc.Value >= TimeSpan.FromSeconds(RemoteFetchIntervalSeconds);
+    }
+
     private void HandleWorkspaceChanged()
     {
+        _lastRemoteFetchUtc = null;
+        _conflictNotified = false;
+
         if (!_workspaceViewModel.HasWorkspace || string.IsNullOrWhiteSpace(_workspaceViewModel.WorkspaceRoot))
         {
             ResetHiddenState();
@@ -248,6 +524,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
                 return;
             }
 
+            LastError = null;
         }
         catch (Exception ex)
         {
@@ -318,8 +595,19 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
     {
         BranchName = null;
         UncommittedChangeCount = 0;
+        BehindRemoteCount = 0;
+        AheadRemoteCount = 0;
+        HasMergeConflict = false;
+        ChangedFiles = Array.Empty<GitChangedFile>();
+        ChangedFileTree = Array.Empty<GitChangeTreeNode>();
+        ChangeSummaryText = string.Empty;
         StatusText = string.Empty;
+        CanSync = false;
+        PrimaryActionText = "Sync";
+        ClearTransientSummary();
+        _isPulling = false;
         LastError = null;
+        _conflictNotified = false;
         IsVisible = false;
     }
 
@@ -327,24 +615,26 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
     {
         BranchName = null;
         UncommittedChangeCount = 0;
+        BehindRemoteCount = 0;
+        AheadRemoteCount = 0;
+        HasMergeConflict = false;
+        ChangedFiles = Array.Empty<GitChangedFile>();
+        ChangedFileTree = Array.Empty<GitChangeTreeNode>();
+        ChangeSummaryText = string.Empty;
         StatusText = string.Empty;
+        CanSync = false;
         LastError = lastError;
+        _conflictNotified = false;
         IsVisible = false;
     }
 
     private static string DescribeProbeFailure(GitCommandResult probeResult, string fallback)
         => !string.IsNullOrWhiteSpace(probeResult.Stderr) ? probeResult.Stderr : fallback;
 
-    private static string FormatStatusText(string? branchName, int uncommittedChangeCount)
+    private static string BuildMergeConflictMessage(IReadOnlyList<string> conflictedFiles)
     {
-        var branch = string.IsNullOrWhiteSpace(branchName) ? "HEAD" : branchName;
-        var changeLabel = uncommittedChangeCount == 0
-            ? "clean"
-            : uncommittedChangeCount == 1
-                ? "1 change"
-                : $"{uncommittedChangeCount:N0} changes";
-
-        return $"{branch} · {changeLabel}";
+        var fileList = string.Join(Environment.NewLine, conflictedFiles.Select(path => $"  • {path}"));
+        return $"Merge conflict in one or more files. Resolve using your preferred Git tooling before syncing:{Environment.NewLine}{fileList}";
     }
 
     private string NormalizeCommitMessage(string? commitMessage)
@@ -353,13 +643,21 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
     private void EnterBusy()
     {
         if (Interlocked.Increment(ref _busyDepth) == 1)
+        {
             IsBusy = true;
+            CanSync = IsVisible && !HasMergeConflict && !IsBusy;
+            UpdatePrimaryActionText();
+        }
     }
 
     private void ExitBusy()
     {
         if (Interlocked.Decrement(ref _busyDepth) == 0)
+        {
             IsBusy = false;
+            CanSync = IsVisible && !HasMergeConflict && !IsBusy;
+            UpdatePrimaryActionText();
+        }
     }
 
     public void Dispose()

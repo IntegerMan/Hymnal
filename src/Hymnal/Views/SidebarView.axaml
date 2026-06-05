@@ -156,6 +156,9 @@
                             <!-- Right-click context menu for Set Target -->
                             <Grid.ContextMenu>
                                 <ContextMenu>
+                                    <MenuItem Header="Mark complete"
+                                              IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
+                                              Command="{Binding CompletePhaseCommand}" />
                                     <MenuItem Header="Set Target…"
                                               IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
                                               Command="{Binding OpenTargetFlyoutCommand}" />

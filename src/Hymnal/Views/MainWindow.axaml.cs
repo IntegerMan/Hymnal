@@ -52,31 +52,33 @@ public partial class MainWindow : Window
         };
     }
 
-    public static async Task ExecuteGitCommitActionAsync(GitPanelViewModel gitPanelViewModel, GitCommitDialogAction action, string? commitMessage)
-    {
-        switch (action)
-        {
-            case GitCommitDialogAction.CommitOnly:
-                await gitPanelViewModel.CommitOnlyAsync(commitMessage);
-                break;
-            case GitCommitDialogAction.CommitAndPush:
-                await gitPanelViewModel.CommitAndPushAsync(commitMessage);
-                break;
-        }
-    }
+    public static async Task ExecuteGitSyncActionAsync(GitPanelViewModel gitPanelViewModel, string? commitMessage)
+        => await gitPanelViewModel.SyncAsync(commitMessage);
 
-    private async void CommitGitButton_Click(object? sender, RoutedEventArgs e)
+    private async void SyncButton_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm || !vm.GitPanelViewModel.IsVisible)
             return;
 
-        var dialog = new GitCommitDialog(vm.GitPanelViewModel.CreateDefaultCommitMessage());
-        await dialog.ShowDialog(this);
-
-        if (dialog.Result is not GitCommitDialogAction action)
+        var gitPanel = vm.GitPanelViewModel;
+        if (!gitPanel.CanSync)
             return;
 
-        await ExecuteGitCommitActionAsync(vm.GitPanelViewModel, action, dialog.CommitMessage);
+        if (!gitPanel.ShouldOpenSyncDialog())
+        {
+            await ExecuteGitSyncActionAsync(gitPanel, null);
+            return;
+        }
+
+        var dialog = new GitCommitDialog(
+            gitPanel.CreateDefaultCommitMessage(),
+            gitPanel.ChangedFiles);
+        await dialog.ShowDialog(this);
+
+        if (dialog.Result is not GitCommitDialogAction.Sync)
+            return;
+
+        await ExecuteGitSyncActionAsync(gitPanel, dialog.CommitMessage);
     }
 
     private void SetupModeChrome(MainWindowViewModel vm)

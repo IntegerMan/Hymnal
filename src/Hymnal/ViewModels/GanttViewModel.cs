@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading.Tasks;
 using Avalonia;
@@ -129,6 +130,15 @@ public sealed class GanttViewModel : ViewModelBase
     public ReactiveCommand<ChapterStatus, Unit> SetEditingStatusCommand { get; }
     public ReactiveCommand<Unit, Unit> ClearStartDateCommand { get; }
     public ReactiveCommand<Unit, Unit> ClearEndDateCommand { get; }
+    public ReactiveCommand<GanttRowViewModel, Unit> MarkRowCompleteCommand { get; }
+    public ReactiveCommand<Unit, Unit> CompleteSelectedRowCommand { get; }
+
+    private GanttRowViewModel? _selectedRow;
+    public GanttRowViewModel? SelectedRow
+    {
+        get => _selectedRow;
+        set => this.RaiseAndSetIfChanged(ref _selectedRow, value);
+    }
 
     public GanttViewModel(
         WorkspaceViewModel workspace,
@@ -162,6 +172,16 @@ public sealed class GanttViewModel : ViewModelBase
         Disposables.Add(ClearStartDateCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
         Disposables.Add(ClearEndDateCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
 
+        MarkRowCompleteCommand = ReactiveCommand.CreateFromTask<GanttRowViewModel>(
+            MarkRowCompleteAsync,
+            this.WhenAnyValue(x => x.SelectedRow).Select(_ => true));
+        Disposables.Add(MarkRowCompleteCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
+        CompleteSelectedRowCommand = ReactiveCommand.CreateFromTask(
+            CompleteSelectedRowAsync,
+            this.WhenAnyValue(x => x.SelectedRow).Select(r => r?.IsEditable == true));
+        Disposables.Add(CompleteSelectedRowCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
         RebuildRows();
     }
 
@@ -183,6 +203,82 @@ public sealed class GanttViewModel : ViewModelBase
         EditCellWidth = cellBounds.Width;
         EditCellHeight = cellBounds.Height;
         OpenEditForRow(row);
+    }
+
+    public async Task MarkRowCompleteAsync(GanttRowViewModel row)
+    {
+        if (!row.IsEditable)
+            return;
+
+        var chapterVm = _workspace.Nodes
+            .FirstOrDefault(n => n.Node.RelativePath == row.RelativePath);
+
+        if (chapterVm == null)
+        {
+            _notificationService.ShowError($"Could not find chapter '{row.Title}' to mark complete.");
+            return;
+        }
+
+        await chapterVm.CompleteCurrentPhaseAsync().ConfigureAwait(false);
+    }
+
+    private async Task CompleteSelectedRowAsync()
+    {
+        if (SelectedRow?.IsEditable == true)
+            await MarkRowCompleteAsync(SelectedRow).ConfigureAwait(false);
+    }
+
+    public string? GetCellCopyValue(GanttRowViewModel row, GanttEditableColumn column)
+    {
+        if (!row.IsEditable)
+            return null;
+
+        return column switch
+        {
+            GanttEditableColumn.StartDate => row.EditableStartDate?.ToString("yyyy-MM-dd"),
+            GanttEditableColumn.EndDate => row.EditableEndDate?.ToString("yyyy-MM-dd"),
+            GanttEditableColumn.Progress => (row.EditableProgressPercent ?? 0).ToString("0"),
+            _ => null
+        };
+    }
+
+    public async Task ApplyClipboardValueAsync(GanttRowViewModel row, GanttEditableColumn column, string raw)
+    {
+        if (!row.IsEditable)
+            return;
+
+        switch (column)
+        {
+            case GanttEditableColumn.StartDate:
+                if (!GanttCellValueParser.TryParseDate(raw, out var start))
+                {
+                    _notificationService.ShowError("Invalid date format. Use yyyy-MM-dd.");
+                    return;
+                }
+                row.EditableStartDate = start.ToDateTime(TimeOnly.MinValue);
+                await SaveInlineCellAsync(row, GanttEditableColumn.StartDate).ConfigureAwait(false);
+                break;
+
+            case GanttEditableColumn.EndDate:
+                if (!GanttCellValueParser.TryParseDate(raw, out var end))
+                {
+                    _notificationService.ShowError("Invalid date format. Use yyyy-MM-dd.");
+                    return;
+                }
+                row.EditableEndDate = end.ToDateTime(TimeOnly.MinValue);
+                await SaveInlineCellAsync(row, GanttEditableColumn.EndDate).ConfigureAwait(false);
+                break;
+
+            case GanttEditableColumn.Progress:
+                if (!GanttCellValueParser.TryParseProgress(raw, out var progress))
+                {
+                    _notificationService.ShowError("Invalid progress value. Use 0–100.");
+                    return;
+                }
+                row.EditableProgressPercent = progress;
+                await SaveInlineCellAsync(row, GanttEditableColumn.Progress).ConfigureAwait(false);
+                break;
+        }
     }
 
     public async Task SaveInlineCellAsync(GanttRowViewModel row, GanttEditableColumn column)

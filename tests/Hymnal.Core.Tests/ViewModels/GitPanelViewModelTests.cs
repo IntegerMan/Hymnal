@@ -10,6 +10,7 @@ using Hymnal.Core.Common;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
+using Hymnal.Core.Tests.TestDoubles;
 using ReactiveUI.Builder;
 using Xunit;
 using CoreUnit = Hymnal.Core.Common.Unit;
@@ -68,7 +69,7 @@ public sealed class GitPanelViewModelTests : IDisposable
     public async Task RefreshAsync_WithVisibleRepository_ShowsBranchCountAndStatusText()
     {
         _context.EnableWorkspace();
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("feature/git-toolbar", 3)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("feature/git-toolbar", 3)));
         var vm = _context.CreateGitPanel();
 
         await vm.RefreshAsync();
@@ -76,7 +77,9 @@ public sealed class GitPanelViewModelTests : IDisposable
         Assert.True(vm.IsVisible);
         Assert.Equal("feature/git-toolbar", vm.BranchName);
         Assert.Equal(3, vm.UncommittedChangeCount);
-        Assert.Equal("feature/git-toolbar · 3 changes", vm.StatusText);
+        Assert.Equal("3 uncommitted changes", vm.StatusText);
+        Assert.Equal("3 uncommitted changes", vm.ChangeSummaryText);
+        Assert.True(vm.CanSync);
         Assert.Null(vm.LastError);
         Assert.False(vm.IsBusy);
         Assert.Equal(1, _context.GitService.StatusCalls);
@@ -88,8 +91,8 @@ public sealed class GitPanelViewModelTests : IDisposable
         _context.EnableWorkspace();
         var filePath = _context.CreateWorkspaceFile("draft.md", "before");
         await _context.Editor.OpenArbitraryFileAsync(filePath);
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 2)));
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 1)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 2)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 1)));
         var vm = _context.CreateGitPanel();
 
         await vm.RefreshAsync();
@@ -101,7 +104,7 @@ public sealed class GitPanelViewModelTests : IDisposable
         Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
         Assert.Equal("main", vm.BranchName);
         Assert.Equal(1, vm.UncommittedChangeCount);
-        Assert.Equal("main · 1 change", vm.StatusText);
+        Assert.Equal("1 uncommitted change", vm.StatusText);
     }
 
     [Fact]
@@ -110,8 +113,8 @@ public sealed class GitPanelViewModelTests : IDisposable
         _context.EnableWorkspace();
         var filePath = _context.CreateWorkspaceFile("watch.md", "before");
         await _context.Editor.OpenArbitraryFileAsync(filePath);
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 4)));
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 5)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 4)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 5)));
         var vm = _context.CreateGitPanel();
 
         await vm.RefreshAsync();
@@ -121,29 +124,63 @@ public sealed class GitPanelViewModelTests : IDisposable
 
         Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
         Assert.Equal(5, vm.UncommittedChangeCount);
-        Assert.Equal("main · 5 changes", vm.StatusText);
+        Assert.Equal("5 uncommitted changes", vm.StatusText);
     }
 
     [Fact]
-    public async Task CommitOnlyAsync_UsesDefaultMessageWhenBlank_AndRefreshesAfterSuccess()
+    public async Task SyncAsync_UsesDefaultMessageWhenBlank_AndRefreshesAfterSuccess()
     {
         _context.EnableWorkspace();
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 2)));
-        _context.GitService.EnqueueCommit(Result<GitCommandResult>.Ok(CommitResult("[main abc123] commit\n", string.Empty)));
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 0)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 2)));
+        _context.GitService.EnqueueSync(Result<GitCommandResult>.Ok(CommitResult("[main abc123] commit\n", string.Empty)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 0)));
         var vm = _context.CreateGitPanel();
 
         await vm.RefreshAsync();
-        await vm.CommitOnlyAsync("   ");
+        await vm.SyncAsync("   ");
 
-        Assert.Single(_context.GitService.CommitMessages);
-        Assert.StartsWith("Hymnal: save progress ", _context.GitService.CommitMessages[0]);
+        Assert.Single(_context.GitService.SyncMessages);
+        Assert.StartsWith("Hymnal: save progress ", _context.GitService.SyncMessages[0]);
         Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
         Assert.True(vm.IsVisible);
         Assert.Equal("main", vm.BranchName);
         Assert.Equal(0, vm.UncommittedChangeCount);
-        Assert.Equal("main · clean", vm.StatusText);
+        Assert.Equal("Up to date", vm.StatusText);
+        Assert.True(vm.CanSync);
+        Assert.Equal("Pull", vm.PrimaryActionText);
         Assert.Null(vm.LastError);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_WhenUpToDate_ShowsPullAction()
+    {
+        _context.EnableWorkspace();
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 0)));
+        var vm = _context.CreateGitPanel();
+
+        await vm.RefreshAsync();
+
+        Assert.True(vm.IsFullySynced);
+        Assert.Equal("Up to date", vm.ChangeSummaryText);
+        Assert.True(vm.CanSync);
+        Assert.Equal("Pull", vm.PrimaryActionText);
+    }
+
+    [Fact]
+    public async Task PullLatestAsync_WhenUpToDate_ShowsAlreadyUpToDateSummary()
+    {
+        _context.EnableWorkspace();
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 0)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 0)));
+        _context.GitService.EnqueuePull(Result<GitCommandResult>.Ok(PullResult("Already up to date.\n", string.Empty)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 0)));
+        var vm = _context.CreateGitPanel();
+
+        await vm.RefreshAsync();
+        await vm.PullLatestAsync();
+
+        Assert.Equal("Already up to date", vm.ChangeSummaryText);
+        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 3, TimeSpan.FromSeconds(3)));
     }
 
     [Fact]
@@ -163,13 +200,13 @@ public sealed class GitPanelViewModelTests : IDisposable
     public async Task CommitFailure_ShowsRawStderrAndStillRefreshes()
     {
         _context.EnableWorkspace();
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 2)));
-        _context.GitService.EnqueueCommit(Result<GitCommandResult>.Ok(CommitFailure("fatal: index.lock exists")));
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 2)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 2)));
+        _context.GitService.EnqueueSync(Result<GitCommandResult>.Ok(CommitFailure("fatal: index.lock exists")));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 2)));
         var vm = _context.CreateGitPanel();
 
         await vm.RefreshAsync();
-        await vm.CommitOnlyAsync("Save draft");
+        await vm.SyncAsync("Save draft");
 
         Assert.Contains("fatal: index.lock exists", _context.Notifications.Errors);
         Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
@@ -178,16 +215,16 @@ public sealed class GitPanelViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task PushFailure_ShowsRawStderrAndStillRefreshes()
+    public async Task SyncFailure_ShowsRawStderrAndStillRefreshes()
     {
         _context.EnableWorkspace();
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 2)));
-        _context.GitService.EnqueuePush(Result<GitCommandResult>.Ok(PushFailure("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host")));
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 2)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 2)));
+        _context.GitService.EnqueueSync(Result<GitCommandResult>.Ok(PushFailure("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host")));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 2)));
         var vm = _context.CreateGitPanel();
 
         await vm.RefreshAsync();
-        await vm.CommitAndPushAsync("Save draft");
+        await vm.SyncAsync("Save draft");
 
         Assert.Contains("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host", _context.Notifications.Errors);
         Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
@@ -201,8 +238,8 @@ public sealed class GitPanelViewModelTests : IDisposable
         _context.EnableWorkspace();
         var oldFile = _context.CreateWorkspaceFile("old.md", "before");
         await _context.Editor.OpenArbitraryFileAsync(oldFile);
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 1)));
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("feature/new-root", 2)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 1)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("feature/new-root", 2)));
         var vm = _context.CreateGitPanel();
 
         await vm.RefreshAsync();
@@ -219,30 +256,37 @@ public sealed class GitPanelViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task CommitAndPushAsync_UsesDefaultMessageAndRefreshesAfterPush()
+    public async Task SyncAsync_UsesDefaultMessageAndRefreshesAfterSync()
     {
         _context.EnableWorkspace();
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 4)));
-        _context.GitService.EnqueuePush(Result<GitCommandResult>.Ok(CommitResult("To origin\n", string.Empty)));
-        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(VisibleStatus("main", 0)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 4)));
+        _context.GitService.EnqueueSync(Result<GitCommandResult>.Ok(CommitResult("To origin\n", string.Empty)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 0)));
         var vm = _context.CreateGitPanel();
 
         await vm.RefreshAsync();
-        await vm.CommitAndPushAsync(null);
+        await vm.SyncAsync(null);
 
-        Assert.Single(_context.GitService.PushMessages);
-        Assert.StartsWith("Hymnal: save progress ", _context.GitService.PushMessages[0]);
+        Assert.Single(_context.GitService.SyncMessages);
+        Assert.StartsWith("Hymnal: save progress ", _context.GitService.SyncMessages[0]);
         Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
-        Assert.Equal("main · clean", vm.StatusText);
+        Assert.Equal("Up to date", vm.StatusText);
         Assert.True(vm.IsVisible);
     }
 
-    private static GitRepositoryStatus VisibleStatus(string branch, int changeCount)
+    [Fact]
+    public async Task RefreshAsync_WithMergeConflict_DisablesSyncAndNotifiesOnce()
     {
-        var probe = new GitCommandResult("git", new[] { "-C", "workspace", "rev-parse", "--is-inside-work-tree" }, "workspace", 0, "true\n", string.Empty);
-        var branchResult = new GitCommandResult("git", new[] { "-C", "workspace", "branch", "--show-current" }, "workspace", 0, branch + "\n", string.Empty);
-        var statusResult = new GitCommandResult("git", new[] { "-C", "workspace", "status", "--porcelain" }, "workspace", 0, string.Join(Environment.NewLine, Enumerable.Range(0, changeCount).Select(i => $" M file{i}.md")) + (changeCount > 0 ? Environment.NewLine : string.Empty), string.Empty);
-        return new GitRepositoryStatus(true, true, branch, changeCount, probe, branchResult, statusResult);
+        _context.EnableWorkspace();
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(
+            GitTestDoubles.VisibleStatus("main", 0, hasMergeConflict: true, conflictedFiles: new[] { "manuscript/ch01.md" })));
+        var vm = _context.CreateGitPanel();
+
+        await vm.RefreshAsync();
+
+        Assert.Equal("Merge conflict", vm.ChangeSummaryText);
+        Assert.False(vm.CanSync);
+        Assert.Single(_context.Notifications.Errors);
     }
 
     private static GitCommandResult ProbeFailure(string stderr)
@@ -256,6 +300,9 @@ public sealed class GitPanelViewModelTests : IDisposable
 
     private static GitCommandResult PushFailure(string stderr)
         => new("git", new[] { "-C", "workspace", "push" }, "workspace", 1, string.Empty, stderr);
+
+    private static GitCommandResult PullResult(string stdout, string stderr)
+        => new("git", new[] { "-C", "workspace", "pull", "--no-edit" }, "workspace", 0, stdout, stderr);
 
     public void Dispose() => _context.Dispose();
 
@@ -380,24 +427,25 @@ public sealed class GitPanelViewModelTests : IDisposable
         }
     }
 
-    private sealed class RecordingGitService : IGitService
+    private sealed class RecordingGitService : NoOpGitService
     {
         private readonly Queue<Result<GitRepositoryStatus>> _statusResults = new();
-        private readonly Queue<Result<GitCommandResult>> _commitResults = new();
+        private readonly Queue<Result<GitCommandResult>> _syncResults = new();
+        private readonly Queue<Result<GitCommandResult>> _pullResults = new();
         private readonly Queue<Result<GitCommandResult>> _pushResults = new();
 
         public int StatusCalls { get; private set; }
-        public List<string> CommitMessages { get; } = new();
-        public List<string> PushMessages { get; } = new();
+        public List<string> SyncMessages { get; } = new();
 
         public void EnqueueStatus(Result<GitRepositoryStatus> result) => _statusResults.Enqueue(result);
-        public void EnqueueCommit(Result<GitCommandResult> result) => _commitResults.Enqueue(result);
+        public void EnqueueSync(Result<GitCommandResult> result) => _syncResults.Enqueue(result);
+        public void EnqueuePull(Result<GitCommandResult> result) => _pullResults.Enqueue(result);
         public void EnqueuePush(Result<GitCommandResult> result) => _pushResults.Enqueue(result);
 
-        public Task<Result<GitCommandResult>> CheckGitAvailableAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Result<GitCommandResult>.Ok(new GitCommandResult("git", new[] { "--version" }, null, 0, "git version\n", string.Empty)));
-
-        public Task<Result<GitRepositoryStatus>> GetRepositoryStatusAsync(string workspaceRoot, CancellationToken cancellationToken = default)
+        public override Task<Result<GitRepositoryStatus>> GetRepositoryStatusAsync(
+            string workspaceRoot,
+            bool includeRemoteState = false,
+            CancellationToken cancellationToken = default)
         {
             StatusCalls++;
 
@@ -407,18 +455,31 @@ public sealed class GitPanelViewModelTests : IDisposable
             return Task.FromResult(_statusResults.Dequeue());
         }
 
-        public Task<Result<GitCommandResult>> StageAllAndCommitAsync(string workspaceRoot, string commitMessage, CancellationToken cancellationToken = default)
+        public override Task<Result<GitCommandResult>> StageAllCommitPullAndPushAsync(
+            string workspaceRoot,
+            string commitMessage,
+            CancellationToken cancellationToken = default)
         {
-            CommitMessages.Add(commitMessage);
-            if (_commitResults.Count == 0)
-                throw new InvalidOperationException("No Git commit result was queued.");
+            SyncMessages.Add(commitMessage);
+            if (_syncResults.Count == 0)
+                throw new InvalidOperationException("No Git sync result was queued.");
 
-            return Task.FromResult(_commitResults.Dequeue());
+            return Task.FromResult(_syncResults.Dequeue());
         }
 
-        public Task<Result<GitCommandResult>> StageAllCommitAndPushAsync(string workspaceRoot, string commitMessage, CancellationToken cancellationToken = default)
+        public override Task<Result<GitCommandResult>> FetchAsync(string workspaceRoot, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<GitCommandResult>.Ok(new GitCommandResult("git", new[] { "-C", workspaceRoot, "fetch", "--quiet" }, workspaceRoot, 0, string.Empty, string.Empty)));
+
+        public override Task<Result<GitCommandResult>> PullAsync(string workspaceRoot, CancellationToken cancellationToken = default)
         {
-            PushMessages.Add(commitMessage);
+            if (_pullResults.Count == 0)
+                throw new InvalidOperationException("No Git pull result was queued.");
+
+            return Task.FromResult(_pullResults.Dequeue());
+        }
+
+        public override Task<Result<GitCommandResult>> PushAsync(string workspaceRoot, CancellationToken cancellationToken = default)
+        {
             if (_pushResults.Count == 0)
                 throw new InvalidOperationException("No Git push result was queued.");
 

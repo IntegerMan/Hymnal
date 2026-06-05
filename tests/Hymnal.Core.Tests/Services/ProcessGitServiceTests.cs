@@ -89,6 +89,7 @@ public class ProcessGitServiceTests
         runner.Enqueue(0, "true\n", string.Empty);
         runner.Enqueue(0, "feature/git-toolbar\n", string.Empty);
         runner.Enqueue(0, " M manuscript/ch01.md\nA  docs/outline.md\n?? manuscript/ch02.md\nR  old.md -> new.md\n", string.Empty);
+        runner.Enqueue(0, string.Empty, string.Empty);
         var service = new ProcessGitService(runner);
 
         var result = await service.GetRepositoryStatusAsync(WorkspaceRoot);
@@ -99,8 +100,72 @@ public class ProcessGitServiceTests
         Assert.True(status.IsRepository);
         Assert.Equal("feature/git-toolbar", status.BranchName);
         Assert.Equal(4, status.UncommittedChangeCount);
+        Assert.Equal(4, status.ChangedFiles.Count);
+        Assert.False(status.HasMergeConflict);
         Assert.Equal(new[] { "-C", WorkspaceRoot, "branch", "--show-current" }, runner.Calls[2].Arguments);
         Assert.Equal(new[] { "-C", WorkspaceRoot, "status", "--porcelain" }, runner.Calls[3].Arguments);
+        Assert.Equal(new[] { "-C", WorkspaceRoot, "diff", "--name-only", "--diff-filter=U" }, runner.Calls[4].Arguments);
+    }
+
+    [Fact]
+    public async Task GetRepositoryStatusAsync_FiltersVolatileHymnalMetadataFromDisplayCount()
+    {
+        var runner = new FakeProcessRunner();
+        runner.Enqueue(0, "git version 2.50.0\n", string.Empty);
+        runner.Enqueue(0, "true\n", string.Empty);
+        runner.Enqueue(0, "main\n", string.Empty);
+        runner.Enqueue(0, " M manuscript/ch01.md\n M .hymnal-data/wordcount-history.json\n M .hymnal-data/targets.lock\n", string.Empty);
+        runner.Enqueue(0, string.Empty, string.Empty);
+        var service = new ProcessGitService(runner);
+
+        var result = await service.GetRepositoryStatusAsync(WorkspaceRoot);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(2, result.Value!.UncommittedChangeCount);
+        Assert.Equal(2, result.Value.ChangedFiles.Count);
+        Assert.Contains(result.Value.ChangedFiles, file => file.RelativePath == "manuscript/ch01.md");
+        Assert.Contains(result.Value.ChangedFiles, file => file.RelativePath == ".hymnal-data/wordcount-history.json");
+    }
+
+    [Fact]
+    public async Task GetRepositoryStatusAsync_WithRemoteState_ReportsBehindAndAheadCounts()
+    {
+        var runner = new FakeProcessRunner();
+        runner.Enqueue(0, "git version 2.50.0\n", string.Empty);
+        runner.Enqueue(0, "true\n", string.Empty);
+        runner.Enqueue(0, "main\n", string.Empty);
+        runner.Enqueue(0, string.Empty, string.Empty);
+        runner.Enqueue(0, string.Empty, string.Empty);
+        runner.Enqueue(0, string.Empty, string.Empty);
+        runner.Enqueue(0, "origin/main\n", string.Empty);
+        runner.Enqueue(0, "2\n", string.Empty);
+        runner.Enqueue(0, "1\n", string.Empty);
+        var service = new ProcessGitService(runner);
+
+        var result = await service.GetRepositoryStatusAsync(WorkspaceRoot, includeRemoteState: true);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(2, result.Value!.BehindRemoteCount);
+        Assert.Equal(1, result.Value.AheadRemoteCount);
+        Assert.Equal(new[] { "-C", WorkspaceRoot, "fetch", "--quiet" }, runner.Calls[5].Arguments);
+    }
+
+    [Fact]
+    public async Task GetRepositoryStatusAsync_DetectsMergeConflicts()
+    {
+        var runner = new FakeProcessRunner();
+        runner.Enqueue(0, "git version 2.50.0\n", string.Empty);
+        runner.Enqueue(0, "true\n", string.Empty);
+        runner.Enqueue(0, "main\n", string.Empty);
+        runner.Enqueue(0, string.Empty, string.Empty);
+        runner.Enqueue(0, "manuscript/ch01.md\n", string.Empty);
+        var service = new ProcessGitService(runner);
+
+        var result = await service.GetRepositoryStatusAsync(WorkspaceRoot);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.True(result.Value!.HasMergeConflict);
+        Assert.Equal(new[] { "manuscript/ch01.md" }, result.Value.ConflictedFiles);
     }
 
     [Fact]
@@ -110,6 +175,7 @@ public class ProcessGitServiceTests
         runner.Enqueue(0, "git version 2.50.0\n", string.Empty);
         runner.Enqueue(0, "true\n", string.Empty);
         runner.Enqueue(0, "\n", string.Empty);
+        runner.Enqueue(0, string.Empty, string.Empty);
         runner.Enqueue(0, string.Empty, string.Empty);
         var service = new ProcessGitService(runner);
 
@@ -207,6 +273,43 @@ public class ProcessGitServiceTests
         Assert.False(result.Value!.IsSuccess);
         Assert.Equal("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host\n", result.Value.Stderr);
         Assert.Equal(new[] { "-C", WorkspaceRoot, "push" }, runner.Calls[2].Arguments);
+    }
+
+    [Fact]
+    public async Task StageAllCommitPullAndPushAsync_StagesCommitsPullsThenPushesInOrder()
+    {
+        var runner = new FakeProcessRunner();
+        runner.Enqueue(0, string.Empty, string.Empty);
+        runner.Enqueue(0, "[main abc123] Save draft\n", string.Empty);
+        runner.Enqueue(0, "Already up to date.\n", string.Empty);
+        runner.Enqueue(0, "To origin\n", string.Empty);
+        var service = new ProcessGitService(runner);
+
+        var result = await service.StageAllCommitPullAndPushAsync(WorkspaceRoot, "Save draft");
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.True(result.Value!.IsSuccess);
+        Assert.Equal("To origin\n", result.Value.Stdout);
+        Assert.Equal(4, runner.Calls.Count);
+        Assert.Equal(new[] { "-C", WorkspaceRoot, "add", "--all" }, runner.Calls[0].Arguments);
+        Assert.Equal(new[] { "-C", WorkspaceRoot, "commit", "-m", "Save draft" }, runner.Calls[1].Arguments);
+        Assert.Equal(new[] { "-C", WorkspaceRoot, "pull", "--no-edit" }, runner.Calls[2].Arguments);
+        Assert.Equal(new[] { "-C", WorkspaceRoot, "push" }, runner.Calls[3].Arguments);
+    }
+
+    [Fact]
+    public async Task PullAsync_ReturnsConflictFileListWhenPullFails()
+    {
+        var runner = new FakeProcessRunner();
+        runner.Enqueue(1, string.Empty, "Automatic merge failed; fix conflicts and then commit the result.");
+        runner.Enqueue(0, "manuscript/ch01.md\nBook.txt\n", string.Empty);
+        var service = new ProcessGitService(runner);
+
+        var result = await service.PullAsync(WorkspaceRoot);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("manuscript/ch01.md", result.Error);
+        Assert.Contains("Book.txt", result.Error);
     }
 
     private sealed class FakeProcessRunner : IProcessRunner

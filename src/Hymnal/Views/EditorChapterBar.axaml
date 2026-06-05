@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:conv="using:Hymnal.Views.Converters"
+             x:Class="Hymnal.Views.EditorChapterBar"
+             x:DataType="vm:ChapterViewModel"
+             Height="32"
+             Background="#120932"
+             BorderBrush="#2D1B5E"
+             BorderThickness="0,0,0,1">
+
+    <Grid ColumnDefinitions="Auto,*,Auto"
+          Margin="12,0">
+        <Border Grid.Column="0"
+                Background="#1A1235"
+                CornerRadius="4"
+                Padding="8,3"
+                VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Border Width="8"
+                        Height="8"
+                        CornerRadius="2"
+                        Background="{Binding Status, Converter={x:Static conv:StatusToBrushConverter.Instance}}"
+                        VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Status}"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="{Binding Status, Converter={x:Static conv:StatusToBrushConverter.Instance}}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="16"
+                    Margin="16,0,0,0"
+                    VerticalAlignment="Center">
+            <TextBlock FontSize="11"
+                       Foreground="#94A3B8"
+                       VerticalAlignment="Center">
+                <Run Text="Start " />
+                <Run Text="{Binding CurrentPhaseStartDisplay}" Foreground="#CBD5E1" />
+            </TextBlock>
+            <TextBlock FontSize="11"
+                       Foreground="#94A3B8"
+                       VerticalAlignment="Center">
+                <Run Text="End " />
+                <Run Text="{Binding CurrentPhaseEndDisplay}" Foreground="#CBD5E1" />
+            </TextBlock>
+            <TextBlock FontSize="11"
+                       Foreground="#94A3B8"
+                       VerticalAlignment="Center">
+                <Run Text="% " />
+                <Run Text="{Binding CurrentPhaseProgressDisplay}" Foreground="#CBD5E1" />
+            </TextBlock>
+        </StackPanel>
+
+        <Button Grid.Column="2"
+                Content="Complete"
+                Command="{Binding CompletePhaseCommand}"
+                IsEnabled="{Binding CanCompletePhase}"
+                Padding="12,4"
+                FontSize="11"
+                FontWeight="SemiBold"
+                CornerRadius="4"
+                Background="#2D1B5E"
+                Foreground="#E9D5FF"
+                BorderBrush="#9D4EDD"
+                BorderThickness="1"
+                VerticalAlignment="Center" />
+    </Grid>
+
+</UserControl>
