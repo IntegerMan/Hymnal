@@ -75,7 +75,7 @@ public class CorkboardProjectionTests
     [Fact]
     public void Project_EmptyWorkspace_ReturnsNoItems()
     {
-        var items = CorkboardItemViewModel.Project(Array.Empty<ChapterViewModel>());
+        var items = CorkboardItemViewModel.Project(Array.Empty<ChapterViewModel>(), new Dictionary<string, bool>());
 
         Assert.Empty(items);
     }
@@ -108,7 +108,7 @@ public class CorkboardProjectionTests
             kind: NodeKind.Part);
 
         var nodes = new[] { part1, part2, chapter, part3 };
-        var items = CorkboardItemViewModel.Project(nodes);
+        var items = CorkboardItemViewModel.Project(nodes, new Dictionary<string, bool>());
 
         Assert.Equal(6, items.Count);
         Assert.IsType<PartDividerItemViewModel>(items[0]);
@@ -191,6 +191,78 @@ public class CorkboardProjectionTests
 
         card.IsSelected = true;
         Assert.True(card.IsSelected);
+    }
+
+    [Fact]
+    public void Project_PartDivider_ReportsChapterCount()
+    {
+        var part = CreateChapterViewModel(
+            phaseData: null,
+            title: "Part One",
+            path: "part-01.md",
+            uuid: "part-1",
+            kind: NodeKind.Part);
+        var chapterOne = CreateChapterViewModel(
+            phaseData: MakePhase(),
+            title: "Chapter One",
+            path: "ch01.md",
+            uuid: "ch-1");
+        var chapterTwo = CreateChapterViewModel(
+            phaseData: MakePhase(),
+            title: "Chapter Two",
+            path: "ch02.md",
+            uuid: "ch-2");
+
+        var items = CorkboardItemViewModel.Project(
+            new[] { part, chapterOne, chapterTwo },
+            new Dictionary<string, bool>());
+
+        var divider = Assert.IsType<PartDividerItemViewModel>(items[0]);
+        Assert.Equal(2, divider.ChapterCount);
+        Assert.Equal("2 chapters", divider.ChapterCountDisplay);
+        Assert.True(divider.IsFirstPart);
+        Assert.Equal("part-01.md", Assert.IsType<ChapterCardItemViewModel>(items[1]).OwningPartPath);
+    }
+
+    [Fact]
+    public void Project_CollapsedPart_HidesChildCards()
+    {
+        var part = CreateChapterViewModel(
+            phaseData: null,
+            title: "Part One",
+            path: "part-01.md",
+            uuid: "part-1",
+            kind: NodeKind.Part);
+        var chapter = CreateChapterViewModel(
+            phaseData: MakePhase(),
+            title: "Chapter One",
+            path: "ch01.md",
+            uuid: "ch-1");
+
+        var items = CorkboardItemViewModel.Project(
+            new[] { part, chapter },
+            new Dictionary<string, bool> { ["part-01.md"] = false });
+
+        var divider = Assert.IsType<PartDividerItemViewModel>(items[0]);
+        var card = Assert.IsType<ChapterCardItemViewModel>(items[1]);
+
+        Assert.False(divider.IsExpanded);
+        Assert.False(card.IsVisibleOnBoard);
+    }
+
+    [Fact]
+    public void CardViewModel_CanCompletePhase_FalseWhenDone()
+    {
+        var chapter = CreateChapterViewModel(
+            phaseData: MakePhase(status: ChapterStatus.Done),
+            title: "Finished Chapter",
+            path: "ch-done.md",
+            uuid: "ch-done");
+
+        var card = new CardViewModel(chapter);
+
+        Assert.False(card.CanCompletePhase);
+        Assert.False(chapter.CanCompletePhase);
     }
 
     [Fact]

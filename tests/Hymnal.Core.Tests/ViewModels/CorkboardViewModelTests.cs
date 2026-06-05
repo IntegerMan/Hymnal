@@ -13,20 +13,16 @@ using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 using DynamicData.Binding;
+using Hymnal.Core.Tests.Infrastructure;
 using ReactiveUI;
-using ReactiveUI.Builder;
 using Xunit;
 
 namespace Hymnal.ViewModels;
 
+[Collection("AvaloniaUi")]
 public sealed class CorkboardViewModelTests
 {
-    static CorkboardViewModelTests()
-    {
-        RxAppBuilder.CreateReactiveUIBuilder()
-            .WithCoreServices()
-            .BuildApp();
-    }
+    static CorkboardViewModelTests() => ReactiveUiTestBootstrap.EnsureInitialized();
 
     [Fact]
     public void Ctor_ProjectsMixedItemsInBookOrder()
@@ -256,6 +252,85 @@ public sealed class CorkboardViewModelTests
         Assert.Equal(context.Workspace.BookTxtPath, board.LastStructuralError?.BookTxtPath);
         Assert.Equal("disk write exploded", board.LastStructuralError?.Message);
         Assert.Equal(0, context.Workspace.ReloadCount);
+    }
+
+    [Fact]
+    public void CardDisplaySize_DefaultsToLarge()
+    {
+        var context = CreateContext();
+        using var board = context.CreateCorkboard();
+
+        Assert.Equal(CardDisplaySize.Large, board.CardDisplaySize);
+    }
+
+    [Fact]
+    public async Task SetCardSizeCommand_UpdatesCardDisplaySize()
+    {
+        var context = CreateContext();
+        using var board = context.CreateCorkboard();
+
+        await ExecuteCommandAsync(board.SetCardSizeCommand.Execute(CardDisplaySize.Medium));
+        Assert.Equal(CardDisplaySize.Medium, board.CardDisplaySize);
+
+        await ExecuteCommandAsync(board.SetCardSizeCommand.Execute(CardDisplaySize.Tiny));
+        Assert.Equal(CardDisplaySize.Tiny, board.CardDisplaySize);
+
+        await ExecuteCommandAsync(board.SetCardSizeCommand.Execute(CardDisplaySize.Large));
+        Assert.Equal(CardDisplaySize.Large, board.CardDisplaySize);
+    }
+
+    [Fact]
+    public async Task TogglePartExpandedCommand_CollapsesAndExpandsChildCards()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-one/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+        var part = Assert.IsType<PartDividerItemViewModel>(board.Items[0]);
+        var first = GetChapterCard(board, "part-one/chapter-one.md");
+        var second = GetChapterCard(board, "part-one/chapter-two.md");
+
+        Assert.Equal(2, part.ChapterCount);
+        Assert.True(part.IsExpanded);
+        Assert.True(first.IsVisibleOnBoard);
+        Assert.True(second.IsVisibleOnBoard);
+
+        await ExecuteCommandAsync(board.TogglePartExpandedCommand.Execute(part));
+
+        Assert.False(part.IsExpanded);
+        Assert.False(first.IsVisibleOnBoard);
+        Assert.False(second.IsVisibleOnBoard);
+
+        await ExecuteCommandAsync(board.TogglePartExpandedCommand.Execute(part));
+
+        Assert.True(part.IsExpanded);
+        Assert.True(first.IsVisibleOnBoard);
+        Assert.True(second.IsVisibleOnBoard);
+    }
+
+    [Fact]
+    public async Task RebuildItems_PreservesCollapsedPartState()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"));
+
+        using var board = context.CreateCorkboard();
+        var part = Assert.IsType<PartDividerItemViewModel>(board.Items[0]);
+        await ExecuteCommandAsync(board.TogglePartExpandedCommand.Execute(part));
+        Assert.False(part.IsExpanded);
+
+        AddWorkspaceNode(context, CreateChapter(context, "part-one/chapter-two.md", "Chapter Two"));
+
+        part = Assert.IsType<PartDividerItemViewModel>(board.Items[0]);
+        var second = GetChapterCard(board, "part-one/chapter-two.md");
+
+        Assert.False(part.IsExpanded);
+        Assert.False(second.IsVisibleOnBoard);
     }
 
     [Fact]

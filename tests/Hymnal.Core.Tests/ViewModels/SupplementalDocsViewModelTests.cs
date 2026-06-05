@@ -203,7 +203,7 @@ public sealed class SupplementalDocsViewModelTests : IDisposable
         }
 
         public SupplementalDocsViewModel CreateDocsViewModel()
-            => new(Workspace, new SupplementalDocsService(MetadataStore), Editor, Notifications);
+            => new(Workspace, new SupplementalDocsService(MetadataStore), Editor, Notifications, SettingsStore);
 
         public void EnableWorkspace()
         {

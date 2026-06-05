@@ -25,6 +25,7 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
     private readonly ISupplementalDocsService _docsService;
     private readonly EditorViewModel _editor;
     private readonly INotificationService _notificationService;
+    private readonly IAppSettingsStore _settingsStore;
     private readonly ObservableCollectionExtended<SupplementalDocNode> _nodes = new();
     private readonly Subject<SupplementalDocNode> _documentOpened = new();
 
@@ -43,17 +44,47 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
     public ReactiveCommand<string, Unit> CreateFolderCommand { get; }
     public ReactiveCommand<string, Unit> CreateFileCommand { get; }
     public ReactiveCommand<SupplementalDocNode, Unit> OpenDocCommand { get; }
+    public ReactiveCommand<Unit, Unit> ToggleCommand { get; }
+
+    private bool _isVisible;
+    /// <summary>True when the DOCS tree content area is expanded in the left sidebar.</summary>
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set
+        {
+            if (_isVisible == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isVisible, value);
+            _ = PersistDocsPaneVisibleAsync(value);
+        }
+    }
 
     public SupplementalDocsViewModel(
         WorkspaceViewModel workspace,
         ISupplementalDocsService docsService,
         EditorViewModel editor,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IAppSettingsStore settingsStore)
     {
         _workspace = workspace;
         _docsService = docsService;
         _editor = editor;
         _notificationService = notificationService;
+        _settingsStore = settingsStore;
+
+        try
+        {
+            var stored = settingsStore.GetAsync<bool?>("docsPaneVisible").GetAwaiter().GetResult();
+            if (stored == null)
+                stored = settingsStore.GetAsync<bool?>("sidebarExpanded").GetAwaiter().GetResult();
+            _isVisible = stored ?? true;
+        }
+        catch
+        {
+            _isVisible = true;
+        }
 
         Nodes = new ReadOnlyObservableCollection<SupplementalDocNode>(_nodes);
 
@@ -62,6 +93,9 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
         CreateFolderCommand = ReactiveCommand.CreateFromTask<string>(CreateFolderAsync, hasWorkspace);
         CreateFileCommand = ReactiveCommand.CreateFromTask<string>(CreateFileAsync, hasWorkspace);
         OpenDocCommand = ReactiveCommand.CreateFromTask<SupplementalDocNode>(OpenDocAsync, hasWorkspace);
+        ToggleCommand = ReactiveCommand.Create(
+            () => { IsVisible = !IsVisible; },
+            hasWorkspace);
 
         Disposables.Add(RefreshCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to refresh supplemental docs: {ex.Message}"))));
         Disposables.Add(CreateFolderCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to create supplemental docs folder: {ex.Message}"))));
@@ -197,5 +231,17 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
         }
 
         return null;
+    }
+
+    private async Task PersistDocsPaneVisibleAsync(bool value)
+    {
+        try
+        {
+            await _settingsStore.SetAsync("docsPaneVisible", value).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal; layout preference may not persist across sessions if storage fails.
+        }
     }
 }

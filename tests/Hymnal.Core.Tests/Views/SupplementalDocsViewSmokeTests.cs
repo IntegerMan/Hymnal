@@ -179,7 +179,7 @@ public sealed class SupplementalDocsViewSmokeTests
         }
 
         public SupplementalDocsViewModel CreateDocsViewModel(EditorViewModel editor)
-            => new(Workspace, DocsService, editor, NotificationService);
+            => new(Workspace, DocsService, editor, NotificationService, SettingsStore);
 
         public MainWindowViewModel CreateMainWindowViewModel()
         {
@@ -195,8 +195,7 @@ public sealed class SupplementalDocsViewSmokeTests
                 corkboardVm,
                 docsVm,
                 gitPanelVm,
-                NotificationService,
-                SettingsStore);
+                NotificationService);
         }
 
         private void SeedWorkspace()

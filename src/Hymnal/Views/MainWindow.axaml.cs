@@ -38,6 +38,7 @@ public partial class MainWindow : Window
             {
                 SetupModeChrome(vm);
                 SetupSidebarWidth(vm);
+                SetupLeftPaneRowHeights(vm);
                 SetupRightPaneRowHeights(vm);
                 SetupRightPaneColumnWidth(vm);
 
@@ -97,7 +98,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            grid.ColumnDefinitions[0].Width = new GridLength(vm.IsSidebarExpanded ? 220 : 48);
+            grid.ColumnDefinitions[0].Width = new GridLength(vm.IsAnyLeftPaneOpen ? 220 : 48);
             grid.ColumnDefinitions[1].Width = new GridLength(4);
             grid.ColumnDefinitions[3].Width = new GridLength(4);
             grid.ColumnDefinitions[4].Width = new GridLength(vm.IsAnyRightPaneOpen ? 280 : 48);
@@ -106,7 +107,7 @@ public partial class MainWindow : Window
         ApplyMode(vm.ActiveMode);
 
         _layoutDisposables.Add(
-            vm.WhenAnyValue(x => x.ActiveMode, x => x.IsSidebarExpanded, x => x.IsAnyRightPaneOpen)
+            vm.WhenAnyValue(x => x.ActiveMode, x => x.IsAnyLeftPaneOpen, x => x.IsAnyRightPaneOpen)
                 .Subscribe(_ => ApplyMode(vm.ActiveMode), _ => { /* non-fatal */ }));
     }
 
@@ -123,12 +124,57 @@ public partial class MainWindow : Window
             grid.ColumnDefinitions[0].Width = new GridLength(expanded ? 220 : 48);
         }
 
-        ApplyWidth(vm.IsSidebarExpanded);
+        ApplyWidth(vm.IsAnyLeftPaneOpen);
 
         _layoutDisposables.Add(
-            vm.WhenAnyValue(x => x.IsSidebarExpanded)
+            vm.WhenAnyValue(x => x.IsAnyLeftPaneOpen)
                 .Subscribe(
                     expanded => ApplyWidth(expanded),
+                    _ => { /* non-fatal */ }));
+    }
+
+    private void SetupLeftPaneRowHeights(MainWindowViewModel vm)
+    {
+        var outerGrid = LeftPaneGrid;
+        var chaptersSection = LeftChaptersSectionGrid;
+        var docsSection = LeftDocsSectionGrid;
+        if (outerGrid is null || chaptersSection is null || docsSection is null)
+            return;
+
+        void ApplyLayout(bool chaptersVisible, bool docsVisible)
+        {
+            chaptersSection.RowDefinitions[1].Height =
+                chaptersVisible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            docsSection.RowDefinitions[1].Height =
+                docsVisible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+
+            if (chaptersVisible && docsVisible)
+            {
+                outerGrid.RowDefinitions[0].Height = new GridLength(1, GridUnitType.Star);
+                outerGrid.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
+            }
+            else if (chaptersVisible)
+            {
+                outerGrid.RowDefinitions[0].Height = new GridLength(1, GridUnitType.Star);
+                outerGrid.RowDefinitions[2].Height = GridLength.Auto;
+            }
+            else if (docsVisible)
+            {
+                outerGrid.RowDefinitions[0].Height = GridLength.Auto;
+                outerGrid.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
+            }
+        }
+
+        ApplyLayout(vm.WorkspaceViewModel.IsChaptersPaneVisible, vm.SupplementalDocsViewModel.IsVisible);
+
+        _layoutDisposables.Add(
+            vm.WorkspaceViewModel
+                .WhenAnyValue(x => x.IsChaptersPaneVisible)
+                .CombineLatest(
+                    vm.SupplementalDocsViewModel.WhenAnyValue(x => x.IsVisible),
+                    (chapters, docs) => (chapters, docs))
+                .Subscribe(
+                    state => ApplyLayout(state.chapters, state.docs),
                     _ => { /* non-fatal */ }));
     }
 

@@ -251,14 +251,24 @@
                         MinWidth="48">
                     <Panel>
 
-                        <!-- COLLAPSED: 48px icon rail -->
+                        <!-- COLLAPSED: 48px icon rail — visible when neither content area is open -->
                         <StackPanel Width="48"
-                                    IsVisible="{Binding !IsSidebarExpanded}"
+                                    IsVisible="{Binding !IsAnyLeftPaneOpen}"
                                     Margin="0,8,0,0">
                             <Button Classes="nav-icon"
-                                    Command="{Binding ToggleSidebarCommand}"
-                                    ToolTip.Tip="Chapters and docs (Ctrl+B)">
+                                    Command="{Binding WorkspaceViewModel.ToggleChaptersPaneCommand}"
+                                    ToolTip.Tip="Chapters (Ctrl+B)">
                                 <Path Data="M3 12h18M3 6h18M3 18h18"
+                                      Stroke="{DynamicResource OnSurfaceDimBrush}"
+                                      StrokeThickness="1.5"
+                                      StrokeLineCap="Round"
+                                      Width="18" Height="18"
+                                      Stretch="Uniform" />
+                            </Button>
+                            <Button Classes="nav-icon"
+                                    Command="{Binding SupplementalDocsViewModel.ToggleCommand}"
+                                    ToolTip.Tip="Supplemental docs">
+                                <Path Data="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"
                                       Stroke="{DynamicResource OnSurfaceDimBrush}"
                                       StrokeThickness="1.5"
                                       StrokeLineCap="Round"
@@ -267,76 +277,96 @@
                             </Button>
                         </StackPanel>
 
-                        <!-- EXPANDED: 220px pane with distinct CHAPTERS and DOCS sections -->
-                        <Grid IsVisible="{Binding IsSidebarExpanded}"
-                              RowDefinitions="48,*,4,48,180">
+                        <!-- EXPANDED: Outlook-style explorer bar.
+                             Both section headers are ALWAYS visible when the pane is expanded.
+                             Each section's content area collapses independently.
+                             When both content areas are collapsed, IsAnyLeftPaneOpen → false
+                             and the icon rail above takes over.
 
-                            <!-- Header: icon (active) + CHAPTERS panel title -->
-                            <Border Grid.Row="0"
-                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                    BorderThickness="0,0,0,1">
-                            <Grid ColumnDefinitions="48,*">
-                                <Button Grid.Column="0"
-                                        Classes="nav-icon"
-                                        Command="{Binding ToggleSidebarCommand}"
-                                        ToolTip.Tip="Collapse chapters and docs (Ctrl+B)">
-                                    <Path Data="M3 12h18M3 6h18M3 18h18"
-                                          Stroke="{DynamicResource SynthwavePurpleBrush}"
-                                          StrokeThickness="1.5"
-                                          StrokeLineCap="Round"
-                                          Width="18" Height="18"
-                                          Stretch="Uniform" />
-                                </Button>
-                                <TextBlock Grid.Column="1"
-                                           Text="CHAPTERS"
-                                           VerticalAlignment="Center"
-                                           Margin="4,0,0,0"
-                                           FontSize="10"
-                                           FontWeight="SemiBold"
-                                           LetterSpacing="1.5"
-                                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                             Outer rows: Chapters section | splitter | Docs section
+                             Each section is a nested grid: header (48px) + content (* or 0)
+                        -->
+                        <Grid IsVisible="{Binding IsAnyLeftPaneOpen}"
+                              RowDefinitions="*,Auto,*"
+                              x:Name="LeftPaneGrid">
+
+                            <!-- Chapters section -->
+                            <Grid Grid.Row="0"
+                                  x:Name="LeftChaptersSectionGrid"
+                                  RowDefinitions="48,*">
+                                <Border Grid.Row="0"
+                                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                        BorderThickness="0,0,0,1">
+                                    <Grid ColumnDefinitions="48,*">
+                                        <Button Grid.Column="0"
+                                                Classes="nav-icon"
+                                                Command="{Binding WorkspaceViewModel.ToggleChaptersPaneCommand}"
+                                                ToolTip.Tip="Chapters (Ctrl+B)">
+                                            <Path Data="M3 12h18M3 6h18M3 18h18"
+                                                  Stroke="{DynamicResource SynthwavePurpleBrush}"
+                                                  StrokeThickness="1.5"
+                                                  StrokeLineCap="Round"
+                                                  Width="18" Height="18"
+                                                  Stretch="Uniform" />
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="CHAPTERS"
+                                                   VerticalAlignment="Center"
+                                                   Margin="4,0,0,0"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   LetterSpacing="1.5"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    </Grid>
+                                </Border>
+
+                                <views:SidebarView Grid.Row="1"
+                                                   x:Name="ChaptersViewContent"
+                                                   DataContext="{Binding WorkspaceViewModel}"
+                                                   IsVisible="{Binding IsChaptersPaneVisible}" />
                             </Grid>
-                            </Border>
 
-                            <!-- Chapter list: still binds only to WorkspaceViewModel.Nodes -->
-                            <views:SidebarView Grid.Row="1"
-                                               DataContext="{Binding WorkspaceViewModel}" />
-
-                            <GridSplitter Grid.Row="2"
+                            <GridSplitter Grid.Row="1"
                                           Height="4"
                                           ResizeDirection="Rows"
+                                          IsVisible="{Binding IsBothLeftPanesOpen}"
                                           Background="{DynamicResource BorderSubtleBrush}" />
 
-                            <!-- DOCS header -->
-                            <Border Grid.Row="3"
-                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                    BorderThickness="0,1,0,1">
-                                <Grid ColumnDefinitions="48,*">
-                                    <Path Grid.Column="0"
-                                          Data="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"
-                                          Stroke="{DynamicResource SynthwavePurpleBrush}"
-                                          StrokeThickness="1.5"
-                                          StrokeLineCap="Round"
-                                          Width="18" Height="18"
-                                          Stretch="Uniform"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center" />
-                                    <TextBlock x:Name="DocsHeader"
-                                               Grid.Column="1"
-                                               Text="DOCS"
-                                               VerticalAlignment="Center"
-                                               Margin="4,0,0,0"
-                                               FontSize="10"
-                                               FontWeight="SemiBold"
-                                               LetterSpacing="1.5"
-                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                                </Grid>
-                            </Border>
+                            <!-- Docs section -->
+                            <Grid Grid.Row="2"
+                                  x:Name="LeftDocsSectionGrid"
+                                  RowDefinitions="48,*">
+                                <Border Grid.Row="0"
+                                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                        BorderThickness="0,1,0,1">
+                                    <Grid ColumnDefinitions="48,*">
+                                        <Button Grid.Column="0"
+                                                Classes="nav-icon"
+                                                Command="{Binding SupplementalDocsViewModel.ToggleCommand}"
+                                                ToolTip.Tip="Supplemental docs">
+                                            <Path Data="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"
+                                                  Stroke="{DynamicResource SynthwavePurpleBrush}"
+                                                  StrokeThickness="1.5"
+                                                  StrokeLineCap="Round"
+                                                  Width="18" Height="18"
+                                                  Stretch="Uniform" />
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="DOCS"
+                                                   VerticalAlignment="Center"
+                                                   Margin="4,0,0,0"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   LetterSpacing="1.5"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    </Grid>
+                                </Border>
 
-                            <!-- Supplemental documents tree: separate from manuscript chapters -->
-                            <views:SupplementalDocsView Grid.Row="4"
-                                                         x:Name="SupplementalDocsViewContent"
-                                                         DataContext="{Binding SupplementalDocsViewModel}" />
+                                <views:SupplementalDocsView Grid.Row="1"
+                                                             x:Name="SupplementalDocsViewContent"
+                                                             DataContext="{Binding SupplementalDocsViewModel}"
+                                                             IsVisible="{Binding IsVisible}" />
+                            </Grid>
                         </Grid>
 
                     </Panel>

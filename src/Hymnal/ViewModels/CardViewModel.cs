@@ -88,6 +88,8 @@ public sealed class CardViewModel : ViewModelBase, IDisposable
 
     public string MissingStateDisplay => IsMissing ? "Missing file" : string.Empty;
 
+    public bool CanCompletePhase => _chapter.CanCompletePhase;
+
     private bool _isSelected;
     public bool IsSelected
     {
@@ -128,6 +130,10 @@ public sealed class CardViewModel : ViewModelBase, IDisposable
         Disposables.Add(
             chapter.WhenAnyValue(x => x.PhaseData)
                 .Subscribe(_ => RefreshPhaseData()));
+
+        Disposables.Add(
+            chapter.WhenAnyValue(x => x.CanCompletePhase)
+                .Subscribe(_ => this.RaisePropertyChanged(nameof(CanCompletePhase))));
     }
 
     private void RefreshFromNode()

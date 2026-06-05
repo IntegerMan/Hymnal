@@ -99,7 +99,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
 
         public MainWindowViewModel CreateMainWindow()
         {
-            var docs = new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), Editor, NotificationService);
+            var docs = new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), Editor, NotificationService, SettingsStore);
             var gitPanel = new GitPanelViewModel(Workspace, Editor, new FakeGitService(), NotificationService);
             return new MainWindowViewModel(
                 Workspace,
@@ -110,8 +110,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
                 new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService),
                 docs,
                 gitPanel,
-                NotificationService,
-                SettingsStore);
+                NotificationService);
         }
 
         public void EnableWorkspace()

@@ -121,7 +121,8 @@ public partial class App : Application
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<ISupplementalDocsService>(),
                 sp.GetRequiredService<EditorViewModel>(),
-                sp.GetRequiredService<INotificationService>()));
+                sp.GetRequiredService<INotificationService>(),
+                sp.GetRequiredService<IAppSettingsStore>()));
 
         services.AddSingleton<GitPanelViewModel>(sp =>
             new GitPanelViewModel(
@@ -140,8 +141,7 @@ public partial class App : Application
                 sp.GetRequiredService<CorkboardViewModel>(),
                 sp.GetRequiredService<SupplementalDocsViewModel>(),
                 sp.GetRequiredService<GitPanelViewModel>(),
-                sp.GetRequiredService<NotificationService>(),
-                sp.GetRequiredService<IAppSettingsStore>()));
+                sp.GetRequiredService<NotificationService>()));
 
         _serviceProvider = services.BuildServiceProvider();
         Services = _serviceProvider;

@@ -202,10 +202,9 @@ public sealed class MainWindowPlanModeTests
                 new ChapterInfoViewModel(EditorViewModel, Workspace, PhaseDataService, TargetsService, SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, PhaseDataService, NotificationService),
                 new CorkboardViewModel(Workspace, StructureService, NotificationService),
-                new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), EditorViewModel, NotificationService),
+                new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), EditorViewModel, NotificationService, SettingsStore),
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
-                NotificationService,
-                SettingsStore);
+                NotificationService);
 
         public CorkboardViewModel CreateCorkboard()
             => new(Workspace, StructureService, NotificationService);

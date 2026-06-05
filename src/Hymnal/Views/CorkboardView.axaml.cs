@@ -14,7 +14,6 @@ namespace Hymnal.Views;
 
 public partial class CorkboardView : UserControl
 {
-    private const string DragFormat = "application/x-hymnal-corkboard-card";
     private ChapterCardItemViewModel? _dragSource;
     private PointerPressedEventArgs? _dragPressArgs;
     private Point _dragStart;
@@ -43,6 +42,15 @@ public partial class CorkboardView : UserControl
             return;
 
         var point = e.GetCurrentPoint(control);
+
+        if (point.Properties.IsRightButtonPressed)
+        {
+            e.Handled = true;
+            if (control.ContextMenu is ContextMenu menu)
+                menu.Open(control);
+            return;
+        }
+
         if (!point.Properties.IsLeftButtonPressed)
             return;
 
@@ -50,14 +58,12 @@ public partial class CorkboardView : UserControl
         _dragPressArgs = e;
         _dragStart = e.GetPosition(this);
         _dragOperationStarted = false;
+        e.Pointer.Capture(control);
     }
 
     private async void Card_PointerMoved(object? sender, PointerEventArgs e)
     {
         if (_dragSource is null || _dragOperationStarted)
-            return;
-
-        if (sender is not Control control)
             return;
 
         var point = e.GetPosition(this);
@@ -93,9 +99,38 @@ public partial class CorkboardView : UserControl
         DragDrop.AddDropHandler(button, Card_Drop);
     }
 
-    private void Card_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    private async void Card_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (sender is not Control control || control.DataContext is not ChapterCardItemViewModel card)
+        {
+            ClearDragState();
+            return;
+        }
+
+        e.Pointer.Capture(null);
+
+        if (DataContext is CorkboardViewModel vm)
+        {
+            var point = e.GetCurrentPoint(control);
+            if (point.Properties.PointerUpdateKind == PointerUpdateKind.LeftButtonReleased
+                && ReferenceEquals(_dragSource, card)
+                && !_dragOperationStarted)
+            {
+                await ExecuteCommandAsync(vm.SelectCardCommand.Execute(card));
+            }
+        }
+
         ClearDragState();
+    }
+
+    private async void Card_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ChapterCardItemViewModel card }
+            || DataContext is not CorkboardViewModel vm)
+            return;
+
+        e.Handled = true;
+        await ExecuteCommandAsync(vm.OpenCardCommand.Execute(card));
     }
 
     private void Card_DragOver(object? sender, DragEventArgs e)
@@ -471,6 +506,7 @@ public partial class CorkboardView : UserControl
     private void ClearDragState()
     {
         _dragSource = null;
+        _dragPressArgs = null;
         _dragOperationStarted = false;
     }
 }

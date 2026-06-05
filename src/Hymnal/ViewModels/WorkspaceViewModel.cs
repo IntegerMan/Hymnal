@@ -99,6 +99,22 @@ public class WorkspaceViewModel : ViewModelBase
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenWorkspaceCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> CloseWorkspaceCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SelectBookCommand { get; }
+    public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> ToggleChaptersPaneCommand { get; }
+
+    private bool _isChaptersPaneVisible;
+    /// <summary>True when the CHAPTERS list content area is expanded in the left sidebar.</summary>
+    public bool IsChaptersPaneVisible
+    {
+        get => _isChaptersPaneVisible;
+        set
+        {
+            if (_isChaptersPaneVisible == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isChaptersPaneVisible, value);
+            _ = PersistChaptersPaneVisibleAsync(value);
+        }
+    }
 
     public WorkspaceViewModel(
         ManuscriptService manuscriptService,
@@ -125,6 +141,22 @@ public class WorkspaceViewModel : ViewModelBase
         _editor.HasWorkspace = false;
 
         Nodes = new ReadOnlyObservableCollection<ChapterViewModel>(_nodes);
+
+        try
+        {
+            var stored = _settingsStore.GetAsync<bool?>("chaptersPaneVisible").GetAwaiter().GetResult();
+            if (stored == null)
+                stored = _settingsStore.GetAsync<bool?>("sidebarExpanded").GetAwaiter().GetResult();
+            _isChaptersPaneVisible = stored ?? true;
+        }
+        catch
+        {
+            _isChaptersPaneVisible = true;
+        }
+
+        ToggleChaptersPaneCommand = ReactiveCommand.Create(
+            () => { IsChaptersPaneVisible = !IsChaptersPaneVisible; },
+            this.WhenAnyValue(x => x.HasWorkspace));
 
         OpenWorkspaceCommand = ReactiveCommand.CreateFromTask(OpenWorkspaceAsync);
         CloseWorkspaceCommand = ReactiveCommand.CreateFromTask(CloseWorkspaceAsync, this.WhenAnyValue(x => x.HasWorkspace));
@@ -654,5 +686,17 @@ public class WorkspaceViewModel : ViewModelBase
         }
 
         return false;
+    }
+
+    private async Task PersistChaptersPaneVisibleAsync(bool value)
+    {
+        try
+        {
+            await _settingsStore.SetAsync("chaptersPaneVisible", value).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal; layout preference may not persist across sessions if storage fails.
+        }
     }
 }

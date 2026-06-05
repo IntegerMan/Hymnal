@@ -1,6 +1,5 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Infrastructure;
 using ReactiveUI;
@@ -23,8 +22,6 @@ public class MainWindowViewModel : ViewModelBase
     public CorkboardViewModel CorkboardViewModel { get; }
     public SupplementalDocsViewModel SupplementalDocsViewModel { get; }
     public GitPanelViewModel GitPanelViewModel { get; }
-
-    private readonly IAppSettingsStore _settingsStore;
 
     // ── Window title ──────────────────────────────────────────────────────────
 
@@ -99,14 +96,17 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> SelectManageCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleGanttCommand { get; }
 
-    // ── Sidebar visibility ────────────────────────────────────────────────────
+    // ── Left-rail pane aggregates ─────────────────────────────────────────────
 
-    private bool _isSidebarExpanded = true;
-    public bool IsSidebarExpanded
-    {
-        get => _isSidebarExpanded;
-        set => this.RaiseAndSetIfChanged(ref _isSidebarExpanded, value);
-    }
+    private readonly ObservableAsPropertyHelper<bool> _isAnyLeftPaneOpen;
+    /// <summary>True when either the Chapters or Docs content area is visible.</summary>
+    public bool IsAnyLeftPaneOpen => _isAnyLeftPaneOpen.Value;
+
+    private readonly ObservableAsPropertyHelper<bool> _isBothLeftPanesOpen;
+    /// <summary>True when both the Chapters and Docs content areas are visible.</summary>
+    public bool IsBothLeftPanesOpen => _isBothLeftPanesOpen.Value;
+
+    // ── Sidebar visibility (Ctrl+B) ───────────────────────────────────────────
 
     public ReactiveCommand<Unit, Unit> ToggleSidebarCommand { get; }
 
@@ -147,8 +147,7 @@ public class MainWindowViewModel : ViewModelBase
         CorkboardViewModel corkboardViewModel,
         SupplementalDocsViewModel supplementalDocsViewModel,
         GitPanelViewModel gitPanelViewModel,
-        NotificationService notificationService,
-        IAppSettingsStore settingsStore)
+        NotificationService notificationService)
     {
         WorkspaceViewModel = workspaceViewModel;
         EditorViewModel = editorViewModel;
@@ -158,21 +157,32 @@ public class MainWindowViewModel : ViewModelBase
         CorkboardViewModel = corkboardViewModel;
         SupplementalDocsViewModel = supplementalDocsViewModel;
         GitPanelViewModel = gitPanelViewModel;
-        _settingsStore = settingsStore;
 
-        try
-        {
-            _isSidebarExpanded = _settingsStore.GetAsync<bool?>("sidebarExpanded").GetAwaiter().GetResult() ?? true;
-        }
-        catch
-        {
-            _isSidebarExpanded = true;
-        }
+        _isAnyLeftPaneOpen = Observable.CombineLatest(
+                workspaceViewModel.WhenAnyValue(x => x.IsChaptersPaneVisible),
+                supplementalDocsViewModel.WhenAnyValue(x => x.IsVisible),
+                (chapters, docs) => chapters || docs)
+            .ToProperty(this, x => x.IsAnyLeftPaneOpen);
+        Disposables.Add(_isAnyLeftPaneOpen);
+
+        _isBothLeftPanesOpen = Observable.CombineLatest(
+                workspaceViewModel.WhenAnyValue(x => x.IsChaptersPaneVisible),
+                supplementalDocsViewModel.WhenAnyValue(x => x.IsVisible),
+                (chapters, docs) => chapters && docs)
+            .ToProperty(this, x => x.IsBothLeftPanesOpen);
+        Disposables.Add(_isBothLeftPanesOpen);
 
         ToggleSidebarCommand = ReactiveCommand.Create(() =>
         {
-            IsSidebarExpanded = !IsSidebarExpanded;
-            _ = PersistSidebarExpandedAsync(IsSidebarExpanded);
+            if (IsAnyLeftPaneOpen)
+            {
+                workspaceViewModel.IsChaptersPaneVisible = false;
+                supplementalDocsViewModel.IsVisible = false;
+            }
+            else
+            {
+                workspaceViewModel.IsChaptersPaneVisible = true;
+            }
         });
 
         SelectResearchCommand = ReactiveCommand.Create(() => { }, Observable.Return(false));
@@ -278,17 +288,5 @@ public class MainWindowViewModel : ViewModelBase
 
         // Start workspace init (loads last workspace + restores last chapter).
         _ = workspaceViewModel.InitAsync();
-    }
-
-    private async Task PersistSidebarExpandedAsync(bool value)
-    {
-        try
-        {
-            await _settingsStore.SetAsync("sidebarExpanded", value).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Non-fatal; layout preference may not persist across sessions if storage fails.
-        }
     }
 }

@@ -11,6 +11,8 @@
 
     <UserControl.Resources>
         <conv:StatusToBrushConverter x:Key="StatusToBrushConverter" />
+        <conv:CardDisplaySizeEqualsConverter x:Key="CardDisplaySizeEqualsConverter" />
+        <conv:CardDisplaySizeAtLeastConverter x:Key="CardDisplaySizeAtLeastConverter" />
     </UserControl.Resources>
 
     <UserControl.Styles>
@@ -27,6 +29,38 @@
             <Setter Property="MaxWidth" Value="520" />
             <Setter Property="Margin" Value="0,0,12,12" />
         </Style>
+        <Style Selector="Button.cork-card.card-size-medium">
+            <Setter Property="MinWidth" Value="220" />
+            <Setter Property="MaxWidth" Value="320" />
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-tiny">
+            <Setter Property="MinWidth" Value="140" />
+            <Setter Property="MaxWidth" Value="200" />
+            <Setter Property="Padding" Value="6,4" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-medium Grid.cork-card-body">
+            <Setter Property="RowSpacing" Value="6" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-tiny Grid.cork-card-body">
+            <Setter Property="RowSpacing" Value="4" />
+        </Style>
+        <Style Selector="Button.cork-card TextBlock.cork-card-title">
+            <Setter Property="FontSize" Value="15" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-medium TextBlock.cork-card-title">
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-tiny TextBlock.cork-card-title">
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="Button.cork-card.cork-card-missing">
+            <Setter Property="BorderBrush" Value="{DynamicResource OrangeBrush}" />
+            <Setter Property="BorderThickness" Value="1,1,1,3" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-tiny TextBlock.cork-card-missing-text">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
         <Style Selector="Button.cork-card:pointerover">
             <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
@@ -35,14 +69,63 @@
             <Setter Property="Background" Value="#191233" />
             <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
         </Style>
-        <Style Selector="Border.cork-divider">
+        <Style Selector="ToggleButton.cork-size-toggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#2D1B5E" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#94A3B8" />
+        </Style>
+        <Style Selector="ToggleButton.cork-size-toggle:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+        <Style Selector="ToggleButton.cork-size-toggle:checked">
+            <Setter Property="Background" Value="#191233" />
+            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+        <Style Selector="Button.cork-part-header">
             <Setter Property="Background" Value="#15102A" />
             <Setter Property="BorderBrush" Value="#2D1B5E" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="12,10" />
+            <Setter Property="MinHeight" Value="40" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+        <Style Selector="Button.cork-part-header.part-follow">
+            <Setter Property="Margin" Value="0,16,0,10" />
+        </Style>
+        <Style Selector="Button.cork-part-header:pointerover">
+            <Setter Property="Background" Value="#191233" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+        <Style Selector="Button.cork-part-header:pointerover Border.cork-part-chevron-badge">
+            <Setter Property="Background" Value="#3A245D" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+        </Style>
+        <Style Selector="Border.cork-part-chevron-badge">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="#221640" />
+            <Setter Property="BorderBrush" Value="#4C2A85" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.cork-part-chevron">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#E9D5FF" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
         <Style Selector="Border.cork-hint">
             <Setter Property="Background" Value="#100D1F" />
@@ -79,8 +162,30 @@
                                VerticalAlignment="Center" />
                 </StackPanel>
 
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="4">
+                    <ToggleButton Classes="cork-size-toggle"
+                                  Content="Large"
+                                  Command="{Binding SetCardSizeCommand}"
+                                  CommandParameter="{x:Static vm:CardDisplaySize.Large}"
+                                  IsChecked="{Binding CardDisplaySize, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Large, Mode=OneWay}" />
+                    <ToggleButton Classes="cork-size-toggle"
+                                  Content="Medium"
+                                  Command="{Binding SetCardSizeCommand}"
+                                  CommandParameter="{x:Static vm:CardDisplaySize.Medium}"
+                                  IsChecked="{Binding CardDisplaySize, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Medium, Mode=OneWay}" />
+                    <ToggleButton Classes="cork-size-toggle"
+                                  Content="Tiny"
+                                  Command="{Binding SetCardSizeCommand}"
+                                  CommandParameter="{x:Static vm:CardDisplaySize.Tiny}"
+                                  IsChecked="{Binding CardDisplaySize, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Tiny, Mode=OneWay}" />
+                </StackPanel>
+
                 <TextBlock Grid.Column="2"
-                           Text="Click a chapter card to open it in Write mode"
+                           Text="Double-click a card to open in Write mode"
                            FontSize="10"
                            Foreground="#94A3B8"
                            VerticalAlignment="Center" />
@@ -119,23 +224,41 @@
 
     <UserControl.DataTemplates>
         <DataTemplate DataType="vm:PartDividerItemViewModel">
-            <Border Classes="cork-divider"
-                    Width="{Binding Bounds.Width, ElementName=Root}">
-                <StackPanel Spacing="2">
-                    <TextBlock Text="{Binding Title}"
+            <Button Classes="cork-part-header"
+                    Classes.part-follow="{Binding !IsFirstPart}"
+                    Width="{Binding Bounds.Width, ElementName=Root}"
+                    Focusable="False"
+                    Command="{Binding DataContext.TogglePartExpandedCommand, ElementName=Root}"
+                    CommandParameter="{Binding}"
+                    ToolTip.Tip="Click to show or hide chapters in this part">
+                <Grid ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="12">
+                    <Border Grid.Column="0"
+                            Classes="cork-part-chevron-badge">
+                        <TextBlock Classes="cork-part-chevron"
+                                   Text="{Binding ChevronGlyph}" />
+                    </Border>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding Title}"
                                FontSize="14"
                                FontWeight="SemiBold"
-                               Foreground="{DynamicResource OnSurfaceBrush}" />
-                    <TextBlock Text="Section divider"
+                               Foreground="{DynamicResource OnSurfaceBrush}"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Stretch"
+                               TextAlignment="Left" />
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding ChapterCountDisplay}"
                                FontSize="10"
-                               Foreground="#94A3B8" />
-                </StackPanel>
-            </Border>
+                               Foreground="#94A3B8"
+                               VerticalAlignment="Center" />
+                </Grid>
+            </Button>
         </DataTemplate>
 
         <DataTemplate DataType="vm:EmptyPartHintItemViewModel">
             <Border Classes="cork-hint"
-                    Width="{Binding Bounds.Width, ElementName=Root}">
+                    Width="{Binding Bounds.Width, ElementName=Root}"
+                    IsVisible="{Binding IsVisibleOnBoard}">
                 <TextBlock Text="{Binding HintText}"
                            FontSize="11"
                            FontStyle="Italic"
@@ -146,11 +269,15 @@
         <DataTemplate DataType="vm:ChapterCardItemViewModel">
             <Button Classes="cork-card"
                     Classes.selected="{Binding Card.IsSelected}"
-                    Command="{Binding DataContext.OpenCardCommand, ElementName=Root}"
-                    CommandParameter="{Binding}"
+                    Classes.cork-card-missing="{Binding Card.IsMissing}"
+                    Classes.card-size-large="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Large}"
+                    Classes.card-size-medium="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Medium}"
+                    Classes.card-size-tiny="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Tiny}"
+                    IsVisible="{Binding IsVisibleOnBoard}"
                     PointerPressed="Card_PointerPressed"
                     PointerMoved="Card_PointerMoved"
                     PointerReleased="Card_PointerReleased"
+                    DoubleTapped="Card_DoubleTapped"
                     Loaded="Card_Loaded">
 
                 <Button.ContextMenu>
@@ -158,6 +285,9 @@
                         <MenuItem Header="Open"
                                   Command="{Binding DataContext.OpenCardCommand, ElementName=Root}"
                                   CommandParameter="{Binding}" />
+                        <MenuItem Header="Mark complete"
+                                  Command="{Binding Card.Chapter.CompletePhaseCommand}"
+                                  IsVisible="{Binding Card.CanCompletePhase}" />
                         <Separator />
                         <MenuItem Header="Rename…"
                                   Click="RenameCard_Click" />
@@ -173,24 +303,29 @@
                     </ContextMenu>
                 </Button.ContextMenu>
 
-                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                <Grid Classes="cork-card-body"
+                      RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                       RowSpacing="8">
-                    <StackPanel Grid.Row="0"
-                                Spacing="2">
-                        <TextBlock Text="{Binding Title}"
-                                   FontSize="15"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource OnSurfaceBrush}"
-                                   TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding RelativePath}"
-                                   FontSize="10"
-                                   Foreground="#94A3B8"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
+                    <TextBlock Grid.Row="0"
+                               Classes="cork-card-title"
+                               Text="{Binding Title}"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}"
+                               TextWrapping="Wrap"
+                               MaxLines="2"
+                               TextTrimming="CharacterEllipsis" />
 
-                    <Grid Grid.Row="1"
+                    <TextBlock Grid.Row="1"
+                               Text="{Binding RelativePath}"
+                               FontSize="10"
+                               Foreground="#94A3B8"
+                               TextWrapping="Wrap"
+                               IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Large}" />
+
+                    <Grid Grid.Row="2"
                           ColumnDefinitions="*,Auto,Auto"
-                          ColumnSpacing="12">
+                          ColumnSpacing="12"
+                          IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Large}">
                         <StackPanel Grid.Column="0"
                                     Spacing="2">
                             <TextBlock Text="Status"
@@ -223,10 +358,27 @@
                         </StackPanel>
                     </Grid>
 
-                    <Grid Grid.Row="2"
+                    <Grid Grid.Row="3"
+                          ColumnDefinitions="*,Auto"
+                          ColumnSpacing="8"
+                          IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Medium}">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding Card.StatusDisplay}"
+                                   FontSize="11"
+                                   Foreground="{Binding Card.Status, Converter={StaticResource StatusToBrushConverter}}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Card.WordCountDisplay}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource OnSurfaceBrush}"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+
+                    <Grid Grid.Row="4"
                           ColumnDefinitions="72,*,84"
                           ColumnSpacing="8"
-                          VerticalAlignment="Center">
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Large}">
                         <TextBlock Grid.Column="0"
                                    Text="Progress"
                                    FontSize="9"
@@ -249,9 +401,31 @@
                                    VerticalAlignment="Center" />
                     </Grid>
 
-                    <Grid Grid.Row="3"
+                    <Grid Grid.Row="4"
+                          ColumnDefinitions="*,Auto"
+                          ColumnSpacing="8"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Medium}">
+                        <ProgressBar Grid.Column="0"
+                                     Value="{Binding Card.ProximityFill}"
+                                     Minimum="0"
+                                     Maximum="1"
+                                     Height="6"
+                                     VerticalAlignment="Center"
+                                     Background="{DynamicResource SurfaceHighBrush}"
+                                     Foreground="{DynamicResource SynthwavePurpleBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Card.ProximityFill, StringFormat={}{0:P0}}"
+                                   FontSize="11"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+
+                    <Grid Grid.Row="6"
                           ColumnDefinitions="*,*"
-                          ColumnSpacing="12">
+                          ColumnSpacing="12"
+                          IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Large}">
                         <StackPanel Grid.Column="0" Spacing="2">
                             <TextBlock Text="Phase start"
                                        FontSize="9"
@@ -272,7 +446,8 @@
                         </StackPanel>
                     </Grid>
 
-                    <TextBlock Grid.Row="4"
+                    <TextBlock Grid.Row="7"
+                               Classes="cork-card-missing-text"
                                Text="{Binding Card.MissingStateDisplay}"
                                FontSize="10"
                                Foreground="{DynamicResource OrangeBrush}"

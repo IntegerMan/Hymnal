@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.IO;
@@ -45,6 +46,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     private readonly INotificationService _notificationService;
     private readonly Subject<ChapterViewModel> _openChapterRequested = new();
     private readonly ObservableCollectionExtended<CorkboardItemViewModel> _items = new();
+    private readonly Dictionary<string, bool> _partExpandedState = new(StringComparer.OrdinalIgnoreCase);
 
     public ReadOnlyObservableCollection<CorkboardItemViewModel> Items { get; }
 
@@ -66,6 +68,13 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _lastStructuralError, value);
     }
 
+    private CardDisplaySize _cardDisplaySize = CardDisplaySize.Large;
+    public CardDisplaySize CardDisplaySize
+    {
+        get => _cardDisplaySize;
+        private set => this.RaiseAndSetIfChanged(ref _cardDisplaySize, value);
+    }
+
     public ReactiveCommand<CorkboardItemViewModel?, System.Reactive.Unit> SelectCardCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenSelectedCardCommand { get; }
     public ReactiveCommand<CorkboardItemViewModel?, System.Reactive.Unit> OpenCardCommand { get; }
@@ -75,6 +84,8 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<IncludeExistingChapterRequest, System.Reactive.Unit> IncludeExistingChapterCommand { get; }
     public ReactiveCommand<RemoveChapterRequest, System.Reactive.Unit> RemoveFromBookCommand { get; }
     public ReactiveCommand<DeleteChapterRequest, System.Reactive.Unit> DeleteChapterCommand { get; }
+    public ReactiveCommand<CardDisplaySize, System.Reactive.Unit> SetCardSizeCommand { get; }
+    public ReactiveCommand<PartDividerItemViewModel, System.Reactive.Unit> TogglePartExpandedCommand { get; }
 
     public CorkboardViewModel(
         WorkspaceViewModel workspace,
@@ -106,6 +117,8 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         IncludeExistingChapterCommand = ReactiveCommand.CreateFromTask<IncludeExistingChapterRequest>(IncludeExistingChapterAsync);
         RemoveFromBookCommand = ReactiveCommand.CreateFromTask<RemoveChapterRequest>(RemoveFromBookAsync);
         DeleteChapterCommand = ReactiveCommand.CreateFromTask<DeleteChapterRequest>(DeleteChapterAsync);
+        SetCardSizeCommand = ReactiveCommand.Create<CardDisplaySize>(size => CardDisplaySize = size);
+        TogglePartExpandedCommand = ReactiveCommand.Create<PartDividerItemViewModel>(TogglePartExpanded);
 
         Disposables.Add(SelectCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(OpenSelectedCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
@@ -116,8 +129,18 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         Disposables.Add(IncludeExistingChapterCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(RemoveFromBookCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(DeleteChapterCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
+        Disposables.Add(SetCardSizeCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
+        Disposables.Add(TogglePartExpandedCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
 
         RebuildItems();
+    }
+
+    private void TogglePartExpanded(PartDividerItemViewModel part)
+    {
+        var path = part.RelativePath;
+        var nextExpanded = !_partExpandedState.GetValueOrDefault(path, part.IsExpanded);
+        _partExpandedState[path] = nextExpanded;
+        part.IsExpanded = nextExpanded;
     }
 
     private void RebuildItems()
@@ -127,7 +150,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         CorkboardItemViewModel.DisposeItems(_items);
         _items.Clear();
 
-        foreach (var item in CorkboardItemViewModel.Project(_workspace.Nodes))
+        foreach (var item in CorkboardItemViewModel.Project(_workspace.Nodes, _partExpandedState))
             _items.Add(item);
 
         this.RaisePropertyChanged(nameof(HasItems));

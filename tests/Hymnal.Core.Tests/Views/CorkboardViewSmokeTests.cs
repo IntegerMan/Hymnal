@@ -8,23 +8,19 @@ using Avalonia;
 using Avalonia.Controls;
 using Hymnal.Core.Common;
 using Hymnal.Core.Interfaces;
+using Hymnal.Core.Tests.Infrastructure;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 using Hymnal.ViewModels;
 using Hymnal.Views;
-using ReactiveUI.Builder;
 using Xunit;
 
 namespace Hymnal.Core.Tests.Views;
 
+[Collection("AvaloniaUi")]
 public sealed class CorkboardViewSmokeTests
 {
-    static CorkboardViewSmokeTests()
-    {
-        RxAppBuilder.CreateReactiveUIBuilder()
-            .WithCoreServices()
-            .BuildApp();
-    }
+    static CorkboardViewSmokeTests() => ReactiveUiTestBootstrap.EnsureInitialized();
 
     [Fact]
     public void CorkboardView_LoadsXaml_AndTogglesEmptyStateWithDataContext()
@@ -37,10 +33,9 @@ public sealed class CorkboardViewSmokeTests
             DataContext = emptyBoard
         };
 
-        emptyView.Measure(new Size(1280, 800));
-        emptyView.Arrange(new Rect(0, 0, 1280, 800));
+        LayoutView(emptyView);
 
-        Assert.True(emptyBoard.HasItems is false);
+        Assert.False(emptyBoard.HasItems);
         Assert.NotNull(emptyView.FindControl<TextBlock>("EmptyBoardState"));
         Assert.True(emptyView.FindControl<TextBlock>("EmptyBoardState")!.IsVisible);
         Assert.False(emptyView.FindControl<ScrollViewer>("BoardScroll")!.IsVisible);
@@ -55,23 +50,33 @@ public sealed class CorkboardViewSmokeTests
             DataContext = populatedBoard
         };
 
-        populatedView.Measure(new Size(1280, 800));
-        populatedView.Arrange(new Rect(0, 0, 1280, 800));
+        LayoutView(populatedView);
 
         Assert.True(populatedBoard.HasItems);
         Assert.False(populatedView.FindControl<TextBlock>("EmptyBoardState")!.IsVisible);
         Assert.True(populatedView.FindControl<ScrollViewer>("BoardScroll")!.IsVisible);
         Assert.Same(populatedBoard.Items, populatedView.FindControl<ItemsControl>("BoardItems")!.ItemsSource);
+        Assert.Equal(CardDisplaySize.Large, populatedBoard.CardDisplaySize);
     }
 
     // Manual smoke checklist for UI interaction coverage that is brittle to automate:
     // 1. Open a sample workspace and click PLAN.
     // 2. Verify Part dividers and chapter cards render compactly in the center panel.
-    // 3. Click a chapter card and confirm Write mode opens that chapter.
-    // 4. Double-click the same card and confirm it still opens Write mode.
-    // 5. Use the context menu for Rename / New Chapter / Include Existing Chapter / Remove from Book.
-    // 6. Trigger Delete Chapter File and confirm cancellation does not delete.
-    // 7. Drag a card onto another card to reorder, and drop onto invalid targets to confirm they are ignored.
+    // 3. Single-click a chapter card and confirm it is selected without switching to Write mode.
+    // 4. Double-click the same card and confirm Write mode opens that chapter.
+    // 5. Click a part header to collapse and expand its chapter cards; verify chapter count on the header.
+    // 6. Right-click a non-Done card and use Mark complete from the context menu.
+    // 7. Use the context menu for Rename / New Chapter / Include Existing Chapter / Remove from Book.
+    // 8. Trigger Delete Chapter File and confirm cancellation does not delete.
+    // 9. Drag a card onto another card to reorder, and drop onto invalid targets to confirm they are ignored.
+
+    private static void LayoutView(Control view)
+    {
+        view.ApplyTemplate();
+        view.Measure(new Size(1280, 800));
+        view.Arrange(new Rect(0, 0, 1280, 800));
+        view.UpdateLayout();
+    }
 
     private sealed class TestContext : IDisposable
     {
