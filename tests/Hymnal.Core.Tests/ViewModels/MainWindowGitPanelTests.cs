@@ -134,7 +134,7 @@ public sealed class MainWindowGitPanelTests : IDisposable
 
         public MainWindowViewModel CreateMainWindow()
         {
-            var supplementalDocs = new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), Editor, Notifications, SettingsStore);
+            var supplementalDocs = new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), Editor, Notifications, SettingsStore, new FakeFilePickerService());
             var gitPanel = new GitPanelViewModel(Workspace, Editor, GitService, Notifications);
             return new MainWindowViewModel(
                 Workspace,
@@ -143,6 +143,7 @@ public sealed class MainWindowGitPanelTests : IDisposable
                 new ChapterInfoViewModel(Editor, Workspace, new PhaseDataService(MetadataStore), new TargetsService(MetadataStore), SettingsStore, Notifications),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), Notifications),
                 new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), Notifications),
+                new ResearchViewModel(Workspace, supplementalDocs, Editor),
                 supplementalDocs,
                 gitPanel,
                 Notifications);
@@ -248,6 +249,11 @@ public sealed class MainWindowGitPanelTests : IDisposable
         public void ShowError(string message) => Errors.Add(message);
         public void ShowInfo(string message) => Infos.Add(message);
         public void ShowSuccess(string message) => Successes.Add(message);
+    }
+
+    private sealed class FakeFilePickerService : IFilePickerService
+    {
+        public Task<string?> PickFileAsync() => Task.FromResult<string?>(null);
     }
 
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService

@@ -71,6 +71,12 @@ public partial class App : Application
                     ? TopLevel.GetTopLevel(dl.MainWindow)
                     : null));
 
+        services.AddSingleton<IFilePickerService>(sp =>
+            new FilePickerService(() =>
+                App.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime dl
+                    ? TopLevel.GetTopLevel(dl.MainWindow)
+                    : null));
+
         services.AddSingleton<WorkspaceViewModel>(sp =>
             new WorkspaceViewModel(
                 sp.GetRequiredService<ManuscriptService>(),
@@ -116,13 +122,20 @@ public partial class App : Application
                 sp.GetRequiredService<IBookTxtStructureService>(),
                 sp.GetRequiredService<INotificationService>()));
 
+        services.AddSingleton<ResearchViewModel>(sp =>
+            new ResearchViewModel(
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<SupplementalDocsViewModel>(),
+                sp.GetRequiredService<EditorViewModel>()));
+
         services.AddSingleton<SupplementalDocsViewModel>(sp =>
             new SupplementalDocsViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<ISupplementalDocsService>(),
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<INotificationService>(),
-                sp.GetRequiredService<IAppSettingsStore>()));
+                sp.GetRequiredService<IAppSettingsStore>(),
+                sp.GetRequiredService<IFilePickerService>()));
 
         services.AddSingleton<GitPanelViewModel>(sp =>
             new GitPanelViewModel(
@@ -139,6 +152,7 @@ public partial class App : Application
                 sp.GetRequiredService<ChapterInfoViewModel>(),
                 sp.GetRequiredService<GanttViewModel>(),
                 sp.GetRequiredService<CorkboardViewModel>(),
+                sp.GetRequiredService<ResearchViewModel>(),
                 sp.GetRequiredService<SupplementalDocsViewModel>(),
                 sp.GetRequiredService<GitPanelViewModel>(),
                 sp.GetRequiredService<NotificationService>()));

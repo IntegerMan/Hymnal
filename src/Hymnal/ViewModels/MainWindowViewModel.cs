@@ -20,6 +20,7 @@ public class MainWindowViewModel : ViewModelBase
     public ChapterInfoViewModel ChapterInfoViewModel { get; }
     public GanttViewModel GanttViewModel { get; }
     public CorkboardViewModel CorkboardViewModel { get; }
+    public ResearchViewModel ResearchViewModel { get; }
     public SupplementalDocsViewModel SupplementalDocsViewModel { get; }
     public GitPanelViewModel GitPanelViewModel { get; }
 
@@ -74,10 +75,12 @@ public class MainWindowViewModel : ViewModelBase
                 return;
 
             _activeMode = value;
+            EditorViewModel.IsResearchSurface = value == ShellMode.Research;
             this.RaisePropertyChanged(nameof(ActiveMode));
             this.RaisePropertyChanged(nameof(IsEditorVisible));
             this.RaisePropertyChanged(nameof(IsGanttVisible));
             this.RaisePropertyChanged(nameof(IsCorkboardVisible));
+            this.RaisePropertyChanged(nameof(IsResearchVisible));
         }
     }
 
@@ -89,6 +92,9 @@ public class MainWindowViewModel : ViewModelBase
 
     /// <summary>True when the Gantt/manage surface is the active centre-panel view.</summary>
     public bool IsGanttVisible => ActiveMode == ShellMode.Manage;
+
+    /// <summary>True when the research surface is the active centre-panel view.</summary>
+    public bool IsResearchVisible => ActiveMode == ShellMode.Research;
 
     public ReactiveCommand<Unit, Unit> SelectResearchCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectPlanCommand { get; }
@@ -145,6 +151,7 @@ public class MainWindowViewModel : ViewModelBase
         ChapterInfoViewModel chapterInfoViewModel,
         GanttViewModel ganttViewModel,
         CorkboardViewModel corkboardViewModel,
+        ResearchViewModel researchViewModel,
         SupplementalDocsViewModel supplementalDocsViewModel,
         GitPanelViewModel gitPanelViewModel,
         NotificationService notificationService)
@@ -155,6 +162,7 @@ public class MainWindowViewModel : ViewModelBase
         ChapterInfoViewModel = chapterInfoViewModel;
         GanttViewModel = ganttViewModel;
         CorkboardViewModel = corkboardViewModel;
+        ResearchViewModel = researchViewModel;
         SupplementalDocsViewModel = supplementalDocsViewModel;
         GitPanelViewModel = gitPanelViewModel;
 
@@ -185,7 +193,9 @@ public class MainWindowViewModel : ViewModelBase
             }
         });
 
-        SelectResearchCommand = ReactiveCommand.Create(() => { }, Observable.Return(false));
+        SelectResearchCommand = ReactiveCommand.CreateFromTask(EnterResearchModeAsync);
+        Disposables.Add(SelectResearchCommand.ThrownExceptions.Subscribe(ex =>
+            notificationService.ShowError($"Failed to enter research mode: {ex.Message}")));
         SelectPlanCommand = ReactiveCommand.Create(() => { ActiveMode = ShellMode.Plan; });
         SelectWriteCommand = ReactiveCommand.Create(() => { ActiveMode = ShellMode.Write; });
         SelectManageCommand = ReactiveCommand.Create(() => { ActiveMode = ShellMode.Manage; });
@@ -231,7 +241,11 @@ public class MainWindowViewModel : ViewModelBase
 
         Disposables.Add(
             SupplementalDocsViewModel.DocumentOpened
-                .Subscribe(_ => ActiveMode = ShellMode.Write));
+                .Subscribe(_ =>
+                {
+                    if (ActiveMode != ShellMode.Research)
+                        ActiveMode = ShellMode.Write;
+                }));
 
         // ── Reactive window title ────────────────────────────────────────────
         // Format: "Hymnal", "Hymnal - Workspace", "Hymnal - Workspace - file.md", or with " *" when dirty.
@@ -288,5 +302,30 @@ public class MainWindowViewModel : ViewModelBase
 
         // Start workspace init (loads last workspace + restores last chapter).
         _ = workspaceViewModel.InitAsync();
+    }
+
+    private async Task EnterResearchModeAsync()
+    {
+        if (EditorViewModel.ActiveNode != null
+            || EditorViewModel.IsBookSelected
+            || EditorViewModel.ShowMissingChapterPrompt)
+        {
+            if (EditorViewModel.IsDirty)
+            {
+                try
+                {
+                    await EditorViewModel.SaveAsync();
+                }
+                catch
+                {
+                    return;
+                }
+            }
+
+            EditorViewModel.CloseChapter();
+            WorkspaceViewModel.ClearChapterSelectionForExternalDocument();
+        }
+
+        ActiveMode = ShellMode.Research;
     }
 }

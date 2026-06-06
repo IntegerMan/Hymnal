@@ -136,6 +136,52 @@ public sealed class SupplementalDocsViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task ImportExistingFileCommand_CopiesSelectedFileAndOpensIt()
+    {
+        var sourceDir = Path.Combine(Path.GetTempPath(), "hymnal-docs-import", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(sourceDir);
+        var sourcePath = Path.Combine(sourceDir, "imported.md");
+        await File.WriteAllTextAsync(sourcePath, "imported body");
+
+        try
+        {
+            _context.EnableWorkspace();
+            _context.FilePicker.NextFile = sourcePath;
+            var docs = _context.CreateDocsViewModel();
+            await docs.RefreshAsync();
+
+            await ExecuteCommandAsync(docs.ImportExistingFileCommand.Execute());
+
+            var file = Assert.Single(docs.Nodes);
+            Assert.Equal("imported.md", file.RelativePath);
+            Assert.True(File.Exists(Path.Combine(_context.DocsRoot, "imported.md")));
+            Assert.Equal("imported body", await File.ReadAllTextAsync(Path.Combine(_context.DocsRoot, "imported.md")));
+            Assert.Equal(Path.Combine(_context.DocsRoot, "imported.md"), file.AbsolutePath);
+            Assert.Null(_context.Editor.ActiveNode);
+            Assert.Equal(file.AbsolutePath, _context.Editor.ActiveFilePath);
+        }
+        finally
+        {
+            if (Directory.Exists(sourceDir))
+                Directory.Delete(sourceDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ImportExistingFileCommand_WhenPickerCancelled_DoesNothing()
+    {
+        _context.EnableWorkspace();
+        _context.FilePicker.NextFile = null;
+        var docs = _context.CreateDocsViewModel();
+        await docs.RefreshAsync();
+
+        await ExecuteCommandAsync(docs.ImportExistingFileCommand.Execute());
+
+        Assert.Empty(docs.Nodes);
+        Assert.Empty(_context.Notifications.Errors);
+    }
+
+    [Fact]
     public async Task DirtySupplementalDocsFile_IsSavedBeforeChapterSwitch()
     {
         _context.EnableWorkspace();
@@ -173,6 +219,7 @@ public sealed class SupplementalDocsViewModelTests : IDisposable
         public RecordingMetadataStore MetadataStore { get; } = new();
         public FakeAppSettingsStore SettingsStore { get; } = new();
         public FakeFolderPickerService FolderPicker { get; } = new();
+        public FakeFilePickerService FilePicker { get; } = new();
         public WordCountService WordCountService { get; } = new();
         public EditorViewModel Editor { get; }
         public WorkspaceViewModel Workspace { get; }
@@ -203,7 +250,7 @@ public sealed class SupplementalDocsViewModelTests : IDisposable
         }
 
         public SupplementalDocsViewModel CreateDocsViewModel()
-            => new(Workspace, new SupplementalDocsService(MetadataStore), Editor, Notifications, SettingsStore);
+            => new(Workspace, new SupplementalDocsService(MetadataStore), Editor, Notifications, SettingsStore, FilePicker);
 
         public void EnableWorkspace()
         {
@@ -317,6 +364,13 @@ public sealed class SupplementalDocsViewModelTests : IDisposable
     private sealed class FakeFolderPickerService : IFolderPickerService
     {
         public Task<string?> PickFolderAsync() => Task.FromResult<string?>(null);
+    }
+
+    private sealed class FakeFilePickerService : IFilePickerService
+    {
+        public string? NextFile { get; set; }
+
+        public Task<string?> PickFileAsync() => Task.FromResult(NextFile);
     }
 
     private static void SetPrivateField<T>(object target, string fieldName, T value)

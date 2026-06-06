@@ -76,6 +76,17 @@ public class EditorViewModel : ViewModelBase, IDisposable
     private readonly ObservableAsPropertyHelper<bool> _showNoChapterPrompt;
     public bool ShowNoChapterPrompt => _showNoChapterPrompt.Value;
 
+    private readonly ObservableAsPropertyHelper<bool> _showNoResearchDocPrompt;
+    public bool ShowNoResearchDocPrompt => _showNoResearchDocPrompt.Value;
+
+    private bool _isResearchSurface;
+    /// <summary>True when the editor is hosted on the RESEARCH surface (docs only, no chapters).</summary>
+    public bool IsResearchSurface
+    {
+        get => _isResearchSurface;
+        set => this.RaiseAndSetIfChanged(ref _isResearchSurface, value);
+    }
+
     private bool _hasWorkspace;
     public bool HasWorkspace
     {
@@ -173,10 +184,18 @@ public class EditorViewModel : ViewModelBase, IDisposable
 
         _showNoChapterPrompt = this.WhenAnyValue(
                 x => x.HasWorkspace, x => x.ActiveNode, x => x.ActiveFilePath, x => x.IsBookSelected,
-                x => x.ShowMissingChapterPrompt,
-                (hasWorkspace, node, path, isBook, isMissing) =>
-                    hasWorkspace && node == null && path == null && !isBook && !isMissing)
+                x => x.ShowMissingChapterPrompt, x => x.IsResearchSurface,
+                (hasWorkspace, node, path, isBook, isMissing, isResearch) =>
+                    !isResearch && hasWorkspace && node == null && path == null && !isBook && !isMissing)
             .ToProperty(this, x => x.ShowNoChapterPrompt);
+
+        _showNoResearchDocPrompt = this.WhenAnyValue(
+                x => x.HasWorkspace, x => x.ActiveNode, x => x.ActiveFilePath, x => x.IsBookSelected,
+                x => x.ShowMissingChapterPrompt, x => x.IsResearchSurface,
+                (hasWorkspace, node, path, isBook, isMissing, isResearch) =>
+                    isResearch && hasWorkspace && node == null && path == null && !isBook && !isMissing)
+            .ToProperty(this, x => x.ShowNoResearchDocPrompt);
+        Disposables.Add(_showNoResearchDocPrompt);
 
         _showEditor = this.WhenAnyValue(x => x.HasActiveChapter, x => x.IsBookSelected, x => x.ActiveFilePath,
                 (ch, book, path) => ch || book || path != null)

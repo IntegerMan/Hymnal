@@ -253,7 +253,7 @@ public abstract class PartOwnedCorkboardItemViewModel : CorkboardItemViewModel
 
 
     private void SetVisibleOnBoard(bool visible) =>
-        this.RaiseAndSetIfChanged(ref _isVisibleOnBoard, visible);
+        this.RaiseAndSetIfChanged(ref _isVisibleOnBoard, visible, nameof(IsVisibleOnBoard));
 
     protected void AttachToPart(PartDividerItemViewModel? owningPart)
 
@@ -310,7 +310,9 @@ public sealed class PartDividerItemViewModel : CorkboardItemViewModel
 
         set
         {
-            if (this.RaiseAndSetIfChanged(ref _isExpanded, value))
+            var old = _isExpanded;
+            this.RaiseAndSetIfChanged(ref _isExpanded, value);
+            if (old != _isExpanded)
                 this.RaisePropertyChanged(nameof(ChevronGlyph));
         }
     }

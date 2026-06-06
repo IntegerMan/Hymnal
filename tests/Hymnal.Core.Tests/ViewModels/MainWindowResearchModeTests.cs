@@ -25,9 +25,9 @@ using Xunit;
 
 namespace Hymnal.ViewModels;
 
-public sealed class MainWindowPlanModeTests
+public sealed class MainWindowResearchModeTests
 {
-    static MainWindowPlanModeTests()
+    static MainWindowResearchModeTests()
     {
         RxAppBuilder.CreateReactiveUIBuilder()
             .WithCoreServices()
@@ -35,68 +35,106 @@ public sealed class MainWindowPlanModeTests
     }
 
     [Fact]
-    public async Task SelectPlanCommand_ExposesPlanSurfaceEvenWithoutWorkspace()
+    public async Task SelectResearchCommand_ExposesResearchSurfaceEvenWithoutWorkspace()
     {
         using var context = new TestContext();
         var window = context.CreateMainWindow();
 
         Assert.True(window.IsEditorVisible);
-        Assert.False(window.IsCorkboardVisible);
-        Assert.False(window.IsGanttVisible);
-        Assert.True(WaitForFirstCanExecute(window.SelectResearchCommand));
+        Assert.False(window.IsResearchVisible);
 
-        await ExecuteCommandAsync(window.SelectPlanCommand.Execute());
+        await ExecuteCommandAsync(window.SelectResearchCommand.Execute());
 
-        Assert.Equal(ShellMode.Plan, window.ActiveMode);
-        Assert.True(window.IsCorkboardVisible);
+        Assert.Equal(ShellMode.Research, window.ActiveMode);
+        Assert.True(window.IsResearchVisible);
         Assert.False(window.IsEditorVisible);
+        Assert.False(window.IsCorkboardVisible);
         Assert.False(window.IsGanttVisible);
     }
 
     [Fact]
-    public async Task ShellModes_StillToggleWriteManageAndBack()
+    public async Task SelectResearchCommand_ClosesActiveChapterAndClearsSelection()
+    {
+        using var context = new TestContext();
+        var chapter = context.AddChapter("part-one/chapter-one.md", "Chapter One", "# Chapter One\n\nBody.");
+        context.SeedWorkspace(chapter);
+        var window = context.CreateMainWindow();
+        var chapterPath = Path.Combine(context.ManuscriptRoot, "part-one/chapter-one.md");
+        await context.EditorViewModel.OpenChapterAsync(chapter.Node, chapterPath);
+        context.Workspace.SelectedNode = chapter;
+
+        await ExecuteCommandAsync(window.SelectResearchCommand.Execute());
+
+        Assert.Equal(ShellMode.Research, window.ActiveMode);
+        Assert.True(window.IsResearchVisible);
+        Assert.Null(context.EditorViewModel.ActiveNode);
+        Assert.Null(context.EditorViewModel.ActiveFilePath);
+        Assert.True(context.EditorViewModel.ShowNoResearchDocPrompt);
+        Assert.Null(context.Workspace.SelectedNode);
+    }
+
+    [Fact]
+    public async Task DocumentOpened_FromResearchMode_DoesNotSwitchToWrite()
+    {
+        using var context = new TestContext();
+        var window = context.CreateMainWindow();
+        var docs = window.SupplementalDocsViewModel;
+        context.CreateDoc("outline.md", "doc body");
+        context.EnableWorkspace();
+        await docs.RefreshAsync();
+        var doc = Assert.Single(docs.Nodes);
+
+        await ExecuteCommandAsync(window.SelectResearchCommand.Execute());
+        Assert.Equal(ShellMode.Research, window.ActiveMode);
+
+        await ExecuteCommandAsync(docs.OpenDocCommand.Execute(doc));
+
+        Assert.Equal(ShellMode.Research, window.ActiveMode);
+        Assert.True(window.IsResearchVisible);
+        Assert.Equal(doc.AbsolutePath, context.EditorViewModel.ActiveFilePath);
+    }
+
+    [Fact]
+    public async Task DocumentOpened_FromWriteMode_SwitchesToWrite()
+    {
+        using var context = new TestContext();
+        var window = context.CreateMainWindow();
+        var docs = window.SupplementalDocsViewModel;
+        context.CreateDoc("outline.md", "doc body");
+        context.EnableWorkspace();
+        await docs.RefreshAsync();
+        var doc = Assert.Single(docs.Nodes);
+
+        await ExecuteCommandAsync(window.SelectPlanCommand.Execute());
+        Assert.Equal(ShellMode.Plan, window.ActiveMode);
+
+        await ExecuteCommandAsync(docs.OpenDocCommand.Execute(doc));
+
+        Assert.Equal(ShellMode.Write, window.ActiveMode);
+        Assert.True(window.IsEditorVisible);
+    }
+
+    [Fact]
+    public async Task ShellModes_StillToggleResearchWritePlanAndManage()
     {
         using var context = new TestContext();
         var window = context.CreateMainWindow();
 
+        await ExecuteCommandAsync(window.SelectResearchCommand.Execute());
+        Assert.True(window.IsResearchVisible);
+
         await ExecuteCommandAsync(window.SelectPlanCommand.Execute());
         Assert.True(window.IsCorkboardVisible);
+        Assert.False(window.IsResearchVisible);
 
         await ExecuteCommandAsync(window.SelectManageCommand.Execute());
         Assert.Equal(ShellMode.Manage, window.ActiveMode);
         Assert.True(window.IsGanttVisible);
-        Assert.False(window.IsEditorVisible);
-        Assert.False(window.IsCorkboardVisible);
 
         await ExecuteCommandAsync(window.SelectWriteCommand.Execute());
         Assert.Equal(ShellMode.Write, window.ActiveMode);
         Assert.True(window.IsEditorVisible);
-        Assert.False(window.IsGanttVisible);
-        Assert.False(window.IsCorkboardVisible);
-    }
-
-    [Fact]
-    public async Task OpenCardCommand_SelectsChapterAndReturnsToWrite()
-    {
-        using var context = new TestContext();
-        var chapter = context.AddChapter("part-one/chapter-one.md", "Chapter One", "# Chapter One\n\nBody text.");
-        context.SeedWorkspace(chapter);
-
-        var window = context.CreateMainWindow();
-        var board = window.CorkboardViewModel;
-
-        await ExecuteCommandAsync(window.SelectPlanCommand.Execute());
-        Assert.True(window.IsCorkboardVisible);
-
-        var card = Assert.IsType<ChapterCardItemViewModel>(board.Items.Single(item => item.RelativePath == chapter.Node.RelativePath));
-
-        await ExecuteCommandAsync(board.OpenCardCommand.Execute(card));
-
-        Assert.True(SpinWait.SpinUntil(() => context.EditorViewModel.ActiveNode == chapter.Node, TimeSpan.FromSeconds(2)));
-        Assert.Equal(ShellMode.Write, window.ActiveMode);
-        Assert.True(window.IsEditorVisible);
-        Assert.Same(chapter, context.Workspace.SelectedNode);
-        Assert.Same(chapter.Node, context.EditorViewModel.ActiveNode);
+        Assert.False(window.IsResearchVisible);
     }
 
     private static async Task ExecuteCommandAsync(IObservable<System.Reactive.Unit> execution)
@@ -110,13 +148,6 @@ public sealed class MainWindowPlanModeTests
         await completion.Task;
     }
 
-    private static bool WaitForFirstCanExecute(ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> command)
-    {
-        var observed = false;
-        using var subscription = command.CanExecute.Subscribe(value => observed = value);
-        return observed;
-    }
-
     private sealed class TestContext : IDisposable
     {
         public NotificationService NotificationService { get; } = new();
@@ -126,43 +157,44 @@ public sealed class MainWindowPlanModeTests
         public FakeFilePickerService FilePickerService { get; } = new();
         public WordCountService WordCountService { get; } = new();
         public EditorViewModel EditorViewModel { get; }
-        public ChapterRegistryService RegistryService { get; }
-        public PhaseDataService PhaseDataService { get; }
-        public TargetsService TargetsService { get; }
-        public WordCountHistoryService HistoryService { get; }
-        public ManuscriptService ManuscriptService { get; }
         public SpyWorkspaceViewModel Workspace { get; }
-        public FakeBookTxtStructureService StructureService { get; } = new();
         public string WorkspaceRoot { get; }
         public string ManuscriptRoot { get; }
+        public string DocsRoot { get; }
 
         public TestContext()
         {
-            var root = Path.Combine(Path.GetTempPath(), "hymnal-plan-tests", Guid.NewGuid().ToString("N"));
+            var root = Path.Combine(Path.GetTempPath(), "hymnal-research-tests", Guid.NewGuid().ToString("N"));
             WorkspaceRoot = root;
             ManuscriptRoot = Path.Combine(root, "manuscript");
+            DocsRoot = Path.Combine(root, ".hymnal-data", "docs");
             Directory.CreateDirectory(ManuscriptRoot);
+            Directory.CreateDirectory(DocsRoot);
 
             EditorViewModel = new EditorViewModel(MetadataStore, NotificationService, WordCountService);
-            RegistryService = new ChapterRegistryService(MetadataStore);
-            PhaseDataService = new PhaseDataService(MetadataStore);
-            TargetsService = new TargetsService(MetadataStore);
-            HistoryService = new WordCountHistoryService(MetadataStore);
-            ManuscriptService = new ManuscriptService(NotificationService);
             Workspace = new SpyWorkspaceViewModel(
-                ManuscriptService,
+                new ManuscriptService(NotificationService),
                 SettingsStore,
                 FolderPickerService,
                 NotificationService,
                 EditorViewModel,
-                RegistryService,
-                PhaseDataService,
-                TargetsService,
+                new ChapterRegistryService(MetadataStore),
+                new PhaseDataService(MetadataStore),
+                new TargetsService(MetadataStore),
                 WordCountService,
-                HistoryService);
+                new WordCountHistoryService(MetadataStore));
 
-            SeedWorkspace(Array.Empty<ChapterViewModel>());
             SetWorkspaceModel(false);
+        }
+
+        public void EnableWorkspace()
+        {
+            var model = new ManuscriptModel();
+            model.SetRoots(WorkspaceRoot, ManuscriptRoot);
+            SetPrivateField(Workspace, "_model", model);
+            SetPrivateField(Workspace, "_hasWorkspace", true);
+            SetPrivateField(Workspace, "_workspaceName", Path.GetFileName(WorkspaceRoot));
+            EditorViewModel.HasWorkspace = true;
         }
 
         public ChapterViewModel AddChapter(string relativePath, string title, string content)
@@ -172,17 +204,15 @@ public sealed class MainWindowPlanModeTests
             File.WriteAllText(absolutePath, content);
 
             var node = new ChapterNode(relativePath, relativePath, title, NodeKind.Chapter, IsMissing: false, Index: 0);
-            var chapter = new ChapterViewModel(
+            return new ChapterViewModel(
                 node,
                 uuid: Guid.NewGuid().ToString("N"),
                 phaseData: null,
-                PhaseDataService,
-                TargetsService,
+                new PhaseDataService(MetadataStore),
+                new TargetsService(MetadataStore),
                 SettingsStore,
                 NotificationService,
                 WorkspaceRoot);
-
-            return chapter;
         }
 
         public void SeedWorkspace(params ChapterViewModel[] nodes)
@@ -193,6 +223,15 @@ public sealed class MainWindowPlanModeTests
                 collection.Add(node);
 
             SetWorkspaceModel(nodes.Length > 0);
+            EditorViewModel.HasWorkspace = nodes.Length > 0;
+        }
+
+        public string CreateDoc(string relativePath, string content)
+        {
+            var path = Path.Combine(DocsRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, content);
+            return path;
         }
 
         public MainWindowViewModel CreateMainWindow()
@@ -209,23 +248,19 @@ public sealed class MainWindowPlanModeTests
                 Workspace,
                 EditorViewModel,
                 new NotesViewModel(EditorViewModel, Workspace, new NotesService(MetadataStore), NotificationService, SettingsStore),
-                new ChapterInfoViewModel(EditorViewModel, Workspace, PhaseDataService, TargetsService, SettingsStore, NotificationService),
-                new GanttViewModel(Workspace, PhaseDataService, NotificationService),
-                new CorkboardViewModel(Workspace, StructureService, NotificationService),
+                new ChapterInfoViewModel(EditorViewModel, Workspace, new PhaseDataService(MetadataStore), new TargetsService(MetadataStore), SettingsStore, NotificationService),
+                new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), NotificationService),
+                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService),
                 new ResearchViewModel(Workspace, docs, EditorViewModel),
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
                 NotificationService);
         }
 
-        public CorkboardViewModel CreateCorkboard()
-            => new(Workspace, StructureService, NotificationService);
-
         private void SetWorkspaceModel(bool hasWorkspace)
         {
             var model = new ManuscriptModel();
             model.SetRoots(WorkspaceRoot, ManuscriptRoot);
-
             SetPrivateField(Workspace, "_model", model);
             SetPrivateField(Workspace, "_hasWorkspace", hasWorkspace);
             SetPrivateField(Workspace, "_workspaceName", Path.GetFileName(WorkspaceRoot));

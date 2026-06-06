@@ -17,6 +17,7 @@ public partial class SupplementalDocsView : UserControl
 
         CreateDocsFolderButton.Click += CreateFolder_Click;
         CreateDocsFileButton.Click += CreateFile_Click;
+        ImportExistingFileButton.Click += ImportExistingFile_Click;
         DocsTree.DoubleTapped += DocsTree_DoubleTapped;
         DocsTree.SelectionChanged += DocsTree_SelectionChanged;
     }
@@ -43,6 +44,14 @@ public partial class SupplementalDocsView : UserControl
             return;
 
         await ExecuteCommandAsync(vm.CreateFileCommand.Execute(fileName.Trim()));
+    }
+
+    private async void ImportExistingFile_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SupplementalDocsViewModel vm)
+            return;
+
+        await ExecuteCommandAsync(vm.ImportExistingFileCommand.Execute());
     }
 
     private async void DocsTree_DoubleTapped(object? sender, RoutedEventArgs e)

@@ -89,7 +89,7 @@ public partial class MainWindow : Window
 
         void ApplyMode(ShellMode mode)
         {
-            if (mode is ShellMode.Manage or ShellMode.Plan)
+            if (mode is ShellMode.Manage or ShellMode.Plan or ShellMode.Research)
             {
                 grid.ColumnDefinitions[0].Width = new GridLength(0);
                 grid.ColumnDefinitions[1].Width = new GridLength(0);
@@ -118,7 +118,7 @@ public partial class MainWindow : Window
 
         void ApplyWidth(bool expanded)
         {
-            if (vm.ActiveMode is ShellMode.Manage or ShellMode.Plan)
+            if (vm.ActiveMode is ShellMode.Manage or ShellMode.Plan or ShellMode.Research)
                 return;
 
             grid.ColumnDefinitions[0].Width = new GridLength(expanded ? 220 : 48);
@@ -185,7 +185,7 @@ public partial class MainWindow : Window
 
         void ApplyWidth(bool anyOpen)
         {
-            if (vm.ActiveMode is ShellMode.Manage or ShellMode.Plan)
+            if (vm.ActiveMode is ShellMode.Manage or ShellMode.Plan or ShellMode.Research)
                 return;
 
             // Column 4 is the right pane: 280px when expanded, 48px icon-rail when collapsed.

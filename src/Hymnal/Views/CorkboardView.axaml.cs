@@ -15,6 +15,7 @@ namespace Hymnal.Views;
 public partial class CorkboardView : UserControl
 {
     private ChapterCardItemViewModel? _dragSource;
+    private string? _dragSourcePath;
     private PointerPressedEventArgs? _dragPressArgs;
     private Point _dragStart;
     private bool _dragOperationStarted;
@@ -71,6 +72,8 @@ public partial class CorkboardView : UserControl
             return;
 
         _dragOperationStarted = true;
+        _dragSourcePath = _dragSource.RelativePath;
+        e.Pointer.Capture(null);
 
         try
         {
@@ -103,18 +106,21 @@ public partial class CorkboardView : UserControl
     {
         if (sender is not Control control || control.DataContext is not ChapterCardItemViewModel card)
         {
-            ClearDragState();
+            if (!_dragOperationStarted)
+                ClearDragState();
             return;
         }
 
         e.Pointer.Capture(null);
 
+        if (_dragOperationStarted)
+            return;
+
         if (DataContext is CorkboardViewModel vm)
         {
             var point = e.GetCurrentPoint(control);
             if (point.Properties.PointerUpdateKind == PointerUpdateKind.LeftButtonReleased
-                && ReferenceEquals(_dragSource, card)
-                && !_dragOperationStarted)
+                && ReferenceEquals(_dragSource, card))
             {
                 await ExecuteCommandAsync(vm.SelectCardCommand.Execute(card));
             }
@@ -141,8 +147,8 @@ public partial class CorkboardView : UserControl
             return;
         }
 
-        if (!TryGetDraggedPath(e.DataTransfer, out var draggedPath) ||
-            string.Equals(draggedPath, target.RelativePath, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(_dragSourcePath) ||
+            string.Equals(_dragSourcePath, target.RelativePath, StringComparison.OrdinalIgnoreCase))
         {
             e.DragEffects = DragDropEffects.None;
             return;
@@ -160,7 +166,8 @@ public partial class CorkboardView : UserControl
         if (sender is not Control control || control.DataContext is not ChapterCardItemViewModel target)
             return;
 
-        if (!TryGetDraggedPath(e.DataTransfer, out var draggedPath) ||
+        var draggedPath = _dragSourcePath;
+        if (string.IsNullOrWhiteSpace(draggedPath) ||
             string.Equals(draggedPath, target.RelativePath, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -261,17 +268,12 @@ public partial class CorkboardView : UserControl
         return false;
     }
 
-    private static bool TryGetDraggedPath(IDataTransfer? dataTransfer, out string path)
+    private void ClearDragState()
     {
-        var value = dataTransfer?.TryGetText();
-        if (value is string text && !string.IsNullOrWhiteSpace(text))
-        {
-            path = text;
-            return true;
-        }
-
-        path = string.Empty;
-        return false;
+        _dragSource = null;
+        _dragSourcePath = null;
+        _dragPressArgs = null;
+        _dragOperationStarted = false;
     }
 
     private static string BuildSuggestedNewChapterPath(string relativePath)
@@ -501,12 +503,5 @@ public partial class CorkboardView : UserControl
         return this.TryFindResource(key, out var value) && value is T typed
             ? typed
             : null;
-    }
-
-    private void ClearDragState()
-    {
-        _dragSource = null;
-        _dragPressArgs = null;
-        _dragOperationStarted = false;
     }
 }

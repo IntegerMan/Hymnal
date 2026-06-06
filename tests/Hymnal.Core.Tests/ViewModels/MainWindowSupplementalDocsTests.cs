@@ -99,7 +99,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
 
         public MainWindowViewModel CreateMainWindow()
         {
-            var docs = new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), Editor, NotificationService, SettingsStore);
+            var docs = new SupplementalDocsViewModel(Workspace, new SupplementalDocsService(MetadataStore), Editor, NotificationService, SettingsStore, new FakeFilePickerService());
             var gitPanel = new GitPanelViewModel(Workspace, Editor, new FakeGitService(), NotificationService);
             return new MainWindowViewModel(
                 Workspace,
@@ -108,6 +108,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
                 new ChapterInfoViewModel(Editor, Workspace, new PhaseDataService(MetadataStore), new TargetsService(MetadataStore), SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), NotificationService),
                 new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService),
+                new ResearchViewModel(Workspace, docs, Editor),
                 docs,
                 gitPanel,
                 NotificationService);
@@ -174,6 +175,11 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
     }
 
     private sealed class FakeGitService : NoOpGitService;
+
+    private sealed class FakeFilePickerService : IFilePickerService
+    {
+        public Task<string?> PickFileAsync() => Task.FromResult<string?>(null);
+    }
 
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService
     {

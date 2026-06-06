@@ -71,6 +71,55 @@ public sealed class SupplementalDocsService : ISupplementalDocsService
         }
     }
 
+    public Task<Result<SupplementalDocNode>> ImportFileAsync(string workspaceRoot, string? parentRelativePath, string sourceAbsolutePath)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(sourceAbsolutePath))
+                return Task.FromResult(Result<SupplementalDocNode>.Fail("Source file path is required."));
+
+            var sourcePath = Path.GetFullPath(sourceAbsolutePath);
+            if (!File.Exists(sourcePath))
+                return Task.FromResult(Result<SupplementalDocNode>.Fail($"Source file '{sourcePath}' was not found."));
+
+            var docsRootResult = EnsureDocsRoot(workspaceRoot);
+            if (!docsRootResult.IsSuccess)
+                return Task.FromResult(Result<SupplementalDocNode>.Fail(docsRootResult.Error!));
+
+            if (IsUnderDocsRoot(docsRootResult.Value!, sourcePath))
+                return Task.FromResult(Result<SupplementalDocNode>.Fail("Cannot import a file that is already inside the supplemental docs folder."));
+
+            var parentResult = ResolveParentDirectory(docsRootResult.Value!, parentRelativePath);
+            if (!parentResult.IsSuccess)
+                return Task.FromResult(Result<SupplementalDocNode>.Fail(parentResult.Error!));
+
+            var fileName = Path.GetFileName(sourcePath);
+            var nameResult = ValidateLeafName(fileName, "File name");
+            if (!nameResult.IsSuccess)
+                return Task.FromResult(Result<SupplementalDocNode>.Fail(nameResult.Error!));
+
+            var absolutePathResult = ResolveChildPath(docsRootResult.Value!, parentResult.Value!, nameResult.Value!);
+            if (!absolutePathResult.IsSuccess)
+                return Task.FromResult(Result<SupplementalDocNode>.Fail(absolutePathResult.Error!));
+
+            var absolutePath = absolutePathResult.Value!;
+            if (Directory.Exists(absolutePath))
+                return Task.FromResult(Result<SupplementalDocNode>.Fail($"Cannot import supplemental docs file '{absolutePath}' because a folder already exists at that path."));
+
+            if (File.Exists(absolutePath))
+                return Task.FromResult(Result<SupplementalDocNode>.Fail($"Supplemental docs file '{absolutePath}' already exists."));
+
+            Directory.CreateDirectory(parentResult.Value!);
+            File.Copy(sourcePath, absolutePath, overwrite: false);
+
+            return Task.FromResult(Result<SupplementalDocNode>.Ok(ProjectNode(docsRootResult.Value!, absolutePath, SupplementalDocNodeKind.File)));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(Result<SupplementalDocNode>.Fail($"Failed to import supplemental docs file '{sourceAbsolutePath}': {ex.Message}"));
+        }
+    }
+
     public async Task<Result<SupplementalDocNode>> CreateFileAsync(string workspaceRoot, string? parentRelativePath, string fileName, string initialContent = "")
     {
         try

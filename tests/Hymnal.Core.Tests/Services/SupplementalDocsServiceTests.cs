@@ -156,6 +156,129 @@ public class SupplementalDocsServiceTests
     }
 
     [Fact]
+    public async Task ImportFileAsync_CopiesFileIntoDocsRoot()
+    {
+        var workspace = CreateWorkspace();
+        var sourceDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(sourceDir);
+        var sourcePath = Path.Combine(sourceDir, "reference.pdf");
+        await File.WriteAllBytesAsync(sourcePath, [0x25, 0x50, 0x44, 0x46]);
+
+        try
+        {
+            var service = CreateService();
+            var result = await service.ImportFileAsync(workspace, null, sourcePath);
+
+            Assert.True(result.IsSuccess, result.Error);
+            var destPath = DocPath(workspace, "reference.pdf");
+            Assert.True(File.Exists(destPath));
+            Assert.Equal(await File.ReadAllBytesAsync(sourcePath), await File.ReadAllBytesAsync(destPath));
+            Assert.Equal("reference.pdf", result.Value!.RelativePath);
+            Assert.Equal(SupplementalDocNodeKind.File, result.Value.Kind);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+            Directory.Delete(sourceDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFileAsync_CopiesFileIntoNestedFolder()
+    {
+        var workspace = CreateWorkspace();
+        var sourceDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(sourceDir);
+        var sourcePath = Path.Combine(sourceDir, "notes.md");
+        await File.WriteAllTextAsync(sourcePath, "Imported notes");
+
+        try
+        {
+            var service = CreateService();
+            Directory.CreateDirectory(DocPath(workspace, "research"));
+
+            var result = await service.ImportFileAsync(workspace, "research", sourcePath);
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Equal("research/notes.md", result.Value!.RelativePath);
+            Assert.Equal("Imported notes", await File.ReadAllTextAsync(DocPath(workspace, "research", "notes.md")));
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+            Directory.Delete(sourceDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFileAsync_RejectsMissingSource()
+    {
+        var workspace = CreateWorkspace();
+
+        try
+        {
+            var service = CreateService();
+            var result = await service.ImportFileAsync(workspace, null, Path.Combine(workspace, "missing.txt"));
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("not found", result.Error!, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFileAsync_RejectsDuplicateDestination()
+    {
+        var workspace = CreateWorkspace();
+        var sourceDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(sourceDir);
+        var sourcePath = Path.Combine(sourceDir, "notes.md");
+        await File.WriteAllTextAsync(sourcePath, "source");
+        Directory.CreateDirectory(DocsRoot(workspace));
+        await File.WriteAllTextAsync(DocPath(workspace, "notes.md"), "existing");
+
+        try
+        {
+            var service = CreateService();
+            var result = await service.ImportFileAsync(workspace, null, sourcePath);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("already exists", result.Error!, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("existing", await File.ReadAllTextAsync(DocPath(workspace, "notes.md")));
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+            Directory.Delete(sourceDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFileAsync_RejectsFileAlreadyInsideDocsRoot()
+    {
+        var workspace = CreateWorkspace();
+        Directory.CreateDirectory(DocsRoot(workspace));
+        var existingPath = DocPath(workspace, "notes.md");
+        await File.WriteAllTextAsync(existingPath, "already here");
+
+        try
+        {
+            var service = CreateService();
+            var result = await service.ImportFileAsync(workspace, null, existingPath);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("already inside", result.Error!, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CreateFileAsync_ReloadShowsFileAndPreservesContent()
     {
         var workspace = CreateWorkspace();

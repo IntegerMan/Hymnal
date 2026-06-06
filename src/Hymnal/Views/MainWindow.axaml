@@ -145,9 +145,8 @@
                     <ToggleButton Classes="nav-mode"
                                   Content="RESEARCH"
                                   Command="{Binding SelectResearchCommand}"
-                                  IsEnabled="False"
                                   IsChecked="{Binding ActiveMode, Mode=OneWay, Converter={StaticResource ShellModeEqualsConverter}, ConverterParameter=Research}"
-                                  ToolTip.Tip="Reserved for later" />
+                                  ToolTip.Tip="Research docs and AI chat" />
                     <ToggleButton Classes="nav-mode"
                                   Content="PLAN"
                                   Command="{Binding SelectPlanCommand}"
@@ -391,6 +390,10 @@
                             <views:EditorView DataContext="{Binding EditorViewModel}"
                                               Background="Transparent" />
                         </DockPanel>
+                    </Border>
+                    <!-- Research — visible when Research is active -->
+                    <Border IsVisible="{Binding IsResearchVisible}">
+                        <views:ResearchView DataContext="{Binding ResearchViewModel}" />
                     </Border>
                     <!-- Plan corkboard — visible when Plan is active -->
                     <Border IsVisible="{Binding IsCorkboardVisible}">

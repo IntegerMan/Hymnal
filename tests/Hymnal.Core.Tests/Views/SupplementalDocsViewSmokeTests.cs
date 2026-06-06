@@ -41,10 +41,12 @@ public sealed class SupplementalDocsViewSmokeTests
         Assert.Contains("SelectedItem=\"{Binding SelectedNode, Mode=TwoWay}\"", docsViewAxaml);
         Assert.Contains("x:Name=\"CreateDocsFolderButton\"", docsViewAxaml);
         Assert.Contains("x:Name=\"CreateDocsFileButton\"", docsViewAxaml);
+        Assert.Contains("x:Name=\"ImportExistingFileButton\"", docsViewAxaml);
 
         var codeBehind = File.ReadAllText(FindRepositoryFile("src/Hymnal/Views/SupplementalDocsView.axaml.cs"));
         Assert.Contains("CreateFolderCommand.Execute", codeBehind);
         Assert.Contains("CreateFileCommand.Execute", codeBehind);
+        Assert.Contains("ImportExistingFileCommand.Execute", codeBehind);
         Assert.Contains("OpenDocCommand.Execute", codeBehind);
 
         var mainWindowAxaml = File.ReadAllText(FindRepositoryFile("src/Hymnal/Views/MainWindow.axaml"));
@@ -179,7 +181,7 @@ public sealed class SupplementalDocsViewSmokeTests
         }
 
         public SupplementalDocsViewModel CreateDocsViewModel(EditorViewModel editor)
-            => new(Workspace, DocsService, editor, NotificationService, SettingsStore);
+            => new(Workspace, DocsService, editor, NotificationService, SettingsStore, new FakeFilePickerService());
 
         public MainWindowViewModel CreateMainWindowViewModel()
         {
@@ -193,6 +195,7 @@ public sealed class SupplementalDocsViewSmokeTests
                 new ChapterInfoViewModel(EditorViewModel, Workspace, PhaseDataService, TargetsService, SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, PhaseDataService, NotificationService),
                 corkboardVm,
+                new ResearchViewModel(Workspace, docsVm, EditorViewModel),
                 docsVm,
                 gitPanelVm,
                 NotificationService);
@@ -256,6 +259,11 @@ public sealed class SupplementalDocsViewSmokeTests
     private sealed class FakeFolderPickerService : IFolderPickerService
     {
         public Task<string?> PickFolderAsync() => Task.FromResult<string?>(null);
+    }
+
+    private sealed class FakeFilePickerService : IFilePickerService
+    {
+        public Task<string?> PickFileAsync() => Task.FromResult<string?>(null);
     }
 
     private sealed class FakeGitService : NoOpGitService;

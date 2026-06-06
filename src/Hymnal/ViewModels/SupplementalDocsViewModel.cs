@@ -26,6 +26,7 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
     private readonly EditorViewModel _editor;
     private readonly INotificationService _notificationService;
     private readonly IAppSettingsStore _settingsStore;
+    private readonly IFilePickerService _filePicker;
     private readonly ObservableCollectionExtended<SupplementalDocNode> _nodes = new();
     private readonly Subject<SupplementalDocNode> _documentOpened = new();
 
@@ -43,6 +44,7 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
     public ReactiveCommand<string, Unit> CreateFolderCommand { get; }
     public ReactiveCommand<string, Unit> CreateFileCommand { get; }
+    public ReactiveCommand<Unit, Unit> ImportExistingFileCommand { get; }
     public ReactiveCommand<SupplementalDocNode, Unit> OpenDocCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleCommand { get; }
 
@@ -66,13 +68,15 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
         ISupplementalDocsService docsService,
         EditorViewModel editor,
         INotificationService notificationService,
-        IAppSettingsStore settingsStore)
+        IAppSettingsStore settingsStore,
+        IFilePickerService filePicker)
     {
         _workspace = workspace;
         _docsService = docsService;
         _editor = editor;
         _notificationService = notificationService;
         _settingsStore = settingsStore;
+        _filePicker = filePicker;
 
         try
         {
@@ -92,6 +96,7 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
         RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync, hasWorkspace);
         CreateFolderCommand = ReactiveCommand.CreateFromTask<string>(CreateFolderAsync, hasWorkspace);
         CreateFileCommand = ReactiveCommand.CreateFromTask<string>(CreateFileAsync, hasWorkspace);
+        ImportExistingFileCommand = ReactiveCommand.CreateFromTask(ImportExistingFileAsync, hasWorkspace);
         OpenDocCommand = ReactiveCommand.CreateFromTask<SupplementalDocNode>(OpenDocAsync, hasWorkspace);
         ToggleCommand = ReactiveCommand.Create(
             () => { IsVisible = !IsVisible; },
@@ -100,6 +105,7 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
         Disposables.Add(RefreshCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to refresh supplemental docs: {ex.Message}"))));
         Disposables.Add(CreateFolderCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to create supplemental docs folder: {ex.Message}"))));
         Disposables.Add(CreateFileCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to create supplemental docs file: {ex.Message}"))));
+        Disposables.Add(ImportExistingFileCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to import supplemental docs file: {ex.Message}"))));
         Disposables.Add(OpenDocCommand.ThrownExceptions.Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError($"Failed to open supplemental doc: {ex.Message}"))));
 
         Disposables.Add(
@@ -162,6 +168,28 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
         var created = FindNode(result.Value!.RelativePath) ?? result.Value!;
         SelectedNode = created;
         await OpenDocAsync(created);
+    }
+
+    public async Task ImportExistingFileAsync()
+    {
+        if (!_workspace.HasWorkspace)
+            return;
+
+        var sourcePath = await _filePicker.PickFileAsync();
+        if (sourcePath == null)
+            return;
+
+        var result = await _docsService.ImportFileAsync(_workspace.WorkspaceRoot, GetSelectedParentRelativePath(), sourcePath);
+        if (!result.IsSuccess)
+        {
+            _notificationService.ShowError(result.Error!);
+            return;
+        }
+
+        await RefreshAsync();
+        var imported = FindNode(result.Value!.RelativePath) ?? result.Value!;
+        SelectedNode = imported;
+        await OpenDocAsync(imported);
     }
 
     public async Task OpenDocAsync(SupplementalDocNode node)

@@ -29,4 +29,11 @@ public interface ISupplementalDocsService
     /// Initial content is written through the atomic metadata store.
     /// </summary>
     Task<Result<SupplementalDocNode>> CreateFileAsync(string workspaceRoot, string? parentRelativePath, string fileName, string initialContent = "");
+
+    /// <summary>
+    /// Copies an existing file into the docs tree below the docs root or below
+    /// <paramref name="parentRelativePath"/> when provided. The destination leaf name
+    /// is derived from <paramref name="sourceAbsolutePath"/>.
+    /// </summary>
+    Task<Result<SupplementalDocNode>> ImportFileAsync(string workspaceRoot, string? parentRelativePath, string sourceAbsolutePath);
 }

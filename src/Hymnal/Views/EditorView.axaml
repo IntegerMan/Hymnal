@@ -108,6 +108,23 @@
                 </StackPanel>
             </Border>
 
+            <Border IsVisible="{Binding ShowNoResearchDocPrompt}"
+                    Background="{DynamicResource SurfaceBaseBrush}">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8"
+                            MaxWidth="420">
+                    <TextBlock Text="No research doc open"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                    <TextBlock Text="Select a file in the DOCS sidebar, or create or import one to begin."
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                </StackPanel>
+            </Border>
+
             <Border IsVisible="{Binding ShowMissingChapterPrompt}"
                     Background="{DynamicResource SurfaceBaseBrush}">
                 <StackPanel HorizontalAlignment="Center"

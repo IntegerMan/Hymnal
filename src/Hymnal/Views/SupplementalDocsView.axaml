@@ -40,6 +40,10 @@
                     Classes="docs-action"
                     Content="+ File"
                     ToolTip.Tip="Create a file under the selected DOCS folder" />
+            <Button x:Name="ImportExistingFileButton"
+                    Classes="docs-action"
+                    Content="+ Existing"
+                    ToolTip.Tip="Copy an existing file into the selected DOCS folder" />
         </StackPanel>
 
         <TreeView x:Name="DocsTree"
