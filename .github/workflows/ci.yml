@@ -21,8 +21,19 @@ jobs:
         with:
           dotnet-version: '10.x'
 
+      - name: Show commit and package versions
+        run: |
+          git rev-parse HEAD
+          grep -i reactive src/Hymnal/Hymnal.csproj
+
+      - name: Clear NuGet cache
+        run: dotnet nuget locals all --clear
+
       - name: Restore
         run: dotnet restore Hymnal.sln
+
+      - name: Verify resolved ReactiveUI graph
+        run: dotnet list src/Hymnal/Hymnal.csproj package --include-transitive | grep -iE 'reactiveui|splat'
 
       - name: Build
         run: dotnet build Hymnal.sln --configuration Release --no-restore
