@@ -200,7 +200,7 @@ public sealed class CorkboardViewModelTests
     }
 
     [Fact]
-    public async Task ReorderCardCommand_CallsStructureServiceAndReloads()
+    public async Task ReorderCardCommand_CallsStructureServiceAndReorders()
     {
         var context = CreateContext();
         context.EnableWorkspace();
@@ -218,8 +218,9 @@ public sealed class CorkboardViewModelTests
             new ReorderCardRequest("part-one/chapter-one.md", AfterRelativePath: "part-one/chapter-three.md")));
 
         Assert.Equal(1, context.StructureService.ReorderCalls.Count);
-        Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", 2), context.StructureService.ReorderCalls[0]);
-        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", 3), context.StructureService.ReorderCalls[0]);
+        Assert.Equal(1, context.Workspace.ReorderCount);
+        Assert.Equal(0, context.Workspace.ReloadCount);
         Assert.Same(card.Card, board.SelectedCard);
         Assert.Null(board.LastStructuralError);
     }
@@ -455,7 +456,7 @@ public sealed class CorkboardViewModelTests
                 HistoryService);
         }
 
-        public CorkboardViewModel CreateCorkboard() => new(Workspace, StructureService, NotificationService);
+        public CorkboardViewModel CreateCorkboard() => new(Workspace, StructureService, NotificationService, ManuscriptService);
 
         public void EnableWorkspace()
         {
@@ -469,7 +470,9 @@ public sealed class CorkboardViewModelTests
     private sealed class SpyWorkspaceViewModel : WorkspaceViewModel
     {
         public int ReloadCount { get; private set; }
+        public int ReorderCount { get; private set; }
         public Result<Unit> ReloadResult { get; set; } = Result<Unit>.Ok(Unit.Default);
+        public Result<Unit> ReorderResult { get; set; } = Result<Unit>.Ok(Unit.Default);
 
         public SpyWorkspaceViewModel(
             ManuscriptService manuscriptService,
@@ -490,6 +493,12 @@ public sealed class CorkboardViewModelTests
         {
             ReloadCount++;
             return Task.FromResult(ReloadResult);
+        }
+
+        public override Task<Result<Unit>> ReorderNodesAsync()
+        {
+            ReorderCount++;
+            return Task.FromResult(ReorderResult);
         }
     }
 

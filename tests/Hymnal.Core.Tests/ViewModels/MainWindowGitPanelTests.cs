@@ -142,7 +142,7 @@ public sealed class MainWindowGitPanelTests : IDisposable
                 new NotesViewModel(Editor, Workspace, new NotesService(MetadataStore), Notifications, SettingsStore),
                 new ChapterInfoViewModel(Editor, Workspace, new PhaseDataService(MetadataStore), new TargetsService(MetadataStore), SettingsStore, Notifications),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), Notifications),
-                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), Notifications),
+                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), Notifications, new ManuscriptService(Notifications)),
                 new ResearchViewModel(Workspace, supplementalDocs, Editor),
                 supplementalDocs,
                 gitPanel,

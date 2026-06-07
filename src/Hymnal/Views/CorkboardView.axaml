@@ -267,16 +267,33 @@
         </DataTemplate>
 
         <DataTemplate DataType="vm:ChapterCardItemViewModel">
-            <Button Classes="cork-card"
+            <Panel>
+                <!-- Insertion-line indicators: appear in the gap before or after this card during drag-over -->
+                <Border Name="InsertBefore"
+                        Width="3"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Stretch"
+                        Margin="-8,4,0,16"
+                        Background="{DynamicResource SynthwavePurpleBrush}"
+                        CornerRadius="2"
+                        IsVisible="False"
+                        IsHitTestVisible="False" />
+                <Border Name="InsertAfter"
+                        Width="3"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Stretch"
+                        Margin="0,4,4,16"
+                        Background="{DynamicResource SynthwavePurpleBrush}"
+                        CornerRadius="2"
+                        IsVisible="False"
+                        IsHitTestVisible="False" />
+                <Button Classes="cork-card"
                     Classes.selected="{Binding Card.IsSelected}"
                     Classes.cork-card-missing="{Binding Card.IsMissing}"
                     Classes.card-size-large="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Large}"
                     Classes.card-size-medium="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Medium}"
                     Classes.card-size-tiny="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Tiny}"
                     IsVisible="{Binding IsVisibleOnBoard}"
-                    PointerPressed="Card_PointerPressed"
-                    PointerMoved="Card_PointerMoved"
-                    PointerReleased="Card_PointerReleased"
                     DoubleTapped="Card_DoubleTapped"
                     Loaded="Card_Loaded">
 
@@ -453,7 +470,8 @@
                                Foreground="{DynamicResource OrangeBrush}"
                                IsVisible="{Binding Card.IsMissing}" />
                 </Grid>
-            </Button>
+                </Button>
+            </Panel>
         </DataTemplate>
     </UserControl.DataTemplates>
 

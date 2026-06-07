@@ -42,7 +42,8 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
             <Setter Property="Foreground" Value="{DynamicResource OnSurfaceDimBrush}" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -51,7 +52,9 @@
                 <ControlTemplate>
                     <!-- Indicator sits 3 px below the label text, the pair is vertically
                          centred in the button, so the line never drifts to the far bottom. -->
-                    <Border VerticalAlignment="Stretch">
+                    <Border Background="Transparent"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
                         <StackPanel VerticalAlignment="Center" Spacing="3">
                             <ContentPresenter Content="{TemplateBinding Content}"
                                               HorizontalAlignment="Center"
@@ -169,31 +172,36 @@
 
                 <Border Grid.Column="2"
                         Margin="0,0,12,0"
+                        MinWidth="270"
                         VerticalAlignment="Center"
                         HorizontalAlignment="Right"
-                        Padding="12,6"
-                        CornerRadius="10"
-                        Background="{DynamicResource SurfaceHighBrush}"
-                        BorderBrush="{DynamicResource BorderSubtleBrush}"
-                        BorderThickness="1"
-                        IsVisible="{Binding GitPanelViewModel.IsVisible}">
-                    <StackPanel Orientation="Horizontal"
-                                VerticalAlignment="Center"
-                                Spacing="12">
-                        <TextBlock Text="{Binding GitPanelViewModel.ChangeSummaryText}"
-                                   FontSize="12"
-                                   VerticalAlignment="Center"
-                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                        <Button Content="{Binding GitPanelViewModel.PrimaryActionText}"
-                                Click="SyncButton_Click"
-                                IsEnabled="{Binding GitPanelViewModel.CanSync}"
-                                Padding="18,6"
-                                CornerRadius="6"
-                                Background="{DynamicResource SynthwavePurpleBrush}"
-                                Foreground="{DynamicResource OnSurfaceBrush}"
-                                Opacity="{Binding GitPanelViewModel.IsFullySynced, Converter={StaticResource BoolToOpacityConverter}}"
-                                ToolTip.Tip="Sync local changes, or pull when already up to date" />
-                    </StackPanel>
+                        IsVisible="{Binding WorkspaceViewModel.HasWorkspace}">
+                    <Border Padding="12,6"
+                            CornerRadius="10"
+                            Background="{DynamicResource SurfaceHighBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="1"
+                            IsVisible="{Binding GitPanelViewModel.IsVisible}">
+                        <StackPanel Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="12">
+                            <TextBlock Text="{Binding GitPanelViewModel.ChangeSummaryText}"
+                                       FontSize="12"
+                                       MaxWidth="170"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                            <Button Content="{Binding GitPanelViewModel.PrimaryActionText}"
+                                    Click="SyncButton_Click"
+                                    IsEnabled="{Binding GitPanelViewModel.CanSync}"
+                                    Padding="18,6"
+                                    CornerRadius="6"
+                                    Background="{DynamicResource SynthwavePurpleBrush}"
+                                    Foreground="{DynamicResource OnSurfaceBrush}"
+                                    Opacity="{Binding GitPanelViewModel.IsFullySynced, Converter={StaticResource BoolToOpacityConverter}}"
+                                    ToolTip.Tip="Sync local changes, or pull when already up to date" />
+                        </StackPanel>
+                    </Border>
                 </Border>
             </Grid>
         </Border>

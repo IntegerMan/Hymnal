@@ -211,7 +211,7 @@ public sealed class MainWindowPlanModeTests
                 new NotesViewModel(EditorViewModel, Workspace, new NotesService(MetadataStore), NotificationService, SettingsStore),
                 new ChapterInfoViewModel(EditorViewModel, Workspace, PhaseDataService, TargetsService, SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, PhaseDataService, NotificationService),
-                new CorkboardViewModel(Workspace, StructureService, NotificationService),
+                new CorkboardViewModel(Workspace, StructureService, NotificationService, ManuscriptService),
                 new ResearchViewModel(Workspace, docs, EditorViewModel),
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
@@ -219,7 +219,7 @@ public sealed class MainWindowPlanModeTests
         }
 
         public CorkboardViewModel CreateCorkboard()
-            => new(Workspace, StructureService, NotificationService);
+            => new(Workspace, StructureService, NotificationService, ManuscriptService);
 
         private void SetWorkspaceModel(bool hasWorkspace)
         {

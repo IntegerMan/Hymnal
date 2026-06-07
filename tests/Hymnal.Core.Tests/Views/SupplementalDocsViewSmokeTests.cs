@@ -186,7 +186,7 @@ public sealed class SupplementalDocsViewSmokeTests
         public MainWindowViewModel CreateMainWindowViewModel()
         {
             var docsVm = CreateDocsViewModel(EditorViewModel);
-            var corkboardVm = new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService);
+            var corkboardVm = new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService, ManuscriptService);
             var gitPanelVm = new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService);
             return new MainWindowViewModel(
                 Workspace,

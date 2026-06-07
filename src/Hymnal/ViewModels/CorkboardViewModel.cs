@@ -13,6 +13,7 @@ using DynamicData.Binding;
 using Hymnal.Core.Common;
 using Unit = Hymnal.Core.Common.Unit;
 using Hymnal.Core.Interfaces;
+using Hymnal.Core.Services;
 using ReactiveUI;
 
 namespace Hymnal.ViewModels;
@@ -44,6 +45,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     private readonly WorkspaceViewModel _workspace;
     private readonly IBookTxtStructureService _structureService;
     private readonly INotificationService _notificationService;
+    private readonly ManuscriptService _manuscriptService;
     private readonly Subject<ChapterViewModel> _openChapterRequested = new();
     private readonly ObservableCollectionExtended<CorkboardItemViewModel> _items = new();
     private readonly Dictionary<string, bool> _partExpandedState = new(StringComparer.OrdinalIgnoreCase);
@@ -90,11 +92,13 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     public CorkboardViewModel(
         WorkspaceViewModel workspace,
         IBookTxtStructureService structureService,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        ManuscriptService manuscriptService)
     {
         _workspace = workspace;
         _structureService = structureService;
         _notificationService = notificationService;
+        _manuscriptService = manuscriptService;
 
         Items = new ReadOnlyObservableCollection<CorkboardItemViewModel>(_items);
 
@@ -200,10 +204,43 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        await ExecuteStructuralOperationAsync(
-            "Reorder card",
-            request.RelativePath,
-            () => _structureService.ReorderEntryAsync(_workspace.BookTxtPath, request.RelativePath, newIndex));
+        if (!_workspace.HasWorkspace || string.IsNullOrWhiteSpace(_workspace.BookTxtPath))
+        {
+            ReportStructuralFailure("Reorder card", request.RelativePath, "No workspace is open.");
+            return;
+        }
+
+        var previousSelectionPath = SelectedCard?.RelativePath;
+
+        try
+        {
+            using var _ = _manuscriptService.SuppressFileWatcher();
+
+            var result = await _structureService.ReorderEntryAsync(
+                _workspace.BookTxtPath, request.RelativePath, newIndex);
+
+            if (!result.IsSuccess)
+            {
+                ReportStructuralFailure("Reorder card", request.RelativePath,
+                    result.Error ?? "Structural action failed.");
+                return;
+            }
+
+            LastStructuralError = null;
+            var reorderResult = await _workspace.ReorderNodesAsync();
+            if (!reorderResult.IsSuccess)
+            {
+                ReportStructuralFailure("Reorder card", request.RelativePath,
+                    reorderResult.Error ?? "Node reorder failed.");
+                return;
+            }
+
+            RestoreSelection(previousSelectionPath);
+        }
+        catch (Exception ex)
+        {
+            ReportStructuralFailure("Reorder card", request.RelativePath, ex.Message);
+        }
     }
 
     private async Task RenameCardAsync(RenameCardRequest request)
@@ -319,6 +356,8 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
         try
         {
+            using var _ = _manuscriptService.SuppressFileWatcher();
+
             var result = await action();
             if (!result.IsSuccess)
             {
@@ -384,9 +423,9 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
     private bool TryResolveReorderIndex(ReorderCardRequest request, out int newIndex, out string? error)
     {
-        var chapters = _workspace.Nodes
-            .Where(node => node.Node.Kind == Hymnal.Core.Models.NodeKind.Chapter)
-            .ToList();
+        // Use ALL nodes (parts + chapters) so the computed index matches Book.txt's all-entries list.
+        // A chapter-only index would be shifted by the number of part headers before the target.
+        var chapters = _workspace.Nodes.ToList();
 
         var sourceIndex = chapters.FindIndex(node =>
             string.Equals(node.Node.RelativePath, request.RelativePath, StringComparison.OrdinalIgnoreCase));

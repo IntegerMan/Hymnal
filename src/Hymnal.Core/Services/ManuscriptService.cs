@@ -10,6 +10,7 @@ public sealed class ManuscriptService : IDisposable
     private FileSystemWatcher? _watcher;
     private Timer? _debounceTimer;
     private SynchronizationContext? _syncContext;
+    private int _suppressCount;
 
     public ManuscriptService(INotificationService notificationService)
     {
@@ -50,16 +51,51 @@ public sealed class ManuscriptService : IDisposable
         return Task.FromResult(Result<ManuscriptModel>.Ok(model));
     }
 
+    /// <summary>
+    /// Temporarily suppress file-watcher notifications for programmatic Book.txt writes.
+    /// Dispose the returned guard to resume watching.
+    /// </summary>
+    public IDisposable SuppressFileWatcher()
+    {
+        Interlocked.Increment(ref _suppressCount);
+        return new WatcherSuppressionGuard(this);
+    }
+
+    private void ResumeFileWatcher()
+    {
+        Interlocked.Decrement(ref _suppressCount);
+        _debounceTimer?.Dispose();
+        _debounceTimer = null;
+    }
+
     private void OnBookTxtChanged(object sender, FileSystemEventArgs e)
     {
+        if (_suppressCount > 0)
+            return;
+
         _debounceTimer?.Dispose();
         _debounceTimer = new Timer(_ =>
         {
+            if (_suppressCount > 0)
+                return;
+
             if (_syncContext != null)
                 _syncContext.Post(_ => _notificationService.ShowInfo("Book.txt changed — reload?"), null);
             else
                 _notificationService.ShowInfo("Book.txt changed — reload?");
         }, null, 300, Timeout.Infinite);
+    }
+
+    private sealed class WatcherSuppressionGuard : IDisposable
+    {
+        private ManuscriptService? _service;
+
+        public WatcherSuppressionGuard(ManuscriptService service) => _service = service;
+
+        public void Dispose()
+        {
+            Interlocked.Exchange(ref _service, null)?.ResumeFileWatcher();
+        }
     }
 
     private void DisposeWatcher()

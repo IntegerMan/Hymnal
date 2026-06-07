@@ -250,7 +250,7 @@ public sealed class MainWindowResearchModeTests
                 new NotesViewModel(EditorViewModel, Workspace, new NotesService(MetadataStore), NotificationService, SettingsStore),
                 new ChapterInfoViewModel(EditorViewModel, Workspace, new PhaseDataService(MetadataStore), new TargetsService(MetadataStore), SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), NotificationService),
-                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService),
+                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService, new ManuscriptService(NotificationService)),
                 new ResearchViewModel(Workspace, docs, EditorViewModel),
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),

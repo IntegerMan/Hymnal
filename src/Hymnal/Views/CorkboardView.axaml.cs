@@ -19,6 +19,7 @@ public partial class CorkboardView : UserControl
     private PointerPressedEventArgs? _dragPressArgs;
     private Point _dragStart;
     private bool _dragOperationStarted;
+    private Panel? _lastDropIndicator;
 
     public CorkboardView()
     {
@@ -85,6 +86,7 @@ public partial class CorkboardView : UserControl
         }
         finally
         {
+            ClearDropIndicator();
             ClearDragState();
         }
     }
@@ -99,7 +101,15 @@ public partial class CorkboardView : UserControl
 
         DragDrop.SetAllowDrop(button, true);
         DragDrop.AddDragOverHandler(button, Card_DragOver);
+        DragDrop.AddDragLeaveHandler(button, Card_DragLeave);
         DragDrop.AddDropHandler(button, Card_Drop);
+
+        button.AddHandler(PointerPressedEvent, Card_PointerPressed,
+            RoutingStrategies.Direct | RoutingStrategies.Bubble, true);
+        button.AddHandler(PointerMovedEvent, Card_PointerMoved,
+            RoutingStrategies.Direct | RoutingStrategies.Bubble, true);
+        button.AddHandler(PointerReleasedEvent, Card_PointerReleased,
+            RoutingStrategies.Direct | RoutingStrategies.Bubble, true);
     }
 
     private async void Card_PointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -141,7 +151,7 @@ public partial class CorkboardView : UserControl
 
     private void Card_DragOver(object? sender, DragEventArgs e)
     {
-        if (sender is not Control control || control.DataContext is not ChapterCardItemViewModel target)
+        if (sender is not Button button || button.DataContext is not ChapterCardItemViewModel target)
         {
             e.DragEffects = DragDropEffects.None;
             return;
@@ -156,10 +166,65 @@ public partial class CorkboardView : UserControl
 
         e.DragEffects = DragDropEffects.Move;
         e.Handled = true;
+
+        var panel = button.Parent as Panel;
+        if (panel == null)
+            return;
+
+        ClearDropIndicator();
+
+        var dropBefore = ShouldDropBefore(target.RelativePath);
+        SetInsertionLine(panel, dropBefore);
+        _lastDropIndicator = panel;
+    }
+
+    private void Card_DragLeave(object? sender, DragEventArgs e)
+    {
+        ClearDropIndicator();
+    }
+
+    private void ClearDropIndicator()
+    {
+        if (_lastDropIndicator != null)
+        {
+            SetInsertionLine(_lastDropIndicator, null);
+            _lastDropIndicator = null;
+        }
+    }
+
+    private static void SetInsertionLine(Panel panel, bool? dropBefore)
+    {
+        foreach (var child in panel.Children)
+        {
+            if (child is not Border border)
+                continue;
+            if (border.Name == "InsertBefore")
+                border.IsVisible = dropBefore == true;
+            else if (border.Name == "InsertAfter")
+                border.IsVisible = dropBefore == false;
+        }
+    }
+
+    private bool ShouldDropBefore(string targetRelativePath)
+    {
+        if (DataContext is not CorkboardViewModel vm || string.IsNullOrWhiteSpace(_dragSourcePath))
+            return true;
+
+        var chapterCards = vm.Items
+            .OfType<ChapterCardItemViewModel>()
+            .Select(item => item.RelativePath)
+            .ToList();
+
+        var sourceIndex = chapterCards.FindIndex(p => string.Equals(p, _dragSourcePath, StringComparison.OrdinalIgnoreCase));
+        var targetIndex = chapterCards.FindIndex(p => string.Equals(p, targetRelativePath, StringComparison.OrdinalIgnoreCase));
+
+        return sourceIndex > targetIndex;
     }
 
     private async void Card_Drop(object? sender, DragEventArgs e)
     {
+        ClearDropIndicator();
+
         if (DataContext is not CorkboardViewModel vm)
             return;
 

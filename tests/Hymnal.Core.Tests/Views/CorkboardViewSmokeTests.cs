@@ -153,7 +153,7 @@ public sealed class CorkboardViewSmokeTests
             SetWorkspaceModel(nodes.Length > 0);
         }
 
-        public CorkboardViewModel CreateBoard() => new(Workspace, StructureService, NotificationService);
+        public CorkboardViewModel CreateBoard() => new(Workspace, StructureService, NotificationService, ManuscriptService);
 
         private void SetWorkspaceModel(bool hasWorkspace)
         {

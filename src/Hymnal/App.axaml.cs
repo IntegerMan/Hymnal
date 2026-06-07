@@ -120,7 +120,8 @@ public partial class App : Application
             new CorkboardViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<IBookTxtStructureService>(),
-                sp.GetRequiredService<INotificationService>()));
+                sp.GetRequiredService<INotificationService>(),
+                sp.GetRequiredService<ManuscriptService>()));
 
         services.AddSingleton<ResearchViewModel>(sp =>
             new ResearchViewModel(

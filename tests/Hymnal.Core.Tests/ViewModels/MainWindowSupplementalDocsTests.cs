@@ -107,7 +107,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
                 new NotesViewModel(Editor, Workspace, new NotesService(MetadataStore), NotificationService, SettingsStore),
                 new ChapterInfoViewModel(Editor, Workspace, new PhaseDataService(MetadataStore), new TargetsService(MetadataStore), SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), NotificationService),
-                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService),
+                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService, new ManuscriptService(NotificationService)),
                 new ResearchViewModel(Workspace, docs, Editor),
                 docs,
                 gitPanel,

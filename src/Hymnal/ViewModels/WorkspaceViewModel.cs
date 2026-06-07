@@ -340,6 +340,56 @@ public class WorkspaceViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Lightweight reorder that re-reads Book.txt and rearranges the existing
+    /// <see cref="Nodes"/> to match, without re-hydrating the registry, phases,
+    /// targets, or word counts.
+    /// </summary>
+    public virtual Task<Result<Unit>> ReorderNodesAsync()
+    {
+        if (_model == null)
+            return Task.FromResult(Result<Unit>.Ok(Unit.Default));
+
+        try
+        {
+            var bookTxtPath = _model.BookTxtPath;
+            if (string.IsNullOrWhiteSpace(bookTxtPath) || !File.Exists(bookTxtPath))
+                return Task.FromResult(Result<Unit>.Fail("Book.txt not found."));
+
+            var lines = File.ReadAllLines(bookTxtPath);
+            var newOrder = lines
+                .Select(l => l.Trim())
+                .Where(l => !string.IsNullOrEmpty(l))
+                .Select(l => l.Replace('\\', '/'))
+                .ToList();
+
+            var lookup = new Dictionary<string, ChapterViewModel>(StringComparer.OrdinalIgnoreCase);
+            foreach (var vm in _nodes)
+                lookup[vm.Node.RelativePath] = vm;
+
+            var reordered = new List<ChapterViewModel>(newOrder.Count);
+            foreach (var path in newOrder)
+            {
+                if (lookup.TryGetValue(path, out var vm))
+                    reordered.Add(vm);
+            }
+
+            using (_nodes.SuspendNotifications())
+            {
+                _nodes.Clear();
+                foreach (var vm in reordered)
+                    _nodes.Add(vm);
+            }
+
+            _workspaceChanged.OnNext(Unit.Default);
+            return Task.FromResult(Result<Unit>.Ok(Unit.Default));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(Result<Unit>.Fail(ex.Message));
+        }
+    }
+
+    /// <summary>
     /// Reload the workspace from disk (called after Book.txt is saved) without disturbing
     /// the editor. Keeps Book.txt open so the user can continue editing.
     /// </summary>
