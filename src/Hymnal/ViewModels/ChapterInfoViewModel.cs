@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 using Hymnal.Core.Interfaces;
@@ -48,6 +50,11 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
 
     /// <summary>Disposables that live only for the active chapter subscription.</summary>
     private CompositeDisposable _chapterDisposables = new();
+
+    /// <summary>Suppresses auto-save during programmatic row sync to avoid spurious writes.</summary>
+    private bool _suppressAutoSave;
+
+    private readonly Subject<Unit> _scheduleSaveSubject = new();
 
     // ── Public observable properties ─────────────────────────────────────────
 
@@ -136,6 +143,14 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
     {
         get => _hasTarget;
         private set => this.RaiseAndSetIfChanged(ref _hasTarget, value);
+    }
+
+    private bool _scheduleSavedRecently;
+    /// <summary>True for ~2 seconds after an auto-save completes; drives the "Saved" indicator.</summary>
+    public bool ScheduleSavedRecently
+    {
+        get => _scheduleSavedRecently;
+        private set => this.RaiseAndSetIfChanged(ref _scheduleSavedRecently, value);
     }
 
     // ── PrefillPhaseDate ─────────────────────────────────────────────────────
@@ -259,6 +274,14 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
             SetTargetCommand.ThrownExceptions
                 .Subscribe(ex => notificationService.ShowError($"Set target failed: {ex.Message}")));
 
+        // ── Auto-save debounce for the phase schedule rows ───────────────────
+        Disposables.Add(
+            _scheduleSaveSubject
+                .Throttle(TimeSpan.FromMilliseconds(800), TaskPoolScheduler.Default)
+                .Subscribe(async _ => await AutoSaveScheduleAsync().ConfigureAwait(false)));
+
+        SubscribeToScheduleRowChanges();
+
         // ── Observe active node ──────────────────────────────────────────────
         Disposables.Add(
             editorViewModel
@@ -365,17 +388,59 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
     /// <summary>Syncs <see cref="PhaseScheduleRows"/> from the supplied <see cref="PhaseData"/>.</summary>
     private void SyncScheduleRows(PhaseData? pd)
     {
-        var segments = pd != null
-            ? GanttProjection.BuildSegments(pd)
-            : (IReadOnlyList<PhaseSegment>)Array.Empty<PhaseSegment>();
+        _suppressAutoSave = true;
+        try
+        {
+            var segments = pd != null
+                ? GanttProjection.BuildSegments(pd)
+                : (IReadOnlyList<PhaseSegment>)Array.Empty<PhaseSegment>();
 
+            foreach (var row in PhaseScheduleRows)
+            {
+                var seg = segments.FirstOrDefault(s => s.PhaseName == row.PhaseName);
+                row.StartDate = seg?.StartDate?.ToString("yyyy-MM-dd");
+                row.EndDate   = seg?.EndDate?.ToString("yyyy-MM-dd");
+                row.Progress  = seg?.Progress > 0 ? seg.Progress * 100.0 : null;
+            }
+        }
+        finally
+        {
+            _suppressAutoSave = false;
+        }
+    }
+
+    private void SubscribeToScheduleRowChanges()
+    {
         foreach (var row in PhaseScheduleRows)
         {
-            var seg = segments.FirstOrDefault(s => s.PhaseName == row.PhaseName);
-            row.StartDate = seg?.StartDate?.ToString("yyyy-MM-dd");
-            row.EndDate   = seg?.EndDate?.ToString("yyyy-MM-dd");
-            row.Progress  = seg?.Progress > 0 ? seg.Progress * 100.0 : null;
+            Disposables.Add(
+                row.WhenAnyValue(x => x.StartDate, x => x.EndDate, x => x.Progress)
+                    .Skip(1)
+                    .Subscribe(_ =>
+                    {
+                        if (!_suppressAutoSave)
+                            _scheduleSaveSubject.OnNext(Unit.Default);
+                    }));
         }
+    }
+
+    /// <summary>
+    /// Fires after the debounce throttle; saves the schedule and briefly shows the "Saved" indicator.
+    /// </summary>
+    private async Task AutoSaveScheduleAsync()
+    {
+        await SaveScheduleAsync().ConfigureAwait(false);
+
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ScheduleSavedRecently = true);
+        await Task.Delay(2000).ConfigureAwait(false);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ScheduleSavedRecently = false);
+    }
+
+    /// <summary>Triggers an immediate (non-debounced) save; called from view LostFocus handler.</summary>
+    public void RequestImmediateScheduleSave()
+    {
+        if (!_suppressAutoSave)
+            _ = AutoSaveScheduleAsync();
     }
 
     // ── Command implementations ───────────────────────────────────────────────
@@ -595,6 +660,7 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         _disposed = true;
 
         _chapterDisposables.Dispose();
+        _scheduleSaveSubject.Dispose();
         Disposables.Dispose();
         _saveCts.Cancel();
         _saveCts.Dispose();

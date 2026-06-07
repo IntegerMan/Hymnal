@@ -101,10 +101,11 @@ public sealed class GitPanelViewModelTests : IDisposable
         _context.Editor.Text = "after save";
         await _context.Editor.SaveAsync();
 
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
+        WaitForGitRefreshComplete(
+            vm,
+            expectedStatusCalls: 2,
+            () => vm.UncommittedChangeCount == 1 && vm.StatusText == "1 uncommitted change");
         Assert.Equal("main", vm.BranchName);
-        Assert.Equal(1, vm.UncommittedChangeCount);
-        Assert.Equal("1 uncommitted change", vm.StatusText);
     }
 
     [Fact]
@@ -122,9 +123,10 @@ public sealed class GitPanelViewModelTests : IDisposable
 
         await File.WriteAllTextAsync(filePath, "external change");
 
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
-        Assert.Equal(5, vm.UncommittedChangeCount);
-        Assert.Equal("5 uncommitted changes", vm.StatusText);
+        WaitForGitRefreshComplete(
+            vm,
+            expectedStatusCalls: 2,
+            () => vm.UncommittedChangeCount == 5 && vm.StatusText == "5 uncommitted changes");
     }
 
     [Fact]
@@ -141,11 +143,12 @@ public sealed class GitPanelViewModelTests : IDisposable
 
         Assert.Single(_context.GitService.SyncMessages);
         Assert.StartsWith("Hymnal: save progress ", _context.GitService.SyncMessages[0]);
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
+        WaitForGitRefreshComplete(
+            vm,
+            expectedStatusCalls: 2,
+            () => vm.UncommittedChangeCount == 0 && vm.StatusText == "Up to date");
         Assert.True(vm.IsVisible);
         Assert.Equal("main", vm.BranchName);
-        Assert.Equal(0, vm.UncommittedChangeCount);
-        Assert.Equal("Up to date", vm.StatusText);
         Assert.True(vm.CanSync);
         Assert.Equal("Pull", vm.PrimaryActionText);
         Assert.Null(vm.LastError);
@@ -179,8 +182,8 @@ public sealed class GitPanelViewModelTests : IDisposable
         await vm.RefreshAsync();
         await vm.PullLatestAsync();
 
+        WaitForGitRefreshComplete(vm, expectedStatusCalls: 3);
         Assert.Equal("Already up to date", vm.ChangeSummaryText);
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 3, TimeSpan.FromSeconds(3)));
     }
 
     [Fact]
@@ -209,7 +212,7 @@ public sealed class GitPanelViewModelTests : IDisposable
         await vm.SyncAsync("Save draft");
 
         Assert.Contains("fatal: index.lock exists", _context.Notifications.Errors);
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
+        WaitForGitRefreshComplete(vm, expectedStatusCalls: 2);
         Assert.Equal("fatal: index.lock exists", vm.LastError);
         Assert.True(vm.IsVisible);
     }
@@ -227,7 +230,7 @@ public sealed class GitPanelViewModelTests : IDisposable
         await vm.SyncAsync("Save draft");
 
         Assert.Contains("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host", _context.Notifications.Errors);
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
+        WaitForGitRefreshComplete(vm, expectedStatusCalls: 2);
         Assert.Equal("fatal: unable to access 'https://example.invalid/repo.git': Could not resolve host", vm.LastError);
         Assert.True(vm.IsVisible);
     }
@@ -246,7 +249,10 @@ public sealed class GitPanelViewModelTests : IDisposable
         Assert.Equal(1, _context.GitService.StatusCalls);
 
         _context.SwitchWorkspace();
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
+        WaitForGitRefreshComplete(
+            vm,
+            expectedStatusCalls: 2,
+            () => vm.BranchName == "feature/new-root" && vm.UncommittedChangeCount == 2);
 
         var callsBefore = _context.GitService.StatusCalls;
         await File.WriteAllTextAsync(oldFile, "after switch");
@@ -269,8 +275,10 @@ public sealed class GitPanelViewModelTests : IDisposable
 
         Assert.Single(_context.GitService.SyncMessages);
         Assert.StartsWith("Hymnal: save progress ", _context.GitService.SyncMessages[0]);
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
-        Assert.Equal("Up to date", vm.StatusText);
+        WaitForGitRefreshComplete(
+            vm,
+            expectedStatusCalls: 2,
+            () => vm.StatusText == "Up to date" && vm.UncommittedChangeCount == 0);
         Assert.True(vm.IsVisible);
     }
 
@@ -340,6 +348,20 @@ public sealed class GitPanelViewModelTests : IDisposable
         Assert.False(vm.IsFullySynced);
         Assert.Equal("Sync", vm.PrimaryActionText);
         Assert.Equal(2, _context.GitService.StatusCalls);
+    }
+
+    /// <summary>
+    /// Waits for a debounced Git refresh to fully complete.
+    /// StatusCalls alone is not sufficient — it increments before ApplyStatus runs,
+    /// and some mutations set panel text before the post-mutation refresh finishes.
+    /// </summary>
+    private void WaitForGitRefreshComplete(GitPanelViewModel vm, int expectedStatusCalls, Func<bool>? assertState = null)
+    {
+        Assert.True(SpinWait.SpinUntil(
+            () => !vm.IsBusy
+                  && _context.GitService.StatusCalls == expectedStatusCalls
+                  && (assertState?.Invoke() ?? true),
+            TimeSpan.FromSeconds(3)));
     }
 
     private static void RaiseWorkspaceChanged(WorkspaceViewModel workspace)

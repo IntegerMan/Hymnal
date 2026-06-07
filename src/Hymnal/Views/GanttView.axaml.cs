@@ -54,6 +54,34 @@ public partial class GanttView : UserControl
         await vm.SaveInlineCellAsync(row, GanttEditableColumn.Status);
     }
 
+    private async void InlineStart_SelectedDateChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not GanttRowViewModel row)
+            return;
+
+        if (!row.IsEditable)
+            return;
+
+        await vm.SaveInlineCellAsync(row, GanttEditableColumn.StartDate);
+    }
+
+    private async void InlineEnd_SelectedDateChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not GanttRowViewModel row)
+            return;
+
+        if (!row.IsEditable)
+            return;
+
+        await vm.SaveInlineCellAsync(row, GanttEditableColumn.EndDate);
+    }
+
     private async void InlineStart_LostFocus(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not GanttViewModel vm)
@@ -149,37 +177,6 @@ public partial class GanttView : UserControl
                 e.Handled = true;
             }
         }
-    }
-
-    private static void InlineDateOpen_Click(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control control)
-            return;
-
-        if (control.Parent is not Control parent)
-            return;
-
-        var picker = FindDatePickerSibling(parent);
-        if (picker is null || !picker.IsEnabled)
-            return;
-
-        picker.IsDropDownOpen = true;
-        picker.Focus();
-        e.Handled = true;
-    }
-
-    private static CalendarDatePicker? FindDatePickerSibling(Control parent)
-    {
-        if (parent is not Panel panel)
-            return null;
-
-        foreach (var child in panel.Children)
-        {
-            if (child is CalendarDatePicker picker)
-                return picker;
-        }
-
-        return null;
     }
 
     private bool IsEditingControlFocused()

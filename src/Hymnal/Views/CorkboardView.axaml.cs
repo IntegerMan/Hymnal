@@ -268,21 +268,23 @@ public partial class CorkboardView : UserControl
         await ExecuteCommandAsync(vm.RenameCardCommand.Execute(new RenameCardRequest(initial, replacement)));
     }
 
-    private async void NewChapter_Click(object? sender, RoutedEventArgs e)
+    private void NewChapter_Click(object? sender, RoutedEventArgs e)
     {
         if (!TryGetCardFromMenu(sender, out var card) || DataContext is not CorkboardViewModel vm)
             return;
 
-        var suggestedPath = BuildSuggestedNewChapterPath(card.RelativePath);
-        var path = await PromptForTextAsync("Create chapter", "Enter the new chapter path:", suggestedPath);
-        if (string.IsNullOrWhiteSpace(path))
-            return;
+        var insertIndex = vm.GetInsertIndexAfterChapter(card.RelativePath);
 
-        var title = Path.GetFileNameWithoutExtension(path).Replace('-', ' ').Replace('_', ' ');
-        var content = $"# {title}\n\n";
-        var index = GetChapterInsertIndex(vm, card.RelativePath) + 1;
+        // Find the owning part (if any) so the inline item respects part visibility.
+        PartDividerItemViewModel? owningPart = null;
+        if (!string.IsNullOrEmpty(card.OwningPartPath))
+        {
+            owningPart = vm.Items
+                .OfType<PartDividerItemViewModel>()
+                .FirstOrDefault(p => string.Equals(p.RelativePath, card.OwningPartPath, StringComparison.OrdinalIgnoreCase));
+        }
 
-        await ExecuteCommandAsync(vm.CreateChapterCommand.Execute(new CreateChapterRequest(path, content, index)));
+        vm.BeginInlineCreate(insertIndex, owningPart);
     }
 
     private async void IncludeExistingChapter_Click(object? sender, RoutedEventArgs e)
@@ -306,6 +308,30 @@ public partial class CorkboardView : UserControl
         await ExecuteCommandAsync(vm.RemoveFromBookCommand.Execute(new RemoveChapterRequest(card.RelativePath)));
     }
 
+    // ── Inline chapter creation handlers ────────────────────────────────────
+
+    private static void InlineCreate_Loaded(object? sender, RoutedEventArgs e)
+    {
+        (sender as TextBox)?.Focus();
+    }
+
+    private async void InlineCreate_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox tb || DataContext is not CorkboardViewModel vm)
+            return;
+
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            await vm.CommitInlineCreateAsync(tb.Text ?? string.Empty);
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            vm.CancelInlineCreate();
+        }
+    }
+
     private async void BoardAddButton_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not CorkboardViewModel vm)
@@ -315,7 +341,8 @@ public partial class CorkboardView : UserControl
         {
             Items =
             {
-                new MenuItem { Header = "New Chapter…", Tag = "chapter" },
+                new MenuItem { Header = "New Chapter", Tag = "chapter" },
+                new MenuItem { Header = "New Chapter (advanced)…", Tag = "chapter-advanced" },
                 new MenuItem { Header = "New Part…", Tag = "part" },
                 new MenuItem { Header = "Include Existing File…", Tag = "include" }
             }
@@ -343,6 +370,9 @@ public partial class CorkboardView : UserControl
         switch (action)
         {
             case "chapter":
+                vm.BeginInlineCreate(vm.GetBookInsertIndex(), part: null);
+                break;
+            case "chapter-advanced":
                 await CreateBoardChapterAsync(vm, part: null);
                 break;
             case "part":
@@ -364,7 +394,8 @@ public partial class CorkboardView : UserControl
         {
             Items =
             {
-                new MenuItem { Header = "New Chapter in Part…", Tag = ("chapter", part) },
+                new MenuItem { Header = "New Chapter in Part", Tag = ("chapter", part) },
+                new MenuItem { Header = "New Chapter in Part (advanced)…", Tag = ("chapter-advanced", part) },
                 new MenuItem { Header = "Include Existing File…", Tag = ("include", part) }
             }
         };
@@ -392,6 +423,9 @@ public partial class CorkboardView : UserControl
         switch (action)
         {
             case "chapter":
+                vm.BeginInlineCreate(vm.GetInsertIndexAfterPart(part.RelativePath), part);
+                break;
+            case "chapter-advanced":
                 await CreateBoardChapterAsync(vm, part);
                 break;
             case "include":

@@ -93,7 +93,7 @@
                     </Grid>
 
                     <!-- One row per phase; bound to PhaseScheduleRows -->
-                    <ItemsControl ItemsSource="{Binding PhaseScheduleRows}">
+                    <ItemsControl x:Name="PhaseScheduleTable" ItemsSource="{Binding PhaseScheduleRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:PhaseScheduleRowViewModel">
                                 <Grid ColumnDefinitions="80,*,*,44"
@@ -139,18 +139,13 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Save Schedule button -->
-                    <Button Content="Save Schedule"
-                            Command="{Binding SaveScheduleCommand}"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center"
-                            Background="{DynamicResource SurfaceHighBrush}"
-                            Foreground="{DynamicResource SynthwavePurpleBrush}"
-                            BorderThickness="0"
-                            CornerRadius="4"
-                            Padding="8,6"
-                            FontSize="12"
-                            Margin="0,4,0,0" />
+                    <!-- Auto-saved indicator -->
+                    <TextBlock Text="✓ Saved"
+                               FontSize="10"
+                               HorizontalAlignment="Right"
+                               Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                               IsVisible="{Binding ScheduleSavedRecently}"
+                               Margin="0,4,0,0" />
                 </StackPanel>
 
                 <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />

@@ -62,8 +62,12 @@ public sealed class MainWindowGitPanelTests : IDisposable
         await MainWindow.ExecuteGitSyncActionAsync(window.GitPanelViewModel, "save draft");
 
         Assert.Equal(new[] { "save draft" }, _context.GitService.SyncMessages);
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
-        Assert.Equal("Up to date", window.GitPanelViewModel.StatusText);
+        Assert.True(SpinWait.SpinUntil(
+            () => !window.GitPanelViewModel.IsBusy
+                  && _context.GitService.StatusCalls == 2
+                  && window.GitPanelViewModel.StatusText == "Up to date"
+                  && window.GitPanelViewModel.UncommittedChangeCount == 0,
+            TimeSpan.FromSeconds(3)));
         Assert.True(window.GitPanelViewModel.IsVisible);
     }
 
@@ -82,8 +86,12 @@ public sealed class MainWindowGitPanelTests : IDisposable
 
         Assert.Single(_context.GitService.SyncMessages);
         Assert.StartsWith("Hymnal: save progress ", _context.GitService.SyncMessages[0]);
-        Assert.True(SpinWait.SpinUntil(() => _context.GitService.StatusCalls == 2, TimeSpan.FromSeconds(3)));
-        Assert.Equal("Up to date", window.GitPanelViewModel.StatusText);
+        Assert.True(SpinWait.SpinUntil(
+            () => !window.GitPanelViewModel.IsBusy
+                  && _context.GitService.StatusCalls == 2
+                  && window.GitPanelViewModel.StatusText == "Up to date"
+                  && window.GitPanelViewModel.UncommittedChangeCount == 0,
+            TimeSpan.FromSeconds(3)));
     }
 
     private static GitCommandResult CommitResult(string stdout, string stderr)

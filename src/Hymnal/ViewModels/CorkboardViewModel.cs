@@ -59,6 +59,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     private readonly Dictionary<string, bool> _partExpandedState = new(StringComparer.OrdinalIgnoreCase);
     private bool _isViewActive = true;
     private bool _needsRebuild;
+    private InlineCreateItemViewModel? _activeInlineCreate;
 
     public ReadOnlyObservableCollection<CorkboardItemViewModel> Items { get; }
 
@@ -216,6 +217,18 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
     public int GetBookInsertIndex() => _workspace.Nodes.Count;
 
+    /// <summary>
+    /// Returns the Book.txt insert index immediately after the specified chapter node
+    /// (all entries: parts + chapters). Used for inline chapter creation via context menu.
+    /// </summary>
+    public int GetInsertIndexAfterChapter(string chapterRelativePath)
+    {
+        var nodes = _workspace.Nodes.ToList();
+        var index = nodes.FindIndex(n =>
+            string.Equals(n.Node.RelativePath, chapterRelativePath, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 ? index + 1 : GetBookInsertIndex();
+    }
+
     public int GetInsertIndexAfterPart(string partRelativePath)
     {
         var nodes = _workspace.Nodes.ToList();
@@ -236,6 +249,115 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         }
 
         return insertIndex;
+    }
+
+    // ── Inline chapter creation ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Inserts a temporary <see cref="InlineCreateItemViewModel"/> into the board at the
+    /// correct visual position for the given Book.txt insert index.
+    /// Call <see cref="CommitInlineCreateAsync"/> or <see cref="CancelInlineCreate"/> to finish.
+    /// </summary>
+    public void BeginInlineCreate(int bookTxtInsertIndex, PartDividerItemViewModel? part)
+    {
+        CancelInlineCreate();
+
+        var item = new InlineCreateItemViewModel(bookTxtInsertIndex, part?.RelativePath, part);
+        _activeInlineCreate = item;
+        InsertInlineCreateAtIndex(item, bookTxtInsertIndex);
+    }
+
+    private void InsertInlineCreateAtIndex(InlineCreateItemViewModel item, int bookTxtInsertIndex)
+    {
+        var nodes = _workspace.Nodes.ToList();
+        var insertAtItemsIndex = _items.Count;
+
+        for (var i = _items.Count - 1; i >= 0; i--)
+        {
+            var itemPath = _items[i].RelativePath;
+            if (string.IsNullOrWhiteSpace(itemPath))
+                continue;
+
+            var nodeIndex = nodes.FindIndex(n =>
+                string.Equals(n.Node.RelativePath, itemPath, StringComparison.OrdinalIgnoreCase));
+
+            if (nodeIndex >= 0 && nodeIndex < bookTxtInsertIndex)
+            {
+                insertAtItemsIndex = i + 1;
+                break;
+            }
+        }
+
+        if (insertAtItemsIndex > _items.Count)
+            insertAtItemsIndex = _items.Count;
+
+        _items.Insert(insertAtItemsIndex, item);
+    }
+
+    /// <summary>Removes the active inline create card without creating a chapter.</summary>
+    public void CancelInlineCreate()
+    {
+        if (_activeInlineCreate == null)
+            return;
+
+        _items.Remove(_activeInlineCreate);
+        _activeInlineCreate.Dispose();
+        _activeInlineCreate = null;
+    }
+
+    /// <summary>
+    /// Commits inline creation: generates a slug-based filename from <paramref name="title"/>,
+    /// creates the chapter file and Book.txt entry, then reloads the workspace.
+    /// Cancels the inline item first so the projection doesn't see it during reload.
+    /// </summary>
+    public async Task CommitInlineCreateAsync(string title)
+    {
+        if (_activeInlineCreate == null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            CancelInlineCreate();
+            return;
+        }
+
+        var insertIndex = _activeInlineCreate.BookTxtInsertIndex;
+        var partPath = _activeInlineCreate.PartPath;
+
+        CancelInlineCreate();
+
+        var partFolder = GetPartFolderPrefix(partPath);
+        var slug = TitleToSlug(title.Trim());
+        var filePath = string.IsNullOrEmpty(partFolder) ? $"{slug}.md" : $"{partFolder}/{slug}.md";
+        var content = $"# {title.Trim()}\n\n";
+
+        await ExecuteStructuralOperationAsync(
+            "Create chapter",
+            filePath,
+            () => _structureService.CreateNewChapterAsync(_workspace.BookTxtPath, filePath, content, insertIndex));
+    }
+
+    private static string TitleToSlug(string title)
+    {
+        var lower = title.ToLowerInvariant();
+        var chars = lower.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray();
+        var slug = new string(chars);
+
+        while (slug.Contains("--"))
+            slug = slug.Replace("--", "-");
+
+        slug = slug.Trim('-');
+        return string.IsNullOrWhiteSpace(slug) ? "new-chapter" : slug;
+    }
+
+    private static string? GetPartFolderPrefix(string? partPath)
+    {
+        if (string.IsNullOrWhiteSpace(partPath))
+            return null;
+
+        var normalized = partPath.Replace('\\', '/');
+        var slashIndex = normalized.IndexOf('/');
+        return slashIndex > 0 ? normalized[..slashIndex] : null;
     }
 
     private void TogglePartExpanded(PartDividerItemViewModel part)
@@ -301,7 +423,10 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
         var selectedPath = SelectedCard?.RelativePath;
 
-        CorkboardItemViewModel.DisposeItems(_items);
+        // Dispose projected items but preserve the transient inline create item so its
+        // TitleText (user's in-progress typing) survives the rebuild.
+        var itemsToDispose = _items.Where(i => i is not InlineCreateItemViewModel).ToList();
+        CorkboardItemViewModel.DisposeItems(itemsToDispose);
         _items.Clear();
 
         foreach (var item in CorkboardItemViewModel.Project(
@@ -312,6 +437,10 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         {
             _items.Add(item);
         }
+
+        // Re-insert active inline create at the correct visual position.
+        if (_activeInlineCreate != null)
+            InsertInlineCreateAtIndex(_activeInlineCreate, _activeInlineCreate.BookTxtInsertIndex);
 
         this.RaisePropertyChanged(nameof(HasItems));
         RestoreSelection(selectedPath);
@@ -674,7 +803,9 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        CorkboardItemViewModel.DisposeItems(_items);
+        _activeInlineCreate?.Dispose();
+        _activeInlineCreate = null;
+        CorkboardItemViewModel.DisposeItems(_items.Where(i => i is not InlineCreateItemViewModel).ToList());
         Disposables.Dispose();
     }
 }

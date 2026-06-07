@@ -32,7 +32,9 @@ public enum CorkboardItemKind
 
     ChapterCard,
 
-    ExcludedChapterCard
+    ExcludedChapterCard,
+
+    InlineCreate
 
 }
 
@@ -594,6 +596,55 @@ public sealed class ExcludedChapterCardItemViewModel : PartOwnedCorkboardItemVie
     {
 
         Orphan = orphan;
+
+    }
+
+}
+
+
+
+/// <summary>
+/// Transient placeholder item that renders an inline TextBox for fast chapter creation.
+/// Inserted into the corkboard Items list by <see cref="CorkboardViewModel.BeginInlineCreate"/>
+/// and removed on commit or cancel.
+/// </summary>
+public sealed class InlineCreateItemViewModel : PartOwnedCorkboardItemViewModel
+
+{
+
+    private string _titleText = string.Empty;
+
+    public string TitleText
+
+    {
+
+        get => _titleText;
+
+        set => this.RaiseAndSetIfChanged(ref _titleText, value);
+
+    }
+
+
+
+    public int BookTxtInsertIndex { get; }
+
+    public string? PartPath { get; }
+
+
+
+    public override CorkboardItemKind Kind => CorkboardItemKind.InlineCreate;
+
+
+
+    public InlineCreateItemViewModel(int insertIndex, string? partPath, PartDividerItemViewModel? owningPart)
+
+        : base(owningPart?.RelativePath ?? string.Empty, owningPart)
+
+    {
+
+        BookTxtInsertIndex = insertIndex;
+
+        PartPath = partPath;
 
     }
 
