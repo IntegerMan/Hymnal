@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Hymnal.ViewModels;
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 
 namespace Hymnal.Views;
 
@@ -108,6 +109,7 @@ public partial class MainWindow : Window
 
         _layoutDisposables.Add(
             vm.WhenAnyValue(x => x.ActiveMode, x => x.IsAnyLeftPaneOpen, x => x.IsAnyRightPaneOpen)
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(_ => ApplyMode(vm.ActiveMode), _ => { /* non-fatal */ }));
     }
 
@@ -128,6 +130,7 @@ public partial class MainWindow : Window
 
         _layoutDisposables.Add(
             vm.WhenAnyValue(x => x.IsAnyLeftPaneOpen)
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
                     expanded => ApplyWidth(expanded),
                     _ => { /* non-fatal */ }));
@@ -173,6 +176,7 @@ public partial class MainWindow : Window
                 .CombineLatest(
                     vm.SupplementalDocsViewModel.WhenAnyValue(x => x.IsVisible),
                     (chapters, docs) => (chapters, docs))
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
                     state => ApplyLayout(state.chapters, state.docs),
                     _ => { /* non-fatal */ }));
@@ -196,6 +200,7 @@ public partial class MainWindow : Window
 
         _layoutDisposables.Add(
             vm.WhenAnyValue(x => x.IsAnyRightPaneOpen)
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(ApplyWidth, _ => { /* non-fatal */ }));
     }
 
@@ -204,12 +209,27 @@ public partial class MainWindow : Window
         var grid = RightPaneGrid;   // x:Name="RightPaneGrid" field from generated partial class
         if (grid is null) return;
 
-        // Wire DataContext for content views now that it's not set in AXAML
-        // (avoids compiled-binding DataContext-type inference pollution for siblings).
+        // IsVisible is driven from code-behind: compiled bindings on these controls inherit
+        // the child view's x:DataType, so a path like ChapterInfoViewModel.IsVisible fails.
         if (ChapterInfoViewContent is not null)
-            ChapterInfoViewContent.DataContext = vm.ChapterInfoViewModel;
+        {
+            ChapterInfoViewContent.IsVisible = vm.ChapterInfoViewModel.IsVisible;
+            _layoutDisposables.Add(
+                vm.ChapterInfoViewModel
+                    .WhenAnyValue(x => x.IsVisible)
+                    .ObserveOn(AvaloniaScheduler.Instance)
+                    .Subscribe(v => ChapterInfoViewContent.IsVisible = v));
+        }
+
         if (NotesViewContent is not null)
-            NotesViewContent.DataContext = vm.NotesViewModel;
+        {
+            NotesViewContent.IsVisible = vm.NotesViewModel.IsVisible;
+            _layoutDisposables.Add(
+                vm.NotesViewModel
+                    .WhenAnyValue(x => x.IsVisible)
+                    .ObserveOn(AvaloniaScheduler.Instance)
+                    .Subscribe(v => NotesViewContent.IsVisible = v));
+        }
 
         // Outlook-style layout: 5 rows — header | content | splitter | header | content
         // Row 0: ChapterInfo header (fixed 48px — not managed here)
@@ -222,6 +242,7 @@ public partial class MainWindow : Window
         _layoutDisposables.Add(
             vm.ChapterInfoViewModel
                 .WhenAnyValue(x => x.IsVisible)
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
                     ci => grid.RowDefinitions[1].Height =
                         ci ? new GridLength(1, GridUnitType.Star) : new GridLength(0),
@@ -231,6 +252,7 @@ public partial class MainWindow : Window
         _layoutDisposables.Add(
             vm.NotesViewModel
                 .WhenAnyValue(x => x.IsVisible)
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
                     notes => grid.RowDefinitions[4].Height =
                         notes ? new GridLength(1, GridUnitType.Star) : new GridLength(0),

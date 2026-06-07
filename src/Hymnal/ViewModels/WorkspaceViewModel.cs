@@ -103,11 +103,25 @@ public class WorkspaceViewModel : ViewModelBase
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> ToggleChaptersPaneCommand { get; }
 
     private ChapterViewModel? _targetFlyoutChapter;
+    private IDisposable? _targetFlyoutSubscription;
     /// <summary>Chapter whose shared target flyout is open in the sidebar.</summary>
     public ChapterViewModel? TargetFlyoutChapter
     {
         get => _targetFlyoutChapter;
-        private set => this.RaiseAndSetIfChanged(ref _targetFlyoutChapter, value);
+        private set => SetTargetFlyoutChapter(value);
+    }
+
+    /// <summary>Null-safe open state for the shared target flyout Popup.</summary>
+    public bool IsTargetFlyoutOpen
+    {
+        get => TargetFlyoutChapter?.IsTargetFlyoutOpen ?? false;
+        set
+        {
+            if (value)
+                return;
+
+            CloseTargetFlyout();
+        }
     }
 
     private bool _isChaptersPaneVisible = true;
@@ -169,6 +183,7 @@ public class WorkspaceViewModel : ViewModelBase
             SelectBookCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
         Disposables.Add(Disposable.Create(() => _workspaceChanged.Dispose()));
+        Disposables.Add(Disposable.Create(() => _targetFlyoutSubscription?.Dispose()));
 
         Disposables.Add(
             this.WhenAnyValue(x => x.SelectedNode)
@@ -739,6 +754,7 @@ public class WorkspaceViewModel : ViewModelBase
 
         TargetFlyoutChapter = chapter;
         chapter.IsTargetFlyoutOpen = true;
+        this.RaisePropertyChanged(nameof(IsTargetFlyoutOpen));
     }
 
     internal void CloseTargetFlyout(ChapterViewModel? chapter = null)
@@ -749,6 +765,25 @@ public class WorkspaceViewModel : ViewModelBase
 
         if (ReferenceEquals(TargetFlyoutChapter, target))
             TargetFlyoutChapter = null;
+
+        this.RaisePropertyChanged(nameof(IsTargetFlyoutOpen));
+    }
+
+    private void SetTargetFlyoutChapter(ChapterViewModel? chapter)
+    {
+        _targetFlyoutSubscription?.Dispose();
+        _targetFlyoutSubscription = null;
+
+        this.RaiseAndSetIfChanged(ref _targetFlyoutChapter, chapter, nameof(TargetFlyoutChapter));
+
+        if (chapter != null)
+        {
+            _targetFlyoutSubscription = chapter
+                .WhenAnyValue(x => x.IsTargetFlyoutOpen)
+                .Subscribe(_ => this.RaisePropertyChanged(nameof(IsTargetFlyoutOpen)));
+        }
+
+        this.RaisePropertyChanged(nameof(IsTargetFlyoutOpen));
     }
 
     public async Task RestorePaneSettingsAsync()

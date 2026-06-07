@@ -1,5 +1,6 @@
 using System;
 using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
@@ -13,6 +14,7 @@ using Hymnal.Infrastructure;
 using Hymnal.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 
 namespace Hymnal.Views;
 
@@ -136,6 +138,7 @@ public partial class EditorView : UserControl
         if (DataContext is not EditorViewModel vm) return;
 
         _vmTextSub = vm.WhenAnyValue(x => x.Text)
+            .ObserveOn(AvaloniaScheduler.Instance)
             .Subscribe(text =>
             {
                 if (PART_Editor.Text != text)

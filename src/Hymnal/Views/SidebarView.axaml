@@ -314,7 +314,7 @@
         </DockPanel>
 
         <!-- Shared target flyout — one Popup for the entire sidebar instead of one per row -->
-        <Popup IsOpen="{Binding TargetFlyoutChapter.IsTargetFlyoutOpen, Mode=TwoWay}"
+        <Popup IsOpen="{Binding IsTargetFlyoutOpen, Mode=TwoWay}"
                IsLightDismissEnabled="True"
                Placement="Pointer">
             <Border DataContext="{Binding TargetFlyoutChapter}"

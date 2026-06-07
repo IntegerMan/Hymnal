@@ -256,12 +256,13 @@
                 </Border.Background>
             </Border>
 
-            <!-- Layout: [left pane] [editor] [splitter] [right pane] -->
-            <Grid x:Name="ShellGrid" ColumnDefinitions="220,4,*,4,280">
+            <!-- Layout: [left pane] [editor] [splitter] [right pane] — Write mode only -->
+            <Grid x:Name="ShellGrid"
+                  ColumnDefinitions="220,4,*,4,280"
+                  IsVisible="{Binding IsEditorVisible}">
 
                 <!-- ── LEFT PANE ─────────────────────────────────────────────── -->
                 <Border Grid.Column="0"
-                        IsVisible="{Binding IsEditorVisible}"
                         Background="{DynamicResource SurfaceElevatedBrush}"
                         BorderBrush="{DynamicResource BorderSubtleBrush}"
                         BorderThickness="0,0,1,0"
@@ -393,37 +394,26 @@
                 <GridSplitter Grid.Column="1"
                               Width="4"
                               ResizeDirection="Columns"
-                              IsVisible="{Binding IsEditorVisible}"
                               Background="{DynamicResource BorderSubtleBrush}" />
 
-                <!-- ── EDITOR / GANTT toggle ─────────────────────────────────────── -->
-                <Panel Grid.Column="2">
-                    <!-- Editor — visible when Gantt is off -->
-                    <Border IsVisible="{Binding IsEditorVisible}">
-                        <DockPanel>
-                            <Border DockPanel.Dock="Top"
-                                    IsVisible="{Binding IsEditorChapterBarVisible}">
-                                <views:EditorChapterBar DataContext="{Binding WorkspaceViewModel.SelectedNode}" />
-                            </Border>
-                            <views:EditorView DataContext="{Binding EditorViewModel}"
-                                              Background="Transparent" />
-                        </DockPanel>
+                <!-- ── EDITOR ─────────────────────────────────────── -->
+                <DockPanel Grid.Column="2">
+                    <Border DockPanel.Dock="Top"
+                            IsVisible="{Binding IsEditorChapterBarVisible}">
+                        <views:EditorChapterBar DataContext="{Binding WorkspaceViewModel.SelectedNode}" />
                     </Border>
-                    <!-- Research / Plan / Manage — lazy-loaded via ViewLocator -->
-                    <ContentControl IsVisible="{Binding !IsEditorVisible}"
-                                    Content="{Binding SecondaryCentreContent}" />
-                </Panel>
+                    <views:EditorView DataContext="{Binding EditorViewModel}"
+                                      Background="Transparent" />
+                </DockPanel>
 
                 <!-- ── SPLITTER (visible when any right pane is open) ─────────── -->
                 <GridSplitter Grid.Column="3"
                               Width="4"
                               ResizeDirection="Columns"
-                              IsVisible="{Binding IsEditorVisible}"
                               Background="{DynamicResource BorderSubtleBrush}" />
 
                 <!-- ── RIGHT PANE ─────────────────────────────────────────────── -->
                 <Border Grid.Column="4"
-                        IsVisible="{Binding IsEditorVisible}"
                         Background="{DynamicResource SurfaceElevatedBrush}"
                         BorderBrush="{DynamicResource BorderSubtleBrush}"
                         BorderThickness="1,0,0,0">
@@ -500,7 +490,7 @@
                             <!-- Row 1: Chapter Info content (height driven from code-behind) -->
                             <views:ChapterInfoView Grid.Row="1"
                                                    x:Name="ChapterInfoViewContent"
-                                                   IsVisible="{Binding ChapterInfoViewModel.IsVisible}" />
+                                                   DataContext="{Binding ChapterInfoViewModel}" />
 
                             <!-- Row 2: GridSplitter between content areas (visible when both open) -->
                             <GridSplitter Grid.Row="2"
@@ -539,7 +529,7 @@
                             <!-- Row 4: Notes content (height driven from code-behind) -->
                             <views:NotesView Grid.Row="4"
                                              x:Name="NotesViewContent"
-                                             IsVisible="{Binding NotesViewModel.IsVisible}" />
+                                             DataContext="{Binding NotesViewModel}" />
 
                         </Grid>
 
@@ -547,6 +537,10 @@
                 </Border>
 
             </Grid>
+
+            <!-- Research / Plan / Manage — lazy-loaded via ViewLocator, full width -->
+            <ContentControl IsVisible="{Binding !IsEditorVisible}"
+                            Content="{Binding SecondaryCentreContent}" />
         </Panel>
 
         <!-- Synthwave accent stripe bottom (Row 3) -->
