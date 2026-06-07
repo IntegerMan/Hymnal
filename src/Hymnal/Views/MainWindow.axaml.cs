@@ -1,4 +1,7 @@
 using System;
+using System.IO;
+using System.Linq;
+using System.Reactive;
 using System.Threading.Tasks;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
@@ -257,5 +260,121 @@ public partial class MainWindow : Window
                     notes => grid.RowDefinitions[4].Height =
                         notes ? new GridLength(1, GridUnitType.Star) : new GridLength(0),
                     _ => { /* non-fatal */ }));
+    }
+
+    private async void AddChapterButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || DataContext is not MainWindowViewModel mainVm)
+            return;
+
+        var workspace = mainVm.WorkspaceViewModel;
+        if (!workspace.HasWorkspace)
+            return;
+
+        var flyout = new MenuFlyout
+        {
+            Items =
+            {
+                new MenuItem { Header = "New Chapter…", Tag = "chapter" },
+                new MenuItem { Header = "New Part…", Tag = "part" },
+                new MenuItem { Header = "Include Existing File…", Tag = "include" }
+            }
+        };
+
+        foreach (var item in flyout.Items.OfType<MenuItem>())
+            item.Click += AddChapterMenuItem_Click;
+
+        flyout.Closed += (_, _) =>
+        {
+            foreach (var item in flyout.Items.OfType<MenuItem>())
+                item.Click -= AddChapterMenuItem_Click;
+        };
+
+        flyout.ShowAt(button);
+    }
+
+    private async void AddChapterMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel mainVm)
+            return;
+
+        var workspace = mainVm.WorkspaceViewModel;
+        if (!workspace.HasWorkspace)
+            return;
+
+        var action = sender is MenuItem { Tag: string tag } ? tag : null;
+        switch (action)
+        {
+            case "chapter":
+                await CreateSidebarChapterAsync(workspace);
+                break;
+            case "part":
+                await CreateSidebarPartAsync(workspace);
+                break;
+            case "include":
+                await IncludeSidebarFileAsync(workspace);
+                break;
+        }
+    }
+
+    private async Task CreateSidebarChapterAsync(WorkspaceViewModel workspace)
+    {
+        var dialogResult = await NewChapterDialog.ShowAsync(
+            this,
+            NewManuscriptEntryKind.Chapter,
+            "New Chapter",
+            "Enter the new chapter path relative to the manuscript root.",
+            "new-chapter.md");
+
+        if (dialogResult is null)
+            return;
+
+        var title = dialogResult.Title
+            ?? Path.GetFileNameWithoutExtension(dialogResult.FilePath).Replace('-', ' ').Replace('_', ' ');
+        var content = $"# {title}\n\n";
+        var index = workspace.GetBookEntryCount();
+
+        await ExecuteCommandAsync(workspace.CreateChapterCommand.Execute(
+            new CreateChapterRequest(dialogResult.FilePath, content, index)));
+    }
+
+    private async Task CreateSidebarPartAsync(WorkspaceViewModel workspace)
+    {
+        var dialogResult = await NewChapterDialog.ShowAsync(
+            this,
+            NewManuscriptEntryKind.Part,
+            "New Part",
+            "Enter the part divider path and title.",
+            "part-two/part.md");
+
+        if (dialogResult is null || string.IsNullOrWhiteSpace(dialogResult.Title))
+            return;
+
+        var index = workspace.GetBookEntryCount();
+        await ExecuteCommandAsync(workspace.CreatePartCommand.Execute(
+            new CreatePartRequest(dialogResult.FilePath, dialogResult.Title, index)));
+    }
+
+    private async Task IncludeSidebarFileAsync(WorkspaceViewModel workspace)
+    {
+        var absolutePath = await workspace.PickManuscriptFileAsync();
+        if (string.IsNullOrWhiteSpace(absolutePath))
+            return;
+
+        var relativePath = workspace.ToManuscriptRelativePath(absolutePath);
+        var index = workspace.GetBookEntryCount();
+        await ExecuteCommandAsync(workspace.IncludeExistingFileCommand.Execute(
+            new IncludeExistingChapterRequest(relativePath, index)));
+    }
+
+    private static async Task ExecuteCommandAsync(IObservable<Unit> execution)
+    {
+        var completion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = execution.Subscribe(
+            _ => { },
+            ex => completion.TrySetException(ex),
+            () => completion.TrySetResult(null));
+
+        await completion.Task;
     }
 }

@@ -5,5 +5,5 @@ namespace Hymnal.Core.Interfaces;
 /// </summary>
 public interface IFilePickerService
 {
-    Task<string?> PickFileAsync();
+    Task<string?> PickFileAsync(string? suggestedStartDirectory = null);
 }

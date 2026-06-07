@@ -306,6 +306,193 @@ public partial class CorkboardView : UserControl
         await ExecuteCommandAsync(vm.RemoveFromBookCommand.Execute(new RemoveChapterRequest(card.RelativePath)));
     }
 
+    private async void BoardAddButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not CorkboardViewModel vm)
+            return;
+
+        var flyout = new MenuFlyout
+        {
+            Items =
+            {
+                new MenuItem { Header = "New Chapter…", Tag = "chapter" },
+                new MenuItem { Header = "New Part…", Tag = "part" },
+                new MenuItem { Header = "Include Existing File…", Tag = "include" }
+            }
+        };
+
+        foreach (var item in flyout.Items.OfType<MenuItem>())
+            item.Click += BoardAddMenuItem_Click;
+
+        flyout.Closed += (_, _) =>
+        {
+            foreach (var item in flyout.Items.OfType<MenuItem>())
+                item.Click -= BoardAddMenuItem_Click;
+        };
+
+        if (sender is Control control)
+            flyout.ShowAt(control);
+    }
+
+    private async void BoardAddMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not CorkboardViewModel vm)
+            return;
+
+        var action = sender is MenuItem { Tag: string tag } ? tag : null;
+        switch (action)
+        {
+            case "chapter":
+                await CreateBoardChapterAsync(vm, part: null);
+                break;
+            case "part":
+                await CreateBoardPartAsync(vm);
+                break;
+            case "include":
+                await IncludeBoardFileAsync(vm, part: null);
+                break;
+        }
+    }
+
+    private async void PartAddButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: PartDividerItemViewModel part }
+            || DataContext is not CorkboardViewModel vm)
+            return;
+
+        var flyout = new MenuFlyout
+        {
+            Items =
+            {
+                new MenuItem { Header = "New Chapter in Part…", Tag = ("chapter", part) },
+                new MenuItem { Header = "Include Existing File…", Tag = ("include", part) }
+            }
+        };
+
+        foreach (var item in flyout.Items.OfType<MenuItem>())
+            item.Click += PartAddMenuItem_Click;
+
+        flyout.Closed += (_, _) =>
+        {
+            foreach (var item in flyout.Items.OfType<MenuItem>())
+                item.Click -= PartAddMenuItem_Click;
+        };
+
+        if (sender is Control control)
+            flyout.ShowAt(control);
+    }
+
+    private async void PartAddMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not CorkboardViewModel vm
+            || sender is not MenuItem { Tag: ValueTuple<string, PartDividerItemViewModel> tag })
+            return;
+
+        var (action, part) = tag;
+        switch (action)
+        {
+            case "chapter":
+                await CreateBoardChapterAsync(vm, part);
+                break;
+            case "include":
+                await IncludeBoardFileAsync(vm, part);
+                break;
+        }
+    }
+
+    private async Task CreateBoardChapterAsync(CorkboardViewModel vm, PartDividerItemViewModel? part)
+    {
+        var suggestedPath = part == null
+            ? "new-chapter.md"
+            : BuildSuggestedNewChapterPath(part.RelativePath);
+
+        var dialogResult = await NewChapterDialog.ShowAsync(
+            TopLevel.GetTopLevel(this) as Window ?? throw new InvalidOperationException("No window owner."),
+            NewManuscriptEntryKind.Chapter,
+            "New Chapter",
+            part == null
+                ? "Enter the new chapter path relative to the manuscript root."
+                : $"Enter the new chapter path for {part.Title}.",
+            suggestedPath);
+
+        if (dialogResult is null)
+            return;
+
+        var title = dialogResult.Title
+            ?? Path.GetFileNameWithoutExtension(dialogResult.FilePath).Replace('-', ' ').Replace('_', ' ');
+        var content = $"# {title}\n\n";
+
+        var index = part == null
+            ? vm.GetBookInsertIndex()
+            : vm.GetInsertIndexAfterPart(part.RelativePath);
+
+        await ExecuteCommandAsync(vm.CreateChapterCommand.Execute(
+            new CreateChapterRequest(dialogResult.FilePath, content, index)));
+    }
+
+    private async Task CreateBoardPartAsync(CorkboardViewModel vm)
+    {
+        var dialogResult = await NewChapterDialog.ShowAsync(
+            TopLevel.GetTopLevel(this) as Window ?? throw new InvalidOperationException("No window owner."),
+            NewManuscriptEntryKind.Part,
+            "New Part",
+            "Enter the part divider path and title.",
+            "part-two/part.md");
+
+        if (dialogResult is null || string.IsNullOrWhiteSpace(dialogResult.Title))
+            return;
+
+        await ExecuteCommandAsync(vm.CreatePartCommand.Execute(
+            new CreatePartRequest(dialogResult.FilePath, dialogResult.Title, vm.GetBookInsertIndex())));
+    }
+
+    private async Task IncludeBoardFileAsync(CorkboardViewModel vm, PartDividerItemViewModel? part)
+    {
+        var absolutePath = await vm.PickManuscriptFileAsync();
+        if (string.IsNullOrWhiteSpace(absolutePath))
+            return;
+
+        var relativePath = vm.ToManuscriptRelativePath(absolutePath);
+        if (part != null)
+        {
+            await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(
+                new IncludeExistingChapterRequest(relativePath, PartPath: part.RelativePath)));
+        }
+        else
+        {
+            await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(
+                new IncludeExistingChapterRequest(relativePath, vm.GetBookInsertIndex())));
+        }
+    }
+
+    private async void IncludeExcludedCard_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!TryGetExcludedCardFromMenu(sender, out var excluded) || DataContext is not CorkboardViewModel vm)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(excluded.OwningPartPath))
+        {
+            await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(
+                new IncludeExistingChapterRequest(excluded.RelativePath, PartPath: excluded.OwningPartPath)));
+            return;
+        }
+
+        await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(
+            new IncludeExistingChapterRequest(excluded.RelativePath, vm.GetBookInsertIndex())));
+    }
+
+    private static bool TryGetExcludedCardFromMenu(object? sender, out ExcludedChapterCardItemViewModel excluded)
+    {
+        if (sender is MenuItem { DataContext: ExcludedChapterCardItemViewModel menuCard })
+        {
+            excluded = menuCard;
+            return true;
+        }
+
+        excluded = null!;
+        return false;
+    }
+
     private async void DeleteChapter_Click(object? sender, RoutedEventArgs e)
     {
         if (!TryGetCardFromMenu(sender, out var card) || DataContext is not CorkboardViewModel vm)

@@ -151,6 +151,8 @@ public sealed class MainWindowPlanModeTests
             ManuscriptService = new ManuscriptService(NotificationService);
             Workspace = new SpyWorkspaceViewModel(
                 ManuscriptService,
+                StructureService,
+                FilePickerService,
                 SettingsStore,
                 FolderPickerService,
                 NotificationService,
@@ -211,7 +213,7 @@ public sealed class MainWindowPlanModeTests
                 new NotesViewModel(EditorViewModel, Workspace, new NotesService(MetadataStore), NotificationService, SettingsStore),
                 new ChapterInfoViewModel(EditorViewModel, Workspace, PhaseDataService, TargetsService, SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, PhaseDataService, NotificationService),
-                new CorkboardViewModel(Workspace, StructureService, NotificationService, ManuscriptService),
+                new CorkboardViewModel(Workspace, StructureService, new OrphanFileDiscoveryService(), SettingsStore, NotificationService, ManuscriptService),
                 new ResearchViewModel(Workspace, docs, EditorViewModel),
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
@@ -219,7 +221,7 @@ public sealed class MainWindowPlanModeTests
         }
 
         public CorkboardViewModel CreateCorkboard()
-            => new(Workspace, StructureService, NotificationService, ManuscriptService);
+            => new(Workspace, StructureService, new OrphanFileDiscoveryService(), SettingsStore, NotificationService, ManuscriptService);
 
         private void SetWorkspaceModel(bool hasWorkspace)
         {
@@ -249,6 +251,8 @@ public sealed class MainWindowPlanModeTests
     {
         public SpyWorkspaceViewModel(
             ManuscriptService manuscriptService,
+            IBookTxtStructureService structureService,
+            IFilePickerService filePicker,
             IAppSettingsStore settingsStore,
             IFolderPickerService folderPicker,
             INotificationService notificationService,
@@ -258,7 +262,7 @@ public sealed class MainWindowPlanModeTests
             TargetsService targetsService,
             WordCountService wordCountService,
             WordCountHistoryService historyService)
-            : base(manuscriptService, settingsStore, folderPicker, notificationService, editor, registryService, phaseDataService, targetsService, wordCountService, historyService)
+            : base(manuscriptService, structureService, filePicker, settingsStore, folderPicker, notificationService, editor, registryService, phaseDataService, targetsService, wordCountService, historyService)
         {
         }
     }
@@ -298,7 +302,8 @@ public sealed class MainWindowPlanModeTests
 
     private sealed class FakeFilePickerService : IFilePickerService
     {
-        public Task<string?> PickFileAsync() => Task.FromResult<string?>(null);
+        public Task<string?> PickFileAsync(string? suggestedStartDirectory = null)
+            => Task.FromResult<string?>(null);
     }
 
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService
@@ -319,6 +324,9 @@ public sealed class MainWindowPlanModeTests
             => Task.FromResult(Result<Unit>.Ok(Unit.Default));
 
         public Task<Result<Unit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index)
+            => Task.FromResult(Result<Unit>.Ok(Unit.Default));
+
+        public Task<Result<Unit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index)
             => Task.FromResult(Result<Unit>.Ok(Unit.Default));
 
         public Task<Result<Unit>> RemoveEntryAsync(string bookTxtPath, string chapterPath)

@@ -58,7 +58,16 @@ public sealed class CorkboardViewSmokeTests
             Assert.False(populatedView.FindControl<TextBlock>("EmptyBoardState")!.IsVisible);
             Assert.True(populatedView.FindControl<ScrollViewer>("BoardScroll")!.IsVisible);
             Assert.Same(populatedBoard.Items, populatedView.FindControl<ItemsControl>("BoardItems")!.ItemsSource);
+            Assert.Same(populatedBoard.Items, populatedView.FindControl<ItemsControl>("BoardItemsList")!.ItemsSource);
             Assert.Equal(CardDisplaySize.Large, populatedBoard.CardDisplaySize);
+            Assert.True(populatedView.FindControl<ItemsControl>("BoardItems")!.IsVisible);
+            Assert.False(populatedView.FindControl<ItemsControl>("BoardItemsList")!.IsVisible);
+
+            populatedBoard.SetCardSizeCommand.Execute(CardDisplaySize.List).Subscribe();
+            LayoutView(populatedView);
+
+            Assert.False(populatedView.FindControl<ItemsControl>("BoardItems")!.IsVisible);
+            Assert.True(populatedView.FindControl<ItemsControl>("BoardItemsList")!.IsVisible);
         });
     }
 
@@ -114,6 +123,8 @@ public sealed class CorkboardViewSmokeTests
             ManuscriptService = new ManuscriptService(NotificationService);
             Workspace = new SpyWorkspaceViewModel(
                 ManuscriptService,
+                StructureService,
+                new FakeFilePickerService(),
                 SettingsStore,
                 FolderPickerService,
                 NotificationService,
@@ -156,7 +167,13 @@ public sealed class CorkboardViewSmokeTests
             SetWorkspaceModel(nodes.Length > 0);
         }
 
-        public CorkboardViewModel CreateBoard() => new(Workspace, StructureService, NotificationService, ManuscriptService);
+        public CorkboardViewModel CreateBoard() => new(
+            Workspace,
+            StructureService,
+            new OrphanFileDiscoveryService(),
+            SettingsStore,
+            NotificationService,
+            ManuscriptService);
 
         private void SetWorkspaceModel(bool hasWorkspace)
         {
@@ -186,6 +203,8 @@ public sealed class CorkboardViewSmokeTests
     {
         public SpyWorkspaceViewModel(
             ManuscriptService manuscriptService,
+            IBookTxtStructureService structureService,
+            IFilePickerService filePicker,
             IAppSettingsStore settingsStore,
             IFolderPickerService folderPicker,
             INotificationService notificationService,
@@ -195,7 +214,7 @@ public sealed class CorkboardViewSmokeTests
             TargetsService targetsService,
             WordCountService wordCountService,
             WordCountHistoryService historyService)
-            : base(manuscriptService, settingsStore, folderPicker, notificationService, editor, registryService, phaseDataService, targetsService, wordCountService, historyService)
+            : base(manuscriptService, structureService, filePicker, settingsStore, folderPicker, notificationService, editor, registryService, phaseDataService, targetsService, wordCountService, historyService)
         {
         }
     }
@@ -244,6 +263,11 @@ public sealed class CorkboardViewSmokeTests
         public Task<string?> PickFolderAsync() => Task.FromResult<string?>(null);
     }
 
+    private sealed class FakeFilePickerService : IFilePickerService
+    {
+        public Task<string?> PickFileAsync(string? suggestedStartDirectory = null) => Task.FromResult<string?>(null);
+    }
+
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService
     {
         public Task<Result<IReadOnlyList<string>>> ReadNormalizedEntriesAsync(string bookTxtPath)
@@ -262,6 +286,9 @@ public sealed class CorkboardViewSmokeTests
             => Task.FromResult(Result<Unit>.Ok(Unit.Default));
 
         public Task<Result<Unit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index)
+            => Task.FromResult(Result<Unit>.Ok(Unit.Default));
+
+        public Task<Result<Unit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index)
             => Task.FromResult(Result<Unit>.Ok(Unit.Default));
 
         public Task<Result<Unit>> RemoveEntryAsync(string bookTxtPath, string chapterPath)

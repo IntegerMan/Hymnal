@@ -315,7 +315,7 @@
                                 <Border Grid.Row="0"
                                         BorderBrush="{DynamicResource BorderSubtleBrush}"
                                         BorderThickness="0,0,0,1">
-                                    <Grid ColumnDefinitions="48,*">
+                                    <Grid ColumnDefinitions="48,*,Auto">
                                         <Button Grid.Column="0"
                                                 Classes="nav-icon"
                                                 Command="{Binding WorkspaceViewModel.ToggleChaptersPaneCommand}"
@@ -335,6 +335,23 @@
                                                    FontWeight="SemiBold"
                                                    LetterSpacing="1.5"
                                                    Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                        <Button Grid.Column="2"
+                                                x:Name="AddChapterButton"
+                                                Content="+"
+                                                Margin="0,0,8,0"
+                                                Padding="8,2"
+                                                MinWidth="28"
+                                                MinHeight="24"
+                                                FontSize="14"
+                                                FontWeight="Bold"
+                                                VerticalAlignment="Center"
+                                                Background="Transparent"
+                                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="4"
+                                                Foreground="{DynamicResource SynthwavePurpleBrush}"
+                                                ToolTip.Tip="Add chapter or part"
+                                                Click="AddChapterButton_Click" />
                                     </Grid>
                                 </Border>
 

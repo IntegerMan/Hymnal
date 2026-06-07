@@ -86,6 +86,8 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
             Editor = new EditorViewModel(MetadataStore, NotificationService, WordCountService);
             Workspace = new WorkspaceViewModel(
                 new ManuscriptService(NotificationService),
+                new FakeBookTxtStructureService(),
+                new FakeFilePickerService(),
                 SettingsStore,
                 FolderPicker,
                 NotificationService,
@@ -107,7 +109,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
                 new NotesViewModel(Editor, Workspace, new NotesService(MetadataStore), NotificationService, SettingsStore),
                 new ChapterInfoViewModel(Editor, Workspace, new PhaseDataService(MetadataStore), new TargetsService(MetadataStore), SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), NotificationService),
-                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService, new ManuscriptService(NotificationService)),
+                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), new OrphanFileDiscoveryService(), SettingsStore, NotificationService, new ManuscriptService(NotificationService)),
                 new ResearchViewModel(Workspace, docs, Editor),
                 docs,
                 gitPanel,
@@ -178,7 +180,7 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
 
     private sealed class FakeFilePickerService : IFilePickerService
     {
-        public Task<string?> PickFileAsync() => Task.FromResult<string?>(null);
+        public Task<string?> PickFileAsync(string? suggestedStartDirectory = null) => Task.FromResult<string?>(null);
     }
 
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService
@@ -199,6 +201,9 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
             => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
 
         public Task<Result<CoreUnit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index)
             => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
 
         public Task<Result<CoreUnit>> RemoveEntryAsync(string bookTxtPath, string chapterPath)

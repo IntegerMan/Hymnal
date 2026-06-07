@@ -37,8 +37,34 @@ public sealed class CardDisplaySizeAtLeastConverter : IValueConverter
         if (value is not CardDisplaySize current || parameter is null)
             return false;
 
-        return Enum.TryParse<CardDisplaySize>(parameter.ToString(), out var minimum)
-               && current >= minimum;
+        if (!Enum.TryParse<CardDisplaySize>(parameter.ToString(), out var minimum))
+            return false;
+
+        // List is a distinct layout mode, not part of the card-size ordering.
+        if (current == CardDisplaySize.List || minimum == CardDisplaySize.List)
+            return current == minimum;
+
+        return current >= minimum;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Returns true when the current <see cref="CardDisplaySize"/> does not equal the converter parameter.
+/// </summary>
+public sealed class CardDisplaySizeNotEqualsConverter : IValueConverter
+{
+    public static readonly CardDisplaySizeNotEqualsConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not CardDisplaySize current || parameter is null)
+            return true;
+
+        return !Enum.TryParse<CardDisplaySize>(parameter.ToString(), out var expected)
+               || current != expected;
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

@@ -75,7 +75,7 @@ public class CorkboardProjectionTests
     [Fact]
     public void Project_EmptyWorkspace_ReturnsNoItems()
     {
-        var items = CorkboardItemViewModel.Project(Array.Empty<ChapterViewModel>(), new Dictionary<string, bool>());
+        var items = CorkboardItemViewModel.Project(Array.Empty<ChapterViewModel>(), new Dictionary<string, bool>(), Array.Empty<OrphanFileInfo>(), showExcludedFiles: false);
 
         Assert.Empty(items);
     }
@@ -108,7 +108,7 @@ public class CorkboardProjectionTests
             kind: NodeKind.Part);
 
         var nodes = new[] { part1, part2, chapter, part3 };
-        var items = CorkboardItemViewModel.Project(nodes, new Dictionary<string, bool>());
+        var items = CorkboardItemViewModel.Project(nodes, new Dictionary<string, bool>(), Array.Empty<OrphanFileInfo>(), showExcludedFiles: false);
 
         Assert.Equal(6, items.Count);
         Assert.IsType<PartDividerItemViewModel>(items[0]);
@@ -215,7 +215,9 @@ public class CorkboardProjectionTests
 
         var items = CorkboardItemViewModel.Project(
             new[] { part, chapterOne, chapterTwo },
-            new Dictionary<string, bool>());
+            new Dictionary<string, bool>(),
+            Array.Empty<OrphanFileInfo>(),
+            showExcludedFiles: false);
 
         var divider = Assert.IsType<PartDividerItemViewModel>(items[0]);
         Assert.Equal(2, divider.ChapterCount);
@@ -241,7 +243,9 @@ public class CorkboardProjectionTests
 
         var items = CorkboardItemViewModel.Project(
             new[] { part, chapter },
-            new Dictionary<string, bool> { ["part-01.md"] = false });
+            new Dictionary<string, bool> { ["part-01.md"] = false },
+            Array.Empty<OrphanFileInfo>(),
+            showExcludedFiles: false);
 
         var divider = Assert.IsType<PartDividerItemViewModel>(items[0]);
         var card = Assert.IsType<ChapterCardItemViewModel>(items[1]);

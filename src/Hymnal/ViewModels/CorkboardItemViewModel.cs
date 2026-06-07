@@ -13,15 +13,11 @@ namespace Hymnal.ViewModels;
 
 
 public enum CardDisplaySize
-
 {
-
     Tiny,
-
     Medium,
-
-    Large
-
+    Large,
+    List
 }
 
 
@@ -34,7 +30,9 @@ public enum CorkboardItemKind
 
     EmptyPartHint,
 
-    ChapterCard
+    ChapterCard,
+
+    ExcludedChapterCard
 
 }
 
@@ -88,7 +86,11 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
         IReadOnlyList<ChapterViewModel> chapters,
 
-        IReadOnlyDictionary<string, bool> partExpandedState)
+        IReadOnlyDictionary<string, bool> partExpandedState,
+
+        IReadOnlyList<OrphanFileInfo> orphanFiles,
+
+        bool showExcludedFiles)
 
     {
 
@@ -97,6 +99,8 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
         PartDividerItemViewModel? currentPart = null;
 
         var isFirstPart = true;
+
+        var orphansByFolder = GroupOrphansByFolder(orphanFiles);
 
 
 
@@ -111,6 +115,12 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
             if (chapter.Node.Kind == NodeKind.Part)
 
             {
+
+                if (currentPart != null)
+
+                    AppendExcludedCards(items, currentPart, orphansByFolder, showExcludedFiles);
+
+
 
                 var partPath = chapter.Node.RelativePath;
 
@@ -152,7 +162,111 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
 
 
+        if (currentPart != null)
+
+            AppendExcludedCards(items, currentPart, orphansByFolder, showExcludedFiles);
+
+
+
+        if (showExcludedFiles && orphansByFolder.TryGetValue(string.Empty, out var rootOrphans))
+
+        {
+
+            foreach (var orphan in rootOrphans)
+
+                items.Add(new ExcludedChapterCardItemViewModel(orphan, null));
+
+        }
+
+
+
         return items;
+
+    }
+
+
+
+    private static Dictionary<string, List<OrphanFileInfo>> GroupOrphansByFolder(
+
+        IReadOnlyList<OrphanFileInfo> orphanFiles)
+
+    {
+
+        var grouped = new Dictionary<string, List<OrphanFileInfo>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var orphan in orphanFiles)
+
+        {
+
+            var key = orphan.DetectedPartFolder ?? string.Empty;
+
+            if (!grouped.TryGetValue(key, out var list))
+
+            {
+
+                list = new List<OrphanFileInfo>();
+
+                grouped[key] = list;
+
+            }
+
+
+
+            list.Add(orphan);
+
+        }
+
+
+
+        return grouped;
+
+    }
+
+
+
+    private static void AppendExcludedCards(
+
+        ICollection<CorkboardItemViewModel> items,
+
+        PartDividerItemViewModel part,
+
+        IReadOnlyDictionary<string, List<OrphanFileInfo>> orphansByFolder,
+
+        bool showExcludedFiles)
+
+    {
+
+        if (!showExcludedFiles)
+
+            return;
+
+
+
+        var folder = GetPartFolderKey(part.RelativePath);
+
+        if (!orphansByFolder.TryGetValue(folder, out var orphans))
+
+            return;
+
+
+
+        foreach (var orphan in orphans)
+
+            items.Add(new ExcludedChapterCardItemViewModel(orphan, part));
+
+    }
+
+
+
+    private static string GetPartFolderKey(string partRelativePath)
+
+    {
+
+        var normalized = partRelativePath.Replace('\\', '/');
+
+        var slashIndex = normalized.IndexOf('/');
+
+        return slashIndex > 0 ? normalized[..slashIndex] : string.Empty;
 
     }
 
@@ -442,6 +556,44 @@ public sealed class ChapterCardItemViewModel : PartOwnedCorkboardItemViewModel
         Card.Dispose();
 
         base.Dispose();
+
+    }
+
+}
+
+
+
+public sealed class ExcludedChapterCardItemViewModel : PartOwnedCorkboardItemViewModel
+
+{
+
+    public OrphanFileInfo Orphan { get; }
+
+
+
+    public override CorkboardItemKind Kind => CorkboardItemKind.ExcludedChapterCard;
+
+
+
+    public override string Title => Orphan.Title;
+
+
+
+    public override string RelativePath => Orphan.RelativePath;
+
+
+
+    public string ExcludedLabel => "(excluded)";
+
+
+
+    public ExcludedChapterCardItemViewModel(OrphanFileInfo orphan, PartDividerItemViewModel? owningPart)
+
+        : base(owningPart?.RelativePath ?? string.Empty, owningPart)
+
+    {
+
+        Orphan = orphan;
 
     }
 

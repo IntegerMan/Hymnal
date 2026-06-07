@@ -53,6 +53,8 @@ public sealed class EditorViewModelArbitraryFileTests : IDisposable
 
         _workspace = new WorkspaceViewModel(
             new ManuscriptService(_notifications),
+            new FakeBookTxtStructureService(),
+            new FakeFilePickerService(),
             _settingsStore,
             _folderPicker,
             _notifications,
@@ -351,5 +353,40 @@ public sealed class EditorViewModelArbitraryFileTests : IDisposable
     private sealed class FakeFolderPickerService : IFolderPickerService
     {
         public Task<string?> PickFolderAsync() => Task.FromResult<string?>(null);
+    }
+
+    private sealed class FakeFilePickerService : IFilePickerService
+    {
+        public Task<string?> PickFileAsync(string? suggestedStartDirectory = null) => Task.FromResult<string?>(null);
+    }
+
+    private sealed class FakeBookTxtStructureService : IBookTxtStructureService
+    {
+        public Task<Result<IReadOnlyList<string>>> ReadNormalizedEntriesAsync(string bookTxtPath)
+            => Task.FromResult(Result<IReadOnlyList<string>>.Ok(Array.Empty<string>()));
+
+        public Task<Result<CoreUnit>> ReorderEntryAsync(string bookTxtPath, string chapterPath, int newIndex)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> RenameEntryAsync(string bookTxtPath, string existingPath, string replacementPath)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> AddExistingEntryAsync(string bookTxtPath, string chapterPath, int index)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> AddExistingEntryAfterPartAsync(string bookTxtPath, string chapterPath, string partPath)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> RemoveEntryAsync(string bookTxtPath, string chapterPath)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> DeleteChapterFileAsync(string bookTxtPath, string chapterPath)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
     }
 }

@@ -13,6 +13,7 @@
     <UserControl.Resources>
         <conv:StatusToBrushConverter x:Key="StatusToBrushConverter" />
         <conv:CardDisplaySizeEqualsConverter x:Key="CardDisplaySizeEqualsConverter" />
+        <conv:CardDisplaySizeNotEqualsConverter x:Key="CardDisplaySizeNotEqualsConverter" />
         <conv:CardDisplaySizeAtLeastConverter x:Key="CardDisplaySizeAtLeastConverter" />
     </UserControl.Resources>
 
@@ -36,15 +37,25 @@
             <Setter Property="Padding" Value="12,10" />
         </Style>
         <Style Selector="Button.cork-card.card-size-tiny">
-            <Setter Property="MinWidth" Value="140" />
-            <Setter Property="MaxWidth" Value="200" />
-            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="MinWidth" Value="160" />
+            <Setter Property="MaxWidth" Value="220" />
+            <Setter Property="Padding" Value="8,6,8,8" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-list">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MaxWidth" Value="Infinity" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="CornerRadius" Value="6" />
         </Style>
         <Style Selector="Button.cork-card.card-size-medium Grid.cork-card-body">
             <Setter Property="RowSpacing" Value="6" />
         </Style>
         <Style Selector="Button.cork-card.card-size-tiny Grid.cork-card-body">
             <Setter Property="RowSpacing" Value="4" />
+            <Setter Property="Margin" Value="5,0,0,0" />
         </Style>
         <Style Selector="Button.cork-card TextBlock.cork-card-title">
             <Setter Property="FontSize" Value="15" />
@@ -53,7 +64,8 @@
             <Setter Property="FontSize" Value="13" />
         </Style>
         <Style Selector="Button.cork-card.card-size-tiny TextBlock.cork-card-title">
-            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Medium" />
         </Style>
         <Style Selector="Button.cork-card.cork-card-missing">
             <Setter Property="BorderBrush" Value="{DynamicResource OrangeBrush}" />
@@ -61,6 +73,49 @@
         </Style>
         <Style Selector="Button.cork-card.card-size-tiny TextBlock.cork-card-missing-text">
             <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-list TextBlock.cork-card-missing-text">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Border.cork-card-status-stripe">
+            <Setter Property="Width" Value="3" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="CornerRadius" Value="2,0,0,2" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+        <Style Selector="Border.cork-card-missing-dot">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="{DynamicResource OrangeBrush}" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Margin" Value="0,2,2,0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+        <Style Selector="Button.cork-card.card-size-list Border.cork-card-missing-dot">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Ellipse.cork-card-status-dot">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.cork-card-list-missing">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource OrangeBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Width" Value="16" />
+            <Setter Property="TextAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.cork-part-header.card-size-list-part">
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <Style Selector="Panel.cork-card-host.card-size-list-host">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
         </Style>
         <Style Selector="Button.cork-card:pointerover">
             <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
@@ -137,6 +192,25 @@
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="Margin" Value="0,0,0,2" />
         </Style>
+        <Style Selector="Button.cork-excluded-card">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#64748B" />
+            <Setter Property="BorderThickness" Value="1,1,1,1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="14,12" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="MinWidth" Value="320" />
+            <Setter Property="MaxWidth" Value="520" />
+            <Setter Property="Margin" Value="0,0,12,12" />
+            <Setter Property="Opacity" Value="0.72" />
+        </Style>
+        <Style Selector="Button.cork-excluded-card:pointerover">
+            <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
+            <Setter Property="Background" Value="#12102A" />
+            <Setter Property="Opacity" Value="1" />
+        </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="48,*">
@@ -183,13 +257,39 @@
                                   Command="{Binding SetCardSizeCommand}"
                                   CommandParameter="{x:Static vm:CardDisplaySize.Tiny}"
                                   IsChecked="{Binding CardDisplaySize, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Tiny, Mode=OneWay}" />
+                    <ToggleButton Classes="cork-size-toggle"
+                                  Content="List"
+                                  Command="{Binding SetCardSizeCommand}"
+                                  CommandParameter="{x:Static vm:CardDisplaySize.List}"
+                                  IsChecked="{Binding CardDisplaySize, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List, Mode=OneWay}" />
                 </StackPanel>
 
-                <TextBlock Grid.Column="2"
-                           Text="Double-click a card to open in Write mode"
-                           FontSize="10"
-                           Foreground="#94A3B8"
-                           VerticalAlignment="Center" />
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Spacing="10">
+                    <CheckBox Content="Show excluded"
+                              IsChecked="{Binding ShowExcludedFiles, Mode=TwoWay}"
+                              FontSize="10"
+                              Foreground="#94A3B8" />
+                    <Button x:Name="BoardAddButton"
+                            Content="+"
+                            Padding="10,4"
+                            FontSize="12"
+                            FontWeight="Bold"
+                            Background="Transparent"
+                            BorderBrush="#2D1B5E"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Foreground="#9D4EDD"
+                            ToolTip.Tip="Add chapter or part"
+                            Click="BoardAddButton_Click" />
+                    <TextBlock Text="Double-click a card to open in Write mode"
+                               FontSize="10"
+                               Foreground="#94A3B8"
+                               VerticalAlignment="Center" />
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -210,50 +310,86 @@
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
                           Background="#0B0820">
-                <ItemsControl x:Name="BoardItems"
-                              ItemsSource="{Binding Items}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel Margin="16"
-                                       Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                </ItemsControl>
+                <Grid>
+                    <ItemsControl x:Name="BoardItems"
+                                  ItemsSource="{Binding Items}"
+                                  IsVisible="{Binding CardDisplaySize, Converter={StaticResource CardDisplaySizeNotEqualsConverter}, ConverterParameter=List}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Margin="16"
+                                           Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <ItemsControl x:Name="BoardItemsList"
+                                  ItemsSource="{Binding Items}"
+                                  IsVisible="{Binding CardDisplaySize, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Margin="16,12"
+                                            Spacing="0" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </Grid>
             </ScrollViewer>
         </Grid>
     </Grid>
 
     <UserControl.DataTemplates>
         <DataTemplate DataType="vm:PartDividerItemViewModel">
-            <Button Classes="cork-part-header"
-                    Classes.part-follow="{Binding !IsFirstPart}"
-                    Width="{Binding Bounds.Width, ElementName=Root}"
-                    Focusable="False"
-                    Command="{Binding DataContext.TogglePartExpandedCommand, ElementName=Root}"
-                    CommandParameter="{Binding}"
-                    ToolTip.Tip="Click to show or hide chapters in this part">
-                <Grid ColumnDefinitions="Auto,*,Auto"
-                      ColumnSpacing="12">
-                    <Border Grid.Column="0"
-                            Classes="cork-part-chevron-badge">
-                        <TextBlock Classes="cork-part-chevron"
-                                   Text="{Binding ChevronGlyph}" />
-                    </Border>
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding Title}"
-                               FontSize="14"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource OnSurfaceBrush}"
-                               VerticalAlignment="Center"
-                               HorizontalAlignment="Stretch"
-                               TextAlignment="Left" />
-                    <TextBlock Grid.Column="2"
-                               Text="{Binding ChapterCountDisplay}"
-                               FontSize="10"
-                               Foreground="#94A3B8"
-                               VerticalAlignment="Center" />
-                </Grid>
-            </Button>
+            <Grid ColumnDefinitions="*,Auto"
+                  Width="{Binding Bounds.Width, ElementName=Root}"
+                  Margin="0,0,0,10">
+                <Button Grid.Column="0"
+                        Classes="cork-part-header"
+                        Classes.part-follow="{Binding !IsFirstPart}"
+                        Classes.card-size-list-part="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List}"
+                        Margin="0"
+                        Focusable="False"
+                        Command="{Binding DataContext.TogglePartExpandedCommand, ElementName=Root}"
+                        CommandParameter="{Binding}"
+                        ToolTip.Tip="Click to show or hide chapters in this part">
+                    <Grid ColumnDefinitions="Auto,*,Auto"
+                          ColumnSpacing="12">
+                        <Border Grid.Column="0"
+                                Classes="cork-part-chevron-badge">
+                            <TextBlock Classes="cork-part-chevron"
+                                       Text="{Binding ChevronGlyph}" />
+                        </Border>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Title}"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource OnSurfaceBrush}"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Stretch"
+                                   TextAlignment="Left" />
+                        <TextBlock Grid.Column="2"
+                                   Text="{Binding ChapterCountDisplay}"
+                                   FontSize="10"
+                                   Foreground="#94A3B8"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </Button>
+                <Button Grid.Column="1"
+                        Content="+"
+                        Margin="8,0,0,0"
+                        Padding="10,4"
+                        MinWidth="32"
+                        MinHeight="40"
+                        FontSize="12"
+                        FontWeight="Bold"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        BorderBrush="#2D1B5E"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Foreground="#9D4EDD"
+                        ToolTip.Tip="Add chapter to this part"
+                        Tag="{Binding}"
+                        Click="PartAddButton_Click" />
+            </Grid>
         </DataTemplate>
 
         <DataTemplate DataType="vm:EmptyPartHintItemViewModel">
@@ -268,7 +404,8 @@
         </DataTemplate>
 
         <DataTemplate DataType="vm:ChapterCardItemViewModel">
-            <Panel>
+            <Panel Classes="cork-card-host"
+                   Classes.card-size-list-host="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List}">
                 <!-- Insertion-line indicators: appear in the gap before or after this card during drag-over -->
                 <Border Name="InsertBefore"
                         Width="3"
@@ -294,6 +431,7 @@
                     Classes.card-size-large="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Large}"
                     Classes.card-size-medium="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Medium}"
                     Classes.card-size-tiny="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Tiny}"
+                    Classes.card-size-list="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List}"
                     IsVisible="{Binding IsVisibleOnBoard}"
                     DoubleTapped="Card_DoubleTapped"
                     Loaded="Card_Loaded">
@@ -321,9 +459,17 @@
                     </ContextMenu>
                 </Button.ContextMenu>
 
-                <Grid Classes="cork-card-body"
-                      RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-                      RowSpacing="8">
+                <Grid>
+                    <Border Classes="cork-card-status-stripe"
+                            Background="{Binding Card.Status, Converter={StaticResource StatusToBrushConverter}}"
+                            IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Tiny}" />
+                    <Border Classes="cork-card-missing-dot"
+                            IsVisible="{Binding Card.IsMissing}" />
+
+                    <Grid Classes="cork-card-body"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          RowSpacing="8"
+                          IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeNotEqualsConverter}, ConverterParameter=List}">
                     <TextBlock Grid.Row="0"
                                Classes="cork-card-title"
                                Text="{Binding Title}"
@@ -464,15 +610,95 @@
                         </StackPanel>
                     </Grid>
 
+                    <ProgressBar Grid.Row="5"
+                                 Value="{Binding Card.ProximityFill}"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Height="3"
+                                 VerticalAlignment="Center"
+                                 Background="{DynamicResource SurfaceHighBrush}"
+                                 Foreground="{DynamicResource SynthwavePurpleBrush}"
+                                 IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=Tiny}" />
+
                     <TextBlock Grid.Row="7"
                                Classes="cork-card-missing-text"
                                Text="{Binding Card.MissingStateDisplay}"
                                FontSize="10"
                                Foreground="{DynamicResource OrangeBrush}"
                                IsVisible="{Binding Card.IsMissing}" />
+                    </Grid>
+
+                    <Grid Classes="cork-card-list-body"
+                          ColumnDefinitions="Auto,*,60,50,16"
+                          ColumnSpacing="10"
+                          IsVisible="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List}">
+                        <Ellipse Grid.Column="0"
+                                 Classes="cork-card-status-dot"
+                                 Fill="{Binding Card.Status, Converter={StaticResource StatusToBrushConverter}}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Title}"
+                                   FontSize="12"
+                                   FontWeight="Medium"
+                                   Foreground="{DynamicResource OnSurfaceBrush}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxLines="1" />
+                        <ProgressBar Grid.Column="2"
+                                     Value="{Binding Card.ProximityFill}"
+                                     Minimum="0"
+                                     Maximum="1"
+                                     Height="4"
+                                     VerticalAlignment="Center"
+                                     Background="{DynamicResource SurfaceHighBrush}"
+                                     Foreground="{DynamicResource SynthwavePurpleBrush}" />
+                        <TextBlock Grid.Column="3"
+                                   Text="{Binding Card.WordCountDisplay}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Right" />
+                        <TextBlock Grid.Column="4"
+                                   Classes="cork-card-list-missing"
+                                   Text="!"
+                                   ToolTip.Tip="Missing file"
+                                   IsVisible="{Binding Card.IsMissing}" />
+                    </Grid>
                 </Grid>
                 </Button>
             </Panel>
+        </DataTemplate>
+
+        <DataTemplate DataType="vm:ExcludedChapterCardItemViewModel">
+            <Button Classes="cork-excluded-card"
+                    IsVisible="{Binding IsVisibleOnBoard}"
+                    Tag="{Binding}">
+                <Button.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Include in Book"
+                                  Click="IncludeExcludedCard_Click" />
+                    </ContextMenu>
+                </Button.ContextMenu>
+                <StackPanel Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{Binding Title}"
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                                   TextWrapping="Wrap"
+                                   MaxLines="2"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding ExcludedLabel}"
+                                   FontSize="10"
+                                   FontStyle="Italic"
+                                   Foreground="#94A3B8"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding RelativePath}"
+                               FontSize="10"
+                               Foreground="#64748B"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Button>
         </DataTemplate>
     </UserControl.DataTemplates>
 

@@ -14,6 +14,7 @@ using DynamicData.Binding;
 using Hymnal.Core.Common;
 using Unit = Hymnal.Core.Common.Unit;
 using Hymnal.Core.Interfaces;
+using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 using ReactiveUI;
 
@@ -31,6 +32,8 @@ public sealed record RenameCardRequest(string ExistingPath, string ReplacementPa
 
 public sealed record CreateChapterRequest(string ChapterPath, string Content, int Index);
 
+public sealed record CreatePartRequest(string PartPath, string Title, int Index);
+
 public sealed record IncludeExistingChapterRequest(string ChapterPath, int? Index = null, string? PartPath = null);
 
 public sealed record RemoveChapterRequest(string ChapterPath);
@@ -45,8 +48,12 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 {
     private readonly WorkspaceViewModel _workspace;
     private readonly IBookTxtStructureService _structureService;
+    private readonly IOrphanFileDiscoveryService _orphanDiscovery;
+    private readonly IAppSettingsStore _settingsStore;
     private readonly INotificationService _notificationService;
     private readonly ManuscriptService _manuscriptService;
+    private IReadOnlyList<OrphanFileInfo> _orphanFiles = Array.Empty<OrphanFileInfo>();
+    private int _rebuildGeneration;
     private readonly Subject<ChapterViewModel> _openChapterRequested = new();
     private readonly ObservableCollectionExtended<CorkboardItemViewModel> _items = new();
     private readonly Dictionary<string, bool> _partExpandedState = new(StringComparer.OrdinalIgnoreCase);
@@ -86,22 +93,52 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<ReorderCardRequest, System.Reactive.Unit> ReorderCardCommand { get; }
     public ReactiveCommand<RenameCardRequest, System.Reactive.Unit> RenameCardCommand { get; }
     public ReactiveCommand<CreateChapterRequest, System.Reactive.Unit> CreateChapterCommand { get; }
+    public ReactiveCommand<CreatePartRequest, System.Reactive.Unit> CreatePartCommand { get; }
     public ReactiveCommand<IncludeExistingChapterRequest, System.Reactive.Unit> IncludeExistingChapterCommand { get; }
     public ReactiveCommand<RemoveChapterRequest, System.Reactive.Unit> RemoveFromBookCommand { get; }
     public ReactiveCommand<DeleteChapterRequest, System.Reactive.Unit> DeleteChapterCommand { get; }
     public ReactiveCommand<CardDisplaySize, System.Reactive.Unit> SetCardSizeCommand { get; }
     public ReactiveCommand<PartDividerItemViewModel, System.Reactive.Unit> TogglePartExpandedCommand { get; }
 
+    private bool _showExcludedFiles = true;
+    /// <summary>When true, orphan files on disk are shown as excluded cards on the plan board.</summary>
+    public bool ShowExcludedFiles
+    {
+        get => _showExcludedFiles;
+        set
+        {
+            if (_showExcludedFiles == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _showExcludedFiles, value);
+            _ = PersistShowExcludedFilesAsync(value);
+            ApplyProjection(_orphanFiles);
+        }
+    }
+
     public CorkboardViewModel(
         WorkspaceViewModel workspace,
         IBookTxtStructureService structureService,
+        IOrphanFileDiscoveryService orphanDiscovery,
+        IAppSettingsStore settingsStore,
         INotificationService notificationService,
         ManuscriptService manuscriptService)
     {
         _workspace = workspace;
         _structureService = structureService;
+        _orphanDiscovery = orphanDiscovery;
+        _settingsStore = settingsStore;
         _notificationService = notificationService;
         _manuscriptService = manuscriptService;
+
+        try
+        {
+            _showExcludedFiles = _settingsStore.GetAsync<bool?>("showExcludedFiles").GetAwaiter().GetResult() ?? true;
+        }
+        catch
+        {
+            _showExcludedFiles = true;
+        }
 
         Items = new ReadOnlyObservableCollection<CorkboardItemViewModel>(_items);
 
@@ -113,6 +150,9 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
                 .Throttle(TimeSpan.FromMilliseconds(50), TaskPoolScheduler.Default)
                 .Subscribe(_ => RequestRebuild()));
 
+        Disposables.Add(
+            _workspace.WorkspaceChanged.Subscribe(_ => RequestRebuild()));
+
         Disposables.Add(_openChapterRequested);
 
         SelectCardCommand = ReactiveCommand.CreateFromTask<CorkboardItemViewModel?>(SelectCardAsync);
@@ -122,6 +162,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         ReorderCardCommand = ReactiveCommand.CreateFromTask<ReorderCardRequest>(ReorderCardAsync);
         RenameCardCommand = ReactiveCommand.CreateFromTask<RenameCardRequest>(RenameCardAsync);
         CreateChapterCommand = ReactiveCommand.CreateFromTask<CreateChapterRequest>(CreateChapterAsync);
+        CreatePartCommand = ReactiveCommand.CreateFromTask<CreatePartRequest>(CreatePartAsync);
         IncludeExistingChapterCommand = ReactiveCommand.CreateFromTask<IncludeExistingChapterRequest>(IncludeExistingChapterAsync);
         RemoveFromBookCommand = ReactiveCommand.CreateFromTask<RemoveChapterRequest>(RemoveFromBookAsync);
         DeleteChapterCommand = ReactiveCommand.CreateFromTask<DeleteChapterRequest>(DeleteChapterAsync);
@@ -134,13 +175,15 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         Disposables.Add(ReorderCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(RenameCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(CreateChapterCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
+        Disposables.Add(CreatePartCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(IncludeExistingChapterCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(RemoveFromBookCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(DeleteChapterCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(SetCardSizeCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(TogglePartExpandedCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
 
-        RebuildItems();
+        ApplyProjection(_orphanFiles);
+        _ = DiscoverOrphansAndRebuildAsync();
     }
 
     /// <summary>Called when Plan mode becomes active or inactive.</summary>
@@ -150,7 +193,8 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         if (active && _needsRebuild)
         {
             _needsRebuild = false;
-            RebuildItems();
+            ApplyProjection(_orphanFiles);
+            _ = DiscoverOrphansAndRebuildAsync();
         }
     }
 
@@ -162,7 +206,36 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        RebuildItems();
+        ApplyProjection(_orphanFiles);
+        _ = DiscoverOrphansAndRebuildAsync();
+    }
+
+    public Task<string?> PickManuscriptFileAsync() => _workspace.PickManuscriptFileAsync();
+
+    public string ToManuscriptRelativePath(string absolutePath) => _workspace.ToManuscriptRelativePath(absolutePath);
+
+    public int GetBookInsertIndex() => _workspace.Nodes.Count;
+
+    public int GetInsertIndexAfterPart(string partRelativePath)
+    {
+        var nodes = _workspace.Nodes.ToList();
+        var partIndex = nodes.FindIndex(node =>
+            node.Node.Kind == NodeKind.Part &&
+            string.Equals(node.Node.RelativePath, partRelativePath, StringComparison.OrdinalIgnoreCase));
+
+        if (partIndex < 0)
+            return GetBookInsertIndex();
+
+        var insertIndex = partIndex + 1;
+        for (var i = partIndex + 1; i < nodes.Count; i++)
+        {
+            if (nodes[i].Node.Kind == NodeKind.Part)
+                break;
+
+            insertIndex++;
+        }
+
+        return insertIndex;
     }
 
     private void TogglePartExpanded(PartDividerItemViewModel part)
@@ -173,12 +246,56 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         part.IsExpanded = nextExpanded;
     }
 
-    private void RebuildItems()
+    private async Task DiscoverOrphansAndRebuildAsync()
+    {
+        var generation = ++_rebuildGeneration;
+
+        IReadOnlyList<OrphanFileInfo> orphans = Array.Empty<OrphanFileInfo>();
+        if (_workspace.HasWorkspace && !string.IsNullOrWhiteSpace(_workspace.ManuscriptRoot))
+        {
+            var entries = _workspace.Nodes
+                .Select(node => node.Node.RelativePath)
+                .ToList();
+
+            try
+            {
+                orphans = await _orphanDiscovery
+                    .DiscoverAsync(_workspace.ManuscriptRoot, entries)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _notificationService.ShowError($"Failed to discover excluded files: {ex.Message}");
+            }
+        }
+
+        if (generation != _rebuildGeneration)
+            return;
+
+        if (global::Avalonia.Application.Current is not null)
+        {
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (generation != _rebuildGeneration)
+                    return;
+
+                _orphanFiles = orphans;
+                ApplyProjection(_orphanFiles);
+            });
+        }
+        else
+        {
+            _orphanFiles = orphans;
+            ApplyProjection(_orphanFiles);
+        }
+    }
+
+    private void ApplyProjection(IReadOnlyList<OrphanFileInfo> orphans)
     {
         if (global::Avalonia.Application.Current is not null
             && !Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
         {
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(RebuildItems).GetAwaiter().GetResult();
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ApplyProjection(orphans)).GetAwaiter().GetResult();
             return;
         }
 
@@ -187,11 +304,29 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         CorkboardItemViewModel.DisposeItems(_items);
         _items.Clear();
 
-        foreach (var item in CorkboardItemViewModel.Project(_workspace.Nodes, _partExpandedState))
+        foreach (var item in CorkboardItemViewModel.Project(
+                     _workspace.Nodes,
+                     _partExpandedState,
+                     orphans,
+                     ShowExcludedFiles))
+        {
             _items.Add(item);
+        }
 
         this.RaisePropertyChanged(nameof(HasItems));
         RestoreSelection(selectedPath);
+    }
+
+    private async Task PersistShowExcludedFilesAsync(bool value)
+    {
+        try
+        {
+            await _settingsStore.SetAsync("showExcludedFiles", value).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal preference persistence failure.
+        }
     }
 
     private Task SelectCardAsync(CorkboardItemViewModel? item)
@@ -302,6 +437,14 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
             "Create chapter",
             request.ChapterPath,
             () => _structureService.CreateNewChapterAsync(_workspace.BookTxtPath, request.ChapterPath, request.Content, request.Index));
+    }
+
+    private async Task CreatePartAsync(CreatePartRequest request)
+    {
+        await ExecuteStructuralOperationAsync(
+            "Create part",
+            request.PartPath,
+            () => _structureService.CreateNewPartAsync(_workspace.BookTxtPath, request.PartPath, request.Title, request.Index));
     }
 
     private async Task IncludeExistingChapterAsync(IncludeExistingChapterRequest request)

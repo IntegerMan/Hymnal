@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
@@ -15,14 +16,37 @@ public class FilePickerService : IFilePickerService
         _topLevelAccessor = topLevelAccessor;
     }
 
-    public async Task<string?> PickFileAsync()
+    public async Task<string?> PickFileAsync(string? suggestedStartDirectory = null)
     {
         var topLevel = _topLevelAccessor();
         if (topLevel == null)
             return null;
 
-        var results = await topLevel.StorageProvider.OpenFilePickerAsync(
-            new FilePickerOpenOptions { AllowMultiple = false });
+        var options = new FilePickerOpenOptions
+        {
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Markdown") { Patterns = new[] { "*.md" } },
+                FilePickerFileTypes.All
+            }
+        };
+
+        if (!string.IsNullOrWhiteSpace(suggestedStartDirectory) && Directory.Exists(suggestedStartDirectory))
+        {
+            try
+            {
+                var folder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(suggestedStartDirectory);
+                if (folder != null)
+                    options.SuggestedStartLocation = folder;
+            }
+            catch
+            {
+                // Non-fatal; picker opens without a suggested folder.
+            }
+        }
+
+        var results = await topLevel.StorageProvider.OpenFilePickerAsync(options);
 
         return results.Count > 0 ? results[0].Path.LocalPath : null;
     }

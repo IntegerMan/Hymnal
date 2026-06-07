@@ -80,6 +80,8 @@ public partial class App : Application
         services.AddSingleton<WorkspaceViewModel>(sp =>
             new WorkspaceViewModel(
                 sp.GetRequiredService<ManuscriptService>(),
+                sp.GetRequiredService<IBookTxtStructureService>(),
+                sp.GetRequiredService<IFilePickerService>(),
                 sp.GetRequiredService<IAppSettingsStore>(),
                 sp.GetRequiredService<IFolderPickerService>(),
                 sp.GetRequiredService<INotificationService>(),
@@ -115,11 +117,14 @@ public partial class App : Application
 
         // S01 services — plan corkboard structural editing
         services.AddSingleton<IBookTxtStructureService, BookTxtStructureService>();
+        services.AddSingleton<IOrphanFileDiscoveryService, OrphanFileDiscoveryService>();
 
         services.AddSingleton<CorkboardViewModel>(sp =>
             new CorkboardViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<IBookTxtStructureService>(),
+                sp.GetRequiredService<IOrphanFileDiscoveryService>(),
+                sp.GetRequiredService<IAppSettingsStore>(),
                 sp.GetRequiredService<INotificationService>(),
                 sp.GetRequiredService<ManuscriptService>()));
 

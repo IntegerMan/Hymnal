@@ -174,6 +174,8 @@ public sealed class MainWindowResearchModeTests
             EditorViewModel = new EditorViewModel(MetadataStore, NotificationService, WordCountService);
             Workspace = new SpyWorkspaceViewModel(
                 new ManuscriptService(NotificationService),
+                new FakeBookTxtStructureService(),
+                FilePickerService,
                 SettingsStore,
                 FolderPickerService,
                 NotificationService,
@@ -250,7 +252,7 @@ public sealed class MainWindowResearchModeTests
                 new NotesViewModel(EditorViewModel, Workspace, new NotesService(MetadataStore), NotificationService, SettingsStore),
                 new ChapterInfoViewModel(EditorViewModel, Workspace, new PhaseDataService(MetadataStore), new TargetsService(MetadataStore), SettingsStore, NotificationService),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), NotificationService),
-                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService, new ManuscriptService(NotificationService)),
+                new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), new OrphanFileDiscoveryService(), SettingsStore, NotificationService, new ManuscriptService(NotificationService)),
                 new ResearchViewModel(Workspace, docs, EditorViewModel),
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
@@ -284,6 +286,8 @@ public sealed class MainWindowResearchModeTests
     {
         public SpyWorkspaceViewModel(
             ManuscriptService manuscriptService,
+            IBookTxtStructureService structureService,
+            IFilePickerService filePicker,
             IAppSettingsStore settingsStore,
             IFolderPickerService folderPicker,
             INotificationService notificationService,
@@ -293,7 +297,7 @@ public sealed class MainWindowResearchModeTests
             TargetsService targetsService,
             WordCountService wordCountService,
             WordCountHistoryService historyService)
-            : base(manuscriptService, settingsStore, folderPicker, notificationService, editor, registryService, phaseDataService, targetsService, wordCountService, historyService)
+            : base(manuscriptService, structureService, filePicker, settingsStore, folderPicker, notificationService, editor, registryService, phaseDataService, targetsService, wordCountService, historyService)
         {
         }
     }
@@ -333,7 +337,7 @@ public sealed class MainWindowResearchModeTests
 
     private sealed class FakeFilePickerService : IFilePickerService
     {
-        public Task<string?> PickFileAsync() => Task.FromResult<string?>(null);
+        public Task<string?> PickFileAsync(string? suggestedStartDirectory = null) => Task.FromResult<string?>(null);
     }
 
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService
@@ -354,6 +358,9 @@ public sealed class MainWindowResearchModeTests
             => Task.FromResult(Result<Unit>.Ok(Unit.Default));
 
         public Task<Result<Unit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index)
+            => Task.FromResult(Result<Unit>.Ok(Unit.Default));
+
+        public Task<Result<Unit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index)
             => Task.FromResult(Result<Unit>.Ok(Unit.Default));
 
         public Task<Result<Unit>> RemoveEntryAsync(string bookTxtPath, string chapterPath)

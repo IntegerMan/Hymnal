@@ -278,6 +278,9 @@ public sealed class CorkboardViewModelTests
         await ExecuteCommandAsync(board.SetCardSizeCommand.Execute(CardDisplaySize.Tiny));
         Assert.Equal(CardDisplaySize.Tiny, board.CardDisplaySize);
 
+        await ExecuteCommandAsync(board.SetCardSizeCommand.Execute(CardDisplaySize.List));
+        Assert.Equal(CardDisplaySize.List, board.CardDisplaySize);
+
         await ExecuteCommandAsync(board.SetCardSizeCommand.Execute(CardDisplaySize.Large));
         Assert.Equal(CardDisplaySize.Large, board.CardDisplaySize);
     }
@@ -453,6 +456,8 @@ public sealed class CorkboardViewModelTests
             ManuscriptService = new ManuscriptService(NotificationService);
             Workspace = new SpyWorkspaceViewModel(
                 ManuscriptService,
+                StructureService,
+                new FakeFilePickerService(),
                 SettingsStore,
                 FolderPickerService,
                 NotificationService,
@@ -464,7 +469,13 @@ public sealed class CorkboardViewModelTests
                 HistoryService);
         }
 
-        public CorkboardViewModel CreateCorkboard() => new(Workspace, StructureService, NotificationService, ManuscriptService);
+        public CorkboardViewModel CreateCorkboard() => new(
+            Workspace,
+            StructureService,
+            new OrphanFileDiscoveryService(),
+            SettingsStore,
+            NotificationService,
+            ManuscriptService);
 
         public void EnableWorkspace()
         {
@@ -484,6 +495,8 @@ public sealed class CorkboardViewModelTests
 
         public SpyWorkspaceViewModel(
             ManuscriptService manuscriptService,
+            IBookTxtStructureService structureService,
+            IFilePickerService filePicker,
             IAppSettingsStore settingsStore,
             IFolderPickerService folderPicker,
             INotificationService notificationService,
@@ -493,7 +506,7 @@ public sealed class CorkboardViewModelTests
             TargetsService targetsService,
             WordCountService wordCountService,
             WordCountHistoryService historyService)
-            : base(manuscriptService, settingsStore, folderPicker, notificationService, editor, registryService, phaseDataService, targetsService, wordCountService, historyService)
+            : base(manuscriptService, structureService, filePicker, settingsStore, folderPicker, notificationService, editor, registryService, phaseDataService, targetsService, wordCountService, historyService)
         {
         }
 
@@ -556,6 +569,12 @@ public sealed class CorkboardViewModelTests
         public Task<string?> PickFolderAsync() => Task.FromResult<string?>(null);
     }
 
+    private sealed class FakeFilePickerService : IFilePickerService
+    {
+        public Task<string?> PickFileAsync(string? suggestedStartDirectory = null)
+            => Task.FromResult<string?>(null);
+    }
+
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService
     {
         public List<(string BookTxtPath, string ChapterPath, int NewIndex)> ReorderCalls { get; } = new();
@@ -606,6 +625,9 @@ public sealed class CorkboardViewModelTests
             CreateCalls.Add((bookTxtPath, chapterPath, content, index));
             return Task.FromResult(CreateResult);
         }
+
+        public Task<Result<Unit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index)
+            => Task.FromResult(CreateResult);
 
         public Task<Result<Unit>> RemoveEntryAsync(string bookTxtPath, string chapterPath)
         {

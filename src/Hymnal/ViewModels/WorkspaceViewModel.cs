@@ -23,6 +23,8 @@ namespace Hymnal.ViewModels;
 public class WorkspaceViewModel : ViewModelBase
 {
     private readonly ManuscriptService _manuscriptService;
+    private readonly IBookTxtStructureService _structureService;
+    private readonly IFilePickerService _filePicker;
     private readonly IAppSettingsStore _settingsStore;
     private readonly IFolderPickerService _folderPicker;
     private readonly INotificationService _notificationService;
@@ -75,6 +77,8 @@ public class WorkspaceViewModel : ViewModelBase
 
     public string BookTxtPath => _model?.BookTxtPath ?? string.Empty;
 
+    public string ManuscriptRoot => _model?.ManuscriptRoot ?? string.Empty;
+
     private string? _workspaceName;
     public string? WorkspaceName
     {
@@ -101,6 +105,9 @@ public class WorkspaceViewModel : ViewModelBase
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> CloseWorkspaceCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SelectBookCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> ToggleChaptersPaneCommand { get; }
+    public ReactiveCommand<CreateChapterRequest, System.Reactive.Unit> CreateChapterCommand { get; }
+    public ReactiveCommand<CreatePartRequest, System.Reactive.Unit> CreatePartCommand { get; }
+    public ReactiveCommand<IncludeExistingChapterRequest, System.Reactive.Unit> IncludeExistingFileCommand { get; }
 
     private ChapterViewModel? _targetFlyoutChapter;
     private IDisposable? _targetFlyoutSubscription;
@@ -141,6 +148,8 @@ public class WorkspaceViewModel : ViewModelBase
 
     public WorkspaceViewModel(
         ManuscriptService manuscriptService,
+        IBookTxtStructureService structureService,
+        IFilePickerService filePicker,
         IAppSettingsStore settingsStore,
         IFolderPickerService folderPicker,
         INotificationService notificationService,
@@ -152,6 +161,8 @@ public class WorkspaceViewModel : ViewModelBase
         WordCountHistoryService historyService)
     {
         _manuscriptService = manuscriptService;
+        _structureService = structureService;
+        _filePicker = filePicker;
         _settingsStore = settingsStore;
         _folderPicker = folderPicker;
         _notificationService = notificationService;
@@ -172,6 +183,23 @@ public class WorkspaceViewModel : ViewModelBase
         OpenWorkspaceCommand = ReactiveCommand.CreateFromTask(OpenWorkspaceAsync);
         CloseWorkspaceCommand = ReactiveCommand.CreateFromTask(CloseWorkspaceAsync, this.WhenAnyValue(x => x.HasWorkspace));
         SelectBookCommand = ReactiveCommand.CreateFromTask(SelectBookAsync);
+
+        CreateChapterCommand = ReactiveCommand.CreateFromTask<CreateChapterRequest>(CreateChapterAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
+        CreatePartCommand = ReactiveCommand.CreateFromTask<CreatePartRequest>(CreatePartAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
+        IncludeExistingFileCommand = ReactiveCommand.CreateFromTask<IncludeExistingChapterRequest>(IncludeExistingFileAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
+
+        Disposables.Add(
+            CreateChapterCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            CreatePartCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            IncludeExistingFileCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
 
         Disposables.Add(
             OpenWorkspaceCommand.ThrownExceptions
@@ -825,6 +853,113 @@ public class WorkspaceViewModel : ViewModelBase
         }
 
         return false;
+    }
+
+    public int GetBookEntryCount() => _nodes.Count;
+
+    public async Task<string?> PickManuscriptFileAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ManuscriptRoot))
+            return null;
+
+        return await _filePicker.PickFileAsync(ManuscriptRoot).ConfigureAwait(false);
+    }
+
+    public string ToManuscriptRelativePath(string absolutePath)
+    {
+        if (string.IsNullOrWhiteSpace(ManuscriptRoot))
+            return absolutePath;
+
+        var manuscriptRoot = Path.GetFullPath(ManuscriptRoot);
+        var fullPath = Path.GetFullPath(absolutePath);
+        if (!fullPath.StartsWith(manuscriptRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(fullPath, manuscriptRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return absolutePath.Replace('\\', '/');
+        }
+
+        return Path.GetRelativePath(manuscriptRoot, fullPath).Replace('\\', '/');
+    }
+
+    private async Task CreateChapterAsync(CreateChapterRequest request)
+    {
+        await ExecuteStructuralOperationAsync(
+            "Create chapter",
+            request.ChapterPath,
+            () => _structureService.CreateNewChapterAsync(BookTxtPath, request.ChapterPath, request.Content, request.Index))
+            .ConfigureAwait(false);
+    }
+
+    private async Task CreatePartAsync(CreatePartRequest request)
+    {
+        await ExecuteStructuralOperationAsync(
+            "Create part",
+            request.PartPath,
+            () => _structureService.CreateNewPartAsync(BookTxtPath, request.PartPath, request.Title, request.Index))
+            .ConfigureAwait(false);
+    }
+
+    private async Task IncludeExistingFileAsync(IncludeExistingChapterRequest request)
+    {
+        Func<Task<Result<Unit>>> action;
+
+        if (!string.IsNullOrWhiteSpace(request.PartPath))
+        {
+            action = () => _structureService.AddExistingEntryAfterPartAsync(
+                BookTxtPath,
+                request.ChapterPath,
+                request.PartPath!);
+        }
+        else if (request.Index.HasValue)
+        {
+            action = () => _structureService.AddExistingEntryAsync(
+                BookTxtPath,
+                request.ChapterPath,
+                request.Index.Value);
+        }
+        else
+        {
+            _notificationService.ShowError("Include file requires either an index or a part path.");
+            return;
+        }
+
+        await ExecuteStructuralOperationAsync("Include file", request.ChapterPath, action).ConfigureAwait(false);
+    }
+
+    private async Task ExecuteStructuralOperationAsync(
+        string operation,
+        string? path,
+        Func<Task<Result<Unit>>> action)
+    {
+        if (!HasWorkspace || string.IsNullOrWhiteSpace(BookTxtPath))
+        {
+            _notificationService.ShowError("No workspace is open.");
+            return;
+        }
+
+        try
+        {
+            using var _ = _manuscriptService.SuppressFileWatcher();
+
+            var result = await action().ConfigureAwait(false);
+            if (!result.IsSuccess)
+            {
+                var target = string.IsNullOrWhiteSpace(path)
+                    ? $"{operation} in '{BookTxtPath}'"
+                    : $"{operation} for '{path}' in '{BookTxtPath}'";
+                _notificationService.ShowError($"{target}: {result.Error}");
+                return;
+            }
+
+            var reloadResult = await ReloadCurrentWorkspaceAsync().ConfigureAwait(false);
+            if (!reloadResult.IsSuccess)
+                _notificationService.ShowError($"Failed to reload workspace after {operation.ToLowerInvariant()}: {reloadResult.Error}");
+        }
+        catch (Exception ex)
+        {
+            _notificationService.ShowError($"{operation} failed: {ex.Message}");
+        }
     }
 
     private async Task PersistChaptersPaneVisibleAsync(bool value)

@@ -16,6 +16,8 @@ public interface IBookTxtStructureService
 
     Task<Result<Unit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index);
 
+    Task<Result<Unit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index);
+
     Task<Result<Unit>> RemoveEntryAsync(string bookTxtPath, string chapterPath);
 
     Task<Result<Unit>> DeleteChapterFileAsync(string bookTxtPath, string chapterPath);

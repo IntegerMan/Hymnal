@@ -167,6 +167,8 @@ public sealed class SupplementalDocsViewSmokeTests
             DocsService = new SupplementalDocsService(MetadataStore);
             Workspace = new WorkspaceViewModel(
                 ManuscriptService,
+                new FakeBookTxtStructureService(),
+                new FakeFilePickerService(),
                 SettingsStore,
                 FolderPickerService,
                 NotificationService,
@@ -186,7 +188,7 @@ public sealed class SupplementalDocsViewSmokeTests
         public MainWindowViewModel CreateMainWindowViewModel()
         {
             var docsVm = CreateDocsViewModel(EditorViewModel);
-            var corkboardVm = new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), NotificationService, ManuscriptService);
+            var corkboardVm = new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), new OrphanFileDiscoveryService(), SettingsStore, NotificationService, ManuscriptService);
             var gitPanelVm = new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService);
             return new MainWindowViewModel(
                 Workspace,
@@ -263,7 +265,7 @@ public sealed class SupplementalDocsViewSmokeTests
 
     private sealed class FakeFilePickerService : IFilePickerService
     {
-        public Task<string?> PickFileAsync() => Task.FromResult<string?>(null);
+        public Task<string?> PickFileAsync(string? suggestedStartDirectory = null) => Task.FromResult<string?>(null);
     }
 
     private sealed class FakeGitService : NoOpGitService;
@@ -286,6 +288,9 @@ public sealed class SupplementalDocsViewSmokeTests
             => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
 
         public Task<Result<CoreUnit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index)
+            => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
+
+        public Task<Result<CoreUnit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index)
             => Task.FromResult(Result<CoreUnit>.Ok(CoreUnit.Default));
 
         public Task<Result<CoreUnit>> RemoveEntryAsync(string bookTxtPath, string chapterPath)

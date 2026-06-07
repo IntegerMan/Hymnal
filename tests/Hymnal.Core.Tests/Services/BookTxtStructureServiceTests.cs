@@ -418,6 +418,44 @@ public class BookTxtStructureServiceTests
         }
     }
 
+    [Fact]
+    public async Task CreateNewPartAsync_CreatesPartFileAndInsertsIntoBookTxt()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var service = CreateService();
+
+            var result = await service.CreateNewPartAsync(
+                workspace.BookTxtPath,
+                "part-two/part.md",
+                "Part Two",
+                index: 2);
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Equal(new[]
+            {
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-two/part.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+
+            var partPath = Path.Combine(workspace.Root, "part-two", "part.md");
+            Assert.True(File.Exists(partPath));
+            var content = File.ReadAllText(partPath);
+            Assert.Contains("{class: part}", content);
+            Assert.Contains("# Part Two", content);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
     private sealed class ThrowingMetadataStore : IMetadataStore
     {
         public Task WriteTextAtomicAsync(string absolutePath, string content)

@@ -201,6 +201,55 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
         return Result<Unit>.Fail(write.Error!);
     }
 
+    public async Task<Result<Unit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return Result<Unit>.Fail("Part title is required.");
+
+        var document = await LoadDocumentAsync(bookTxtPath).ConfigureAwait(false);
+        if (!document.IsSuccess)
+            return Result<Unit>.Fail(document.Error!);
+
+        var doc = document.Value!;
+        var normalized = NormalizeStructurePath(doc.ManuscriptRoot, partPath, nameof(partPath));
+        if (!normalized.IsSuccess)
+            return Result<Unit>.Fail(normalized.Error!);
+
+        if (FindEntryIndex(doc.Entries, normalized.Value!.RelativePath) >= 0)
+            return Result<Unit>.Fail($"Entry '{normalized.Value.RelativePath}' already exists in '{doc.BookTxtPath}'.");
+
+        if (File.Exists(normalized.Value.AbsolutePath))
+            return Result<Unit>.Fail($"Part file '{normalized.Value.AbsolutePath}' already exists.");
+
+        if (index < 0 || index > doc.Entries.Count)
+            return Result<Unit>.Fail($"Requested insert index {index} is out of range for '{doc.BookTxtPath}'.");
+
+        var content = $"{{class: part}}\n\n# {title.Trim()}\n";
+        try
+        {
+            var directory = Path.GetDirectoryName(normalized.Value.AbsolutePath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+
+            await _metadataStore.WriteTextAtomicAsync(normalized.Value.AbsolutePath, content).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return Result<Unit>.Fail($"Failed to create part file '{normalized.Value.AbsolutePath}': {ex.Message}");
+        }
+
+        var lines = doc.RawLines.ToList();
+        var insertionIndex = index == doc.Entries.Count ? lines.Count : doc.EntryLineIndexes[index];
+        lines.Insert(insertionIndex, normalized.Value.RelativePath);
+
+        var write = await WriteBookTxtAsync(doc.BookTxtPath, lines).ConfigureAwait(false);
+        if (write.IsSuccess)
+            return Result<Unit>.Ok(Unit.Default);
+
+        TryDeleteFile(normalized.Value.AbsolutePath);
+        return Result<Unit>.Fail(write.Error!);
+    }
+
     public async Task<Result<Unit>> RemoveEntryAsync(string bookTxtPath, string chapterPath)
     {
         var document = await LoadDocumentAsync(bookTxtPath).ConfigureAwait(false);
