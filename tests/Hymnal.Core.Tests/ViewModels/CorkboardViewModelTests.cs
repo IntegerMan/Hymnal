@@ -91,7 +91,9 @@ public sealed class CorkboardViewModelTests
 
         AddWorkspaceNode(context, CreateChapter(context, "part-one/chapter-two.md", "Chapter Two"));
 
-        Assert.Equal(3, board.Items.Count);
+        Assert.True(
+            SpinWait.SpinUntil(() => board.Items.Count == 3, TimeSpan.FromSeconds(2)),
+            "Corkboard items did not rebuild after workspace node collection change.");
         Assert.Contains(board.Items, item => item.RelativePath == "part-one/chapter-two.md");
     }
 
@@ -326,6 +328,12 @@ public sealed class CorkboardViewModelTests
         Assert.False(part.IsExpanded);
 
         AddWorkspaceNode(context, CreateChapter(context, "part-one/chapter-two.md", "Chapter Two"));
+
+        Assert.True(
+            SpinWait.SpinUntil(
+                () => board.Items.Any(item => item.RelativePath == "part-one/chapter-two.md"),
+                TimeSpan.FromSeconds(2)),
+            "Corkboard items did not rebuild after workspace node collection change.");
 
         part = Assert.IsType<PartDividerItemViewModel>(board.Items[0]);
         var second = GetChapterCard(board, "part-one/chapter-two.md");

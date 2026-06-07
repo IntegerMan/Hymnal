@@ -17,8 +17,9 @@ public sealed class ResearchViewSmokeTests
         Assert.Contains("Text=\"DOCS\"", axaml);
 
         var mainWindowAxaml = File.ReadAllText(FindRepositoryFile("src/Hymnal/Views/MainWindow.axaml"));
-        Assert.Contains("ResearchView", mainWindowAxaml);
-        Assert.Contains("IsResearchVisible", mainWindowAxaml);
+        Assert.Contains("SecondaryCentreContent", mainWindowAxaml);
+        Assert.Contains("ContentControl", mainWindowAxaml);
+        Assert.Contains("IsEditorVisible", mainWindowAxaml);
     }
 
     private static string FindRepositoryFile(string relativePath)

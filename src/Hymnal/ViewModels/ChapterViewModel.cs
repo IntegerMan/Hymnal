@@ -4,6 +4,7 @@ using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
+using Avalonia;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
@@ -27,6 +28,12 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     private readonly IAppSettingsStore _settingsStore;
     private readonly INotificationService _notificationService;
     private readonly string _workspaceRoot;
+
+    /// <summary>Raised when the sidebar should show the shared target flyout for this chapter.</summary>
+    internal event Action<ChapterViewModel>? TargetFlyoutOpenRequested;
+
+    /// <summary>Raised when the shared target flyout should close for this chapter.</summary>
+    internal event Action<ChapterViewModel>? TargetFlyoutCloseRequested;
 
     // ── Public read-only data ─────────────────────────────────────────────────
 
@@ -123,17 +130,29 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     /// <summary>'—' until WordCountKnown; then e.g. '2,130 w'.</summary>
     public string WordCountDisplay => _wordCountDisplay.Value;
 
-    private readonly ObservableAsPropertyHelper<string> _wordCountTooltip;
+    private string _wordCountTooltip = "Word count loading…";
     /// <summary>Full word count tooltip, including target range when set.</summary>
-    public string WordCountTooltip => _wordCountTooltip.Value;
+    public string WordCountTooltip
+    {
+        get => _wordCountTooltip;
+        private set => this.RaiseAndSetIfChanged(ref _wordCountTooltip, value);
+    }
 
-    private readonly ObservableAsPropertyHelper<string> _partTotalDisplay;
+    private string _partTotalDisplay = "0 w";
     /// <summary>Part-total word count in the same display format.</summary>
-    public string PartTotalDisplay => _partTotalDisplay.Value;
+    public string PartTotalDisplay
+    {
+        get => _partTotalDisplay;
+        private set => this.RaiseAndSetIfChanged(ref _partTotalDisplay, value);
+    }
 
-    private readonly ObservableAsPropertyHelper<string> _partTotalTooltip;
+    private string _partTotalTooltip = "0 words in this section";
     /// <summary>Tooltip for the part-total word count.</summary>
-    public string PartTotalTooltip => _partTotalTooltip.Value;
+    public string PartTotalTooltip
+    {
+        get => _partTotalTooltip;
+        private set => this.RaiseAndSetIfChanged(ref _partTotalTooltip, value);
+    }
 
     private readonly ObservableAsPropertyHelper<double> _proximityFill;
     /// <summary>
@@ -148,14 +167,26 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     private readonly ObservableAsPropertyHelper<bool> _canCompletePhase;
     public bool CanCompletePhase => _canCompletePhase.Value;
 
-    private readonly ObservableAsPropertyHelper<string> _currentPhaseStartDisplay;
-    public string CurrentPhaseStartDisplay => _currentPhaseStartDisplay.Value;
+    private string _currentPhaseStartDisplay = "—";
+    public string CurrentPhaseStartDisplay
+    {
+        get => _currentPhaseStartDisplay;
+        private set => this.RaiseAndSetIfChanged(ref _currentPhaseStartDisplay, value);
+    }
 
-    private readonly ObservableAsPropertyHelper<string> _currentPhaseEndDisplay;
-    public string CurrentPhaseEndDisplay => _currentPhaseEndDisplay.Value;
+    private string _currentPhaseEndDisplay = "—";
+    public string CurrentPhaseEndDisplay
+    {
+        get => _currentPhaseEndDisplay;
+        private set => this.RaiseAndSetIfChanged(ref _currentPhaseEndDisplay, value);
+    }
 
-    private readonly ObservableAsPropertyHelper<string> _currentPhaseProgressDisplay;
-    public string CurrentPhaseProgressDisplay => _currentPhaseProgressDisplay.Value;
+    private string _currentPhaseProgressDisplay = "—";
+    public string CurrentPhaseProgressDisplay
+    {
+        get => _currentPhaseProgressDisplay;
+        private set => this.RaiseAndSetIfChanged(ref _currentPhaseProgressDisplay, value);
+    }
 
     // ── Flyout open/close state ───────────────────────────────────────────────
 
@@ -225,40 +256,17 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
             .ToProperty(this, x => x.WordCountDisplay, out _wordCountDisplay);
         Disposables.Add(_wordCountDisplay);
 
-        // ── OAPH: WordCountTooltip ────────────────────────────────────────────
-        _wordCountTooltip = this
-            .WhenAnyValue(x => x.WordCountKnown, x => x.WordCount, x => x.Target,
-                (known, count, target) =>
+        Disposables.Add(
+            this.WhenAnyValue(x => x.WordCountKnown, x => x.WordCount, x => x.Target)
+                .Subscribe(tuple => WordCountTooltip = FormatWordCountTooltip(tuple.Item1, tuple.Item2, tuple.Item3)));
+
+        Disposables.Add(
+            this.WhenAnyValue(x => x.PartTotalWordCount)
+                .Subscribe(total =>
                 {
-                    if (!known) return "Word count loading…";
-                    var sb = new System.Text.StringBuilder($"{count:N0} words");
-                    if (target != null)
-                    {
-                        if (target.MinWords.HasValue && target.MaxWords.HasValue)
-                            sb.Append($"  ·  Target: {target.MinWords:N0} – {target.MaxWords:N0}");
-                        else if (target.MinWords.HasValue)
-                            sb.Append($"  ·  Min: {target.MinWords:N0}");
-                        else if (target.MaxWords.HasValue)
-                            sb.Append($"  ·  Max: {target.MaxWords:N0}");
-                    }
-                    return sb.ToString();
-                })
-            .ToProperty(this, x => x.WordCountTooltip, out _wordCountTooltip);
-        Disposables.Add(_wordCountTooltip);
-
-        // ── OAPH: PartTotalDisplay ────────────────────────────────────────────
-        _partTotalDisplay = this
-            .WhenAnyValue(x => x.PartTotalWordCount)
-            .Select(total => $"{total:N0} w")
-            .ToProperty(this, x => x.PartTotalDisplay, out _partTotalDisplay);
-        Disposables.Add(_partTotalDisplay);
-
-        // ── OAPH: PartTotalTooltip ────────────────────────────────────────────
-        _partTotalTooltip = this
-            .WhenAnyValue(x => x.PartTotalWordCount)
-            .Select(total => $"{total:N0} words in this section")
-            .ToProperty(this, x => x.PartTotalTooltip, out _partTotalTooltip);
-        Disposables.Add(_partTotalTooltip);
+                    PartTotalDisplay = $"{total:N0} w";
+                    PartTotalTooltip = $"{total:N0} words in this section";
+                }));
 
         // ── OAPH: ProximityFill ───────────────────────────────────────────────
         _proximityFill = this
@@ -286,24 +294,14 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
             .ToProperty(this, x => x.CanCompletePhase, out _canCompletePhase);
         Disposables.Add(_canCompletePhase);
 
-        // ── OAPH: Current phase display (for editor bar) ──────────────────────
-        _currentPhaseStartDisplay = this
-            .WhenAnyValue(x => x.Status, x => x.PhaseData)
-            .Select(t => FormatCurrentPhaseDate(t.Item1, t.Item2, seg => seg?.StartDate))
-            .ToProperty(this, x => x.CurrentPhaseStartDisplay, out _currentPhaseStartDisplay);
-        Disposables.Add(_currentPhaseStartDisplay);
-
-        _currentPhaseEndDisplay = this
-            .WhenAnyValue(x => x.Status, x => x.PhaseData)
-            .Select(t => FormatCurrentPhaseDate(t.Item1, t.Item2, seg => seg?.EndDate))
-            .ToProperty(this, x => x.CurrentPhaseEndDisplay, out _currentPhaseEndDisplay);
-        Disposables.Add(_currentPhaseEndDisplay);
-
-        _currentPhaseProgressDisplay = this
-            .WhenAnyValue(x => x.Status, x => x.PhaseData)
-            .Select(t => FormatCurrentPhaseProgress(t.Item1, t.Item2))
-            .ToProperty(this, x => x.CurrentPhaseProgressDisplay, out _currentPhaseProgressDisplay);
-        Disposables.Add(_currentPhaseProgressDisplay);
+        Disposables.Add(
+            this.WhenAnyValue(x => x.Status, x => x.PhaseData)
+                .Subscribe(tuple =>
+                {
+                    CurrentPhaseStartDisplay = FormatCurrentPhaseDate(tuple.Item1, tuple.Item2, seg => seg?.StartDate);
+                    CurrentPhaseEndDisplay = FormatCurrentPhaseDate(tuple.Item1, tuple.Item2, seg => seg?.EndDate);
+                    CurrentPhaseProgressDisplay = FormatCurrentPhaseProgress(tuple.Item1, tuple.Item2);
+                }));
 
         // ── Commands ──────────────────────────────────────────────────────────
 
@@ -327,12 +325,12 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
             ClearTargetCommand.ThrownExceptions
                 .Subscribe(ex => _notificationService.ShowError(ex.Message)));
 
-        OpenTargetFlyoutCommand = ReactiveCommand.Create(() => { IsTargetFlyoutOpen = true; });
+        OpenTargetFlyoutCommand = ReactiveCommand.Create(() => TargetFlyoutOpenRequested?.Invoke(this));
         Disposables.Add(
             OpenTargetFlyoutCommand.ThrownExceptions
                 .Subscribe(ex => _notificationService.ShowError(ex.Message)));
 
-        CancelTargetFlyoutCommand = ReactiveCommand.Create(() => { IsTargetFlyoutOpen = false; });
+        CancelTargetFlyoutCommand = ReactiveCommand.Create(() => TargetFlyoutCloseRequested?.Invoke(this));
         Disposables.Add(
             CancelTargetFlyoutCommand.ThrownExceptions
                 .Subscribe(ex => _notificationService.ShowError(ex.Message)));
@@ -389,18 +387,24 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void ApplyPhaseData(PhaseData phaseData)
     {
-        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+        void Apply()
         {
             Status = phaseData.Status;
             PhaseData = phaseData;
         }
+
+        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+        {
+            Apply();
+        }
+        else if (Application.Current is null)
+        {
+            // Unit tests and other non-Avalonia hosts have no dispatcher loop.
+            Apply();
+        }
         else
         {
-            _ = Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                Status = phaseData.Status;
-                PhaseData = phaseData;
-            });
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(Apply).GetAwaiter().GetResult();
         }
     }
 
@@ -450,13 +454,13 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
             MaxWords = PendingMaxWords
         };
         await SetTargetAsync(newTarget).ConfigureAwait(false);
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => IsTargetFlyoutOpen = false);
+        TargetFlyoutCloseRequested?.Invoke(this);
     }
 
     private async Task ClearTargetAsync()
     {
         await SetTargetAsync(null).ConfigureAwait(false);
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => IsTargetFlyoutOpen = false);
+        TargetFlyoutCloseRequested?.Invoke(this);
     }
 
     /// <summary>Marks the current phase complete and advances status. Callable from other ViewModels.</summary>
@@ -491,6 +495,23 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
 
         if (updated != null)
             ApplyPhaseData(updated);
+    }
+
+    private static string FormatWordCountTooltip(bool known, int count, WordCountTarget? target)
+    {
+        if (!known) return "Word count loading…";
+        var sb = new System.Text.StringBuilder($"{count:N0} words");
+        if (target != null)
+        {
+            if (target.MinWords.HasValue && target.MaxWords.HasValue)
+                sb.Append($"  ·  Target: {target.MinWords:N0} – {target.MaxWords:N0}");
+            else if (target.MinWords.HasValue)
+                sb.Append($"  ·  Min: {target.MinWords:N0}");
+            else if (target.MaxWords.HasValue)
+                sb.Append($"  ·  Max: {target.MaxWords:N0}");
+        }
+
+        return sb.ToString();
     }
 
     private static string FormatCurrentPhaseDate(

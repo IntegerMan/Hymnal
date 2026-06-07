@@ -76,13 +76,25 @@ public class MainWindowViewModel : ViewModelBase
 
             _activeMode = value;
             EditorViewModel.IsResearchSurface = value == ShellMode.Research;
+            CorkboardViewModel.SetViewActive(value == ShellMode.Plan);
+            GanttViewModel.SetViewActive(value == ShellMode.Manage);
             this.RaisePropertyChanged(nameof(ActiveMode));
             this.RaisePropertyChanged(nameof(IsEditorVisible));
             this.RaisePropertyChanged(nameof(IsGanttVisible));
             this.RaisePropertyChanged(nameof(IsCorkboardVisible));
             this.RaisePropertyChanged(nameof(IsResearchVisible));
+            this.RaisePropertyChanged(nameof(SecondaryCentreContent));
         }
     }
+
+    /// <summary>View-model for the active non-Write centre panel (lazy-loaded via ViewLocator).</summary>
+    public object? SecondaryCentreContent => ActiveMode switch
+    {
+        ShellMode.Research => ResearchViewModel,
+        ShellMode.Plan => CorkboardViewModel,
+        ShellMode.Manage => GanttViewModel,
+        _ => null
+    };
 
     /// <summary>True when the writing/editor surface is the active centre-panel view.</summary>
     public bool IsEditorVisible => ActiveMode == ShellMode.Write;
@@ -165,6 +177,9 @@ public class MainWindowViewModel : ViewModelBase
         ResearchViewModel = researchViewModel;
         SupplementalDocsViewModel = supplementalDocsViewModel;
         GitPanelViewModel = gitPanelViewModel;
+
+        CorkboardViewModel.SetViewActive(false);
+        GanttViewModel.SetViewActive(false);
 
         _isAnyLeftPaneOpen = Observable.CombineLatest(
                 workspaceViewModel.WhenAnyValue(x => x.IsChaptersPaneVisible),
@@ -301,7 +316,17 @@ public class MainWindowViewModel : ViewModelBase
                 }));
 
         // Start workspace init (loads last workspace + restores last chapter).
-        _ = workspaceViewModel.InitAsync();
+        _ = InitializeAsync();
+    }
+
+    private async Task InitializeAsync()
+    {
+        await WorkspaceViewModel.InitAsync().ConfigureAwait(false);
+        await NotesViewModel.RestoreSettingsAsync().ConfigureAwait(false);
+        await ChapterInfoViewModel.RestoreSettingsAsync().ConfigureAwait(false);
+        await SupplementalDocsViewModel.RestoreSettingsAsync().ConfigureAwait(false);
+        CorkboardViewModel.SetViewActive(ActiveMode == ShellMode.Plan);
+        GanttViewModel.SetViewActive(ActiveMode == ShellMode.Manage);
     }
 
     private async Task EnterResearchModeAsync()

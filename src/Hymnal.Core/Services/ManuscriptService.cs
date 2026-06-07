@@ -17,7 +17,7 @@ public sealed class ManuscriptService : IDisposable
         _notificationService = notificationService;
     }
 
-    public Task<Result<ManuscriptModel>> LoadWorkspaceAsync(string folderPath)
+    public async Task<Result<ManuscriptModel>> LoadWorkspaceAsync(string folderPath)
     {
         // PRD FR-2: check {workspace}/Book.txt first, then {workspace}/manuscript/Book.txt
         var bookTxtPath = Path.Combine(folderPath, "Book.txt");
@@ -25,13 +25,13 @@ public sealed class ManuscriptService : IDisposable
             bookTxtPath = Path.Combine(folderPath, "manuscript", "Book.txt");
 
         if (!File.Exists(bookTxtPath))
-            return Task.FromResult(Result<ManuscriptModel>.Fail(
-                "Book.txt not found. Expected at the workspace root or in a 'manuscript' subfolder."));
+            return Result<ManuscriptModel>.Fail(
+                "Book.txt not found. Expected at the workspace root or in a 'manuscript' subfolder.");
 
         var manuscriptRoot = Path.GetDirectoryName(bookTxtPath)!;
 
-        var lines = File.ReadAllLines(bookTxtPath);
-        var nodes = BookTxtParser.Parse(manuscriptRoot, lines);
+        var lines = await File.ReadAllLinesAsync(bookTxtPath).ConfigureAwait(false);
+        var nodes = await BookTxtParser.ParseAsync(manuscriptRoot, lines).ConfigureAwait(false);
 
         var model = new ManuscriptModel();
         model.Load(nodes);
@@ -48,7 +48,7 @@ public sealed class ManuscriptService : IDisposable
         _watcher.Changed += OnBookTxtChanged;
         _watcher.Renamed += OnBookTxtChanged;
 
-        return Task.FromResult(Result<ManuscriptModel>.Ok(model));
+        return Result<ManuscriptModel>.Ok(model);
     }
 
     /// <summary>

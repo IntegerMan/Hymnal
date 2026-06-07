@@ -5,6 +5,7 @@ using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Threading;
 using System.Threading.Tasks;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
@@ -25,7 +26,10 @@ public class EditorViewModel : ViewModelBase, IDisposable
     private readonly WordCountService _wordCountService;
 
     private FileSystemWatcher? _watcher;
+    private Timer? _watcherDebounceTimer;
     private bool _disposed;
+    private bool _suppressDirtyTracking;
+    private bool _isDirtyFlag;
 
     // ── Active chapter ──────────────────────────────────────────────────────
 
@@ -49,7 +53,15 @@ public class EditorViewModel : ViewModelBase, IDisposable
     public string Text
     {
         get => _text;
-        set => this.RaiseAndSetIfChanged(ref _text, value);
+        set
+        {
+            if (_text == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _text, value);
+            if (!_suppressDirtyTracking)
+                SetDirtyFlag(true);
+        }
     }
 
     private string _originalText = "";
@@ -61,8 +73,11 @@ public class EditorViewModel : ViewModelBase, IDisposable
 
     // ── Derived state (OAPH) ────────────────────────────────────────────────
 
-    private readonly ObservableAsPropertyHelper<bool> _isDirty;
-    public bool IsDirty => _isDirty.Value;
+    public bool IsDirty
+    {
+        get => _isDirtyFlag;
+        private set => this.RaiseAndSetIfChanged(ref _isDirtyFlag, value);
+    }
 
     private readonly ObservableAsPropertyHelper<bool> _canSave;
     public bool CanSave => _canSave.Value;
@@ -168,9 +183,6 @@ public class EditorViewModel : ViewModelBase, IDisposable
         _notificationService = notificationService;
         _wordCountService = wordCountService;
 
-        _isDirty = this.WhenAnyValue(x => x.Text, x => x.OriginalText, (t, o) => t != o)
-            .ToProperty(this, x => x.IsDirty);
-
         _canSave = this.WhenAnyValue(x => x.IsDirty, x => x.ActiveFilePath, (dirty, path) => dirty && path != null)
             .ToProperty(this, x => x.CanSave);
 
@@ -221,8 +233,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
             try
             {
                 var content = await File.ReadAllTextAsync(ActiveFilePath);
-                Text = content;
-                OriginalText = content;
+                SetBufferContent(content);
                 HasConflict = false;
                 ConflictMessage = null;
             }
@@ -239,7 +250,6 @@ public class EditorViewModel : ViewModelBase, IDisposable
         });
 
         // Register OAPHs for disposal so they unsubscribe cleanly.
-        Disposables.Add(_isDirty);
         Disposables.Add(_canSave);
 
         // Live word count: debounced 300 ms on the thread-pool, result marshalled to UI thread.
@@ -254,6 +264,29 @@ public class EditorViewModel : ViewModelBase, IDisposable
         Disposables.Add(Disposable.Create(StopWatcher));
     }
 
+    private void SetBufferContent(string content)
+    {
+        _suppressDirtyTracking = true;
+        try
+        {
+            Text = content;
+            OriginalText = content;
+            SetDirtyFlag(false);
+        }
+        finally
+        {
+            _suppressDirtyTracking = false;
+        }
+    }
+
+    private void SetDirtyFlag(bool dirty)
+    {
+        if (_isDirtyFlag == dirty)
+            return;
+
+        IsDirty = dirty;
+    }
+
     // ── Chapter lifecycle ────────────────────────────────────────────────────
 
     /// <summary>
@@ -265,8 +298,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
         StopWatcher();
 
         var content = await File.ReadAllTextAsync(absolutePath);
-        Text = content;
-        OriginalText = content;
+        SetBufferContent(content);
         ActiveNode = node;
         ActiveFilePath = absolutePath;
         HasConflict = false;
@@ -287,8 +319,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
         StopWatcher();
 
         var content = await File.ReadAllTextAsync(absolutePath);
-        Text = content;
-        OriginalText = content;
+        SetBufferContent(content);
         ActiveNode = null;
         ActiveFilePath = absolutePath;
         HasConflict = false;
@@ -320,8 +351,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
         ConflictMessage = null;
         ActiveNode = node;
         ActiveFilePath = null;
-        Text = string.Empty;
-        OriginalText = string.Empty;
+        SetBufferContent(string.Empty);
         ShowMissingChapterPrompt = true;
         IsBookSelected = false;
     }
@@ -344,22 +374,19 @@ public class EditorViewModel : ViewModelBase, IDisposable
             try
             {
                 var content = await File.ReadAllTextAsync(bookTxtPath);
-                Text = content;
-                OriginalText = content;
+                SetBufferContent(content);
                 ActiveFilePath = bookTxtPath;
             }
             catch (Exception ex)
             {
                 _notificationService.ShowError($"Could not read Book.txt: {ex.Message}");
-                Text = string.Empty;
-                OriginalText = string.Empty;
+                SetBufferContent(string.Empty);
                 ActiveFilePath = null;
             }
         }
         else
         {
-            Text = string.Empty;
-            OriginalText = string.Empty;
+            SetBufferContent(string.Empty);
             ActiveFilePath = null;
         }
 
@@ -385,7 +412,17 @@ public class EditorViewModel : ViewModelBase, IDisposable
         try
         {
             await _metadataStore.WriteTextAtomicAsync(savePath!, Text);
-            OriginalText = Text;
+            _suppressDirtyTracking = true;
+            try
+            {
+                OriginalText = Text;
+                SetDirtyFlag(false);
+            }
+            finally
+            {
+                _suppressDirtyTracking = false;
+            }
+
             _savedSubject.OnNext(Unit.Default);
             HasConflict = false;
             ConflictMessage = null;
@@ -420,18 +457,29 @@ public class EditorViewModel : ViewModelBase, IDisposable
         _watcher = watcher;
     }
 
-    private async void OnFileChanged(object sender, FileSystemEventArgs e)
+    private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
-        // Small delay so the writing process has time to finish the file.
-        await Task.Delay(150);
+        if (_watcher == null || ActiveFilePath == null)
+            return;
 
-        // Guard: watcher may have been stopped during the delay (navigation away).
-        if (_watcher == null || ActiveFilePath == null) return;
+        _watcherDebounceTimer?.Dispose();
+        _watcherDebounceTimer = new Timer(
+            _ => _ = ProcessExternalFileChangeAsync(),
+            null,
+            150,
+            Timeout.Infinite);
+    }
 
-        string? content = null;
+    private async Task ProcessExternalFileChangeAsync()
+    {
+        var path = ActiveFilePath;
+        if (_watcher == null || path == null)
+            return;
+
+        string? content;
         try
         {
-            content = await File.ReadAllTextAsync(ActiveFilePath);
+            content = await File.ReadAllTextAsync(path).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -440,7 +488,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ApplyExternalFileChange(content!));
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ApplyExternalFileChange(content));
     }
 
     private void ApplyExternalFileChange(string content)
@@ -451,8 +499,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
         if (IsBookSelected)
         {
             // Book.txt: always silently reload, never prompt, never notify.
-            Text = content;
-            OriginalText = content;
+            SetBufferContent(content);
             HasConflict = false;
             ConflictMessage = null;
             return;
@@ -460,8 +507,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
 
         if (!IsDirty)
         {
-            Text = content;
-            OriginalText = content;
+            SetBufferContent(content);
             _notificationService.ShowInfo(
                 $"'{Path.GetFileName(ActiveFilePath)}' was changed externally and reloaded.");
         }
@@ -476,6 +522,9 @@ public class EditorViewModel : ViewModelBase, IDisposable
 
     private void StopWatcher()
     {
+        _watcherDebounceTimer?.Dispose();
+        _watcherDebounceTimer = null;
+
         if (_watcher == null) return;
         _watcher.EnableRaisingEvents = false;
         _watcher.Changed -= OnFileChanged;
@@ -493,8 +542,7 @@ public class EditorViewModel : ViewModelBase, IDisposable
         ConflictMessage = null;
         ActiveNode = null;
         ActiveFilePath = null;
-        Text = string.Empty;
-        OriginalText = string.Empty;
+        SetBufferContent(string.Empty);
         ShowMissingChapterPrompt = false;
         IsBookSelected = false;
     }

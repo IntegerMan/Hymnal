@@ -25,6 +25,7 @@ public sealed class AppSettingsStoreTests : IDisposable
     public async Task RoundTrip_StringValue()
     {
         await _store.SetAsync("workspace", "/home/user/book");
+        await _store.FlushPendingAsync();
         var result = await _store.GetAsync<string>("workspace");
         Assert.Equal("/home/user/book", result);
     }
@@ -41,6 +42,7 @@ public sealed class AppSettingsStoreTests : IDisposable
     {
         Assert.False(Directory.Exists(_tempDir));
         await _store.SetAsync("key", "value");
+        await _store.FlushPendingAsync();
         Assert.True(File.Exists(_settingsPath));
     }
 }

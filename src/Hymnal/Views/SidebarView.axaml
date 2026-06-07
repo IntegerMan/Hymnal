@@ -214,63 +214,6 @@
                                     </ToolTip.Tip>
                                 </TextBlock>
 
-                                <!-- Set Target popup (Popup.IsOpen is publicly settable; TwoWay binding works) -->
-                                <Popup IsOpen="{Binding IsTargetFlyoutOpen, Mode=TwoWay}"
-                                       IsLightDismissEnabled="True"
-                                       Placement="Pointer">
-                                    <Border Background="{DynamicResource SurfaceElevatedBrush}"
-                                            BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="6"
-                                            Padding="12">
-                                        <StackPanel Spacing="8" MinWidth="210">
-                                            <TextBlock Text="Set word count target"
-                                                       Foreground="{DynamicResource OnSurfaceBrush}"
-                                                       FontSize="13"
-                                                       FontWeight="SemiBold" />
-                                            <!-- Min words row -->
-                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                <TextBlock Text="Min words"
-                                                           Width="72"
-                                                           Foreground="{DynamicResource OnSurfaceDimBrush}"
-                                                           FontSize="12"
-                                                           VerticalAlignment="Center" />
-                                                <TextBox Text="{Binding PendingMinWords, Converter={StaticResource NullableIntToStringConverter}, Mode=TwoWay}"
-                                                         Width="90"
-                                                         Padding="6,3"
-                                                         FontSize="12" />
-                                            </StackPanel>
-                                            <!-- Max words row -->
-                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                <TextBlock Text="Max words"
-                                                           Width="72"
-                                                           Foreground="{DynamicResource OnSurfaceDimBrush}"
-                                                           FontSize="12"
-                                                           VerticalAlignment="Center" />
-                                                <TextBox Text="{Binding PendingMaxWords, Converter={StaticResource NullableIntToStringConverter}, Mode=TwoWay}"
-                                                         Width="90"
-                                                         Padding="6,3"
-                                                         FontSize="12" />
-                                            </StackPanel>
-                                            <!-- Action buttons -->
-                                            <StackPanel Orientation="Horizontal"
-                                                        Spacing="6"
-                                                        HorizontalAlignment="Right">
-                                                <Button Content="Set"
-                                                        Command="{Binding ConfirmTargetCommand}"
-                                                        Background="{DynamicResource SynthwavePurpleBrush}"
-                                                        Foreground="{DynamicResource OnSurfaceBrush}"
-                                                        Padding="10,4" />
-                                                <Button Content="Clear"
-                                                        Command="{Binding ClearTargetCommand}"
-                                                        Padding="10,4" />
-                                                <Button Content="Cancel"
-                                                        Command="{Binding CancelTargetFlyoutCommand}"
-                                                        Padding="10,4" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                </Popup>
                             </StackPanel>
 
                             <!-- Status button [Col 2] -->
@@ -369,6 +312,62 @@
                 </ListBox.ItemTemplate>
             </ListBox>
         </DockPanel>
+
+        <!-- Shared target flyout — one Popup for the entire sidebar instead of one per row -->
+        <Popup IsOpen="{Binding TargetFlyoutChapter.IsTargetFlyoutOpen, Mode=TwoWay}"
+               IsLightDismissEnabled="True"
+               Placement="Pointer">
+            <Border DataContext="{Binding TargetFlyoutChapter}"
+                    Background="{DynamicResource SurfaceElevatedBrush}"
+                    BorderBrush="{DynamicResource BorderDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="12">
+                <StackPanel Spacing="8" MinWidth="210">
+                    <TextBlock Text="Set word count target"
+                               Foreground="{DynamicResource OnSurfaceBrush}"
+                               FontSize="13"
+                               FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="Min words"
+                                   Width="72"
+                                   Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center" />
+                        <TextBox Text="{Binding PendingMinWords, Converter={StaticResource NullableIntToStringConverter}, Mode=TwoWay}"
+                                 Width="90"
+                                 Padding="6,3"
+                                 FontSize="12" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="Max words"
+                                   Width="72"
+                                   Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center" />
+                        <TextBox Text="{Binding PendingMaxWords, Converter={StaticResource NullableIntToStringConverter}, Mode=TwoWay}"
+                                 Width="90"
+                                 Padding="6,3"
+                                 FontSize="12" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="6"
+                                HorizontalAlignment="Right">
+                        <Button Content="Set"
+                                Command="{Binding ConfirmTargetCommand}"
+                                Background="{DynamicResource SynthwavePurpleBrush}"
+                                Foreground="{DynamicResource OnSurfaceBrush}"
+                                Padding="10,4" />
+                        <Button Content="Clear"
+                                Command="{Binding ClearTargetCommand}"
+                                Padding="10,4" />
+                        <Button Content="Cancel"
+                                Command="{Binding CancelTargetFlyoutCommand}"
+                                Padding="10,4" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Popup>
 
         <!-- Loading overlay -->
         <Border IsVisible="{Binding IsLoading}"

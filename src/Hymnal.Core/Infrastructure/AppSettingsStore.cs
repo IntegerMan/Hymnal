@@ -4,9 +4,14 @@ using Hymnal.Core.Interfaces;
 
 namespace Hymnal.Core.Infrastructure;
 
-public class AppSettingsStore : IAppSettingsStore
+public class AppSettingsStore : IAppSettingsStore, IDisposable
 {
     private readonly string _settingsPath;
+    private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly Dictionary<string, JsonElement> _cache = new(StringComparer.Ordinal);
+    private bool _cacheLoaded;
+    private Timer? _flushTimer;
+    private bool _dirty;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -28,41 +33,112 @@ public class AppSettingsStore : IAppSettingsStore
 
     public async Task<T?> GetAsync<T>(string key)
     {
-        if (!File.Exists(_settingsPath))
-            return default;
+        await EnsureCacheLoadedAsync().ConfigureAwait(false);
 
-        var json = await File.ReadAllTextAsync(_settingsPath).ConfigureAwait(false);
-        var doc = JsonSerializer.Deserialize<SettingsFile>(json, SerializerOptions);
-        if (doc?.Values == null || !doc.Values.TryGetValue(key, out var element))
-            return default;
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!_cache.TryGetValue(key, out var element))
+                return default;
 
-        return element.Deserialize<T>(SerializerOptions);
+            return element.Deserialize<T>(SerializerOptions);
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task SetAsync<T>(string key, T value)
     {
-        SettingsFile doc;
-        if (File.Exists(_settingsPath))
+        await EnsureCacheLoadedAsync().ConfigureAwait(false);
+
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
         {
-            var existing = await File.ReadAllTextAsync(_settingsPath).ConfigureAwait(false);
-            doc = JsonSerializer.Deserialize<SettingsFile>(existing, SerializerOptions) ?? new SettingsFile();
+            _cache[key] = JsonSerializer.SerializeToElement(value, SerializerOptions);
+            _dirty = true;
+            ScheduleFlush();
         }
-        else
+        finally
         {
-            doc = new SettingsFile();
+            _lock.Release();
         }
+    }
 
-        doc.Values ??= new Dictionary<string, JsonElement>();
-        var serialized = JsonSerializer.SerializeToElement(value, SerializerOptions);
-        doc.Values[key] = serialized;
+    public void Dispose()
+    {
+        _flushTimer?.Dispose();
+        _flushTimer = null;
+        _lock.Dispose();
+    }
 
-        var dir = Path.GetDirectoryName(_settingsPath)!;
-        Directory.CreateDirectory(dir);
+    private async Task EnsureCacheLoadedAsync()
+    {
+        if (_cacheLoaded)
+            return;
 
-        var tempPath = Path.Combine(dir, Path.GetRandomFileName());
-        var jsonOut = JsonSerializer.Serialize(doc, SerializerOptions);
-        await File.WriteAllTextAsync(tempPath, jsonOut).ConfigureAwait(false);
-        File.Move(tempPath, _settingsPath, overwrite: true);
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_cacheLoaded)
+                return;
+
+            _cache.Clear();
+            if (File.Exists(_settingsPath))
+            {
+                var json = await File.ReadAllTextAsync(_settingsPath).ConfigureAwait(false);
+                var doc = JsonSerializer.Deserialize<SettingsFile>(json, SerializerOptions);
+                if (doc?.Values != null)
+                {
+                    foreach (var (key, value) in doc.Values)
+                        _cache[key] = value;
+                }
+            }
+
+            _cacheLoaded = true;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    private void ScheduleFlush()
+    {
+        _flushTimer?.Dispose();
+        _flushTimer = new Timer(
+            _ => _ = FlushAsync(),
+            null,
+            500,
+            Timeout.Infinite);
+    }
+
+    internal Task FlushPendingAsync() => FlushAsync();
+
+    private async Task FlushAsync()
+    {
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!_dirty)
+                return;
+
+            var doc = new SettingsFile { Values = new Dictionary<string, JsonElement>(_cache) };
+
+            var dir = Path.GetDirectoryName(_settingsPath)!;
+            Directory.CreateDirectory(dir);
+
+            var tempPath = Path.Combine(dir, Path.GetRandomFileName());
+            var jsonOut = JsonSerializer.Serialize(doc, SerializerOptions);
+            await File.WriteAllTextAsync(tempPath, jsonOut).ConfigureAwait(false);
+            File.Move(tempPath, _settingsPath, overwrite: true);
+            _dirty = false;
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     private sealed class SettingsFile

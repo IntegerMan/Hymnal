@@ -289,6 +289,68 @@ public sealed class GitPanelViewModelTests : IDisposable
         Assert.Single(_context.Notifications.Errors);
     }
 
+    [Fact]
+    public async Task RefreshAsync_AfterUncommittedChanges_IsFullySyncedNotifiesFalse()
+    {
+        _context.EnableWorkspace();
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 0)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 1)));
+        var vm = _context.CreateGitPanel();
+
+        await vm.RefreshAsync();
+
+        Assert.True(vm.IsFullySynced);
+
+        var notified = false;
+        vm.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(GitPanelViewModel.IsFullySynced))
+                notified = true;
+        };
+
+        await vm.RefreshAsync();
+
+        Assert.True(notified);
+        Assert.False(vm.IsFullySynced);
+        Assert.Equal(1, vm.UncommittedChangeCount);
+        Assert.Equal("Sync", vm.PrimaryActionText);
+    }
+
+    [Fact]
+    public async Task WorkspaceChanged_AfterSimulatedReorder_EnablesSyncWithCorrectCount()
+    {
+        _context.EnableWorkspace();
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 0)));
+        _context.GitService.EnqueueStatus(Result<GitRepositoryStatus>.Ok(GitTestDoubles.VisibleStatus("main", 1)));
+        var vm = _context.CreateGitPanel();
+
+        await vm.RefreshAsync();
+        Assert.True(vm.IsFullySynced);
+        Assert.Equal("Pull", vm.PrimaryActionText);
+
+        RaiseWorkspaceChanged(_context.Workspace);
+
+        Assert.True(SpinWait.SpinUntil(
+            () => vm.UncommittedChangeCount == 1 && vm.CanSync && !vm.IsFullySynced,
+            TimeSpan.FromSeconds(3)));
+
+        Assert.Equal(1, vm.UncommittedChangeCount);
+        Assert.Equal("1 uncommitted change", vm.ChangeSummaryText);
+        Assert.True(vm.CanSync);
+        Assert.False(vm.IsFullySynced);
+        Assert.Equal("Sync", vm.PrimaryActionText);
+        Assert.Equal(2, _context.GitService.StatusCalls);
+    }
+
+    private static void RaiseWorkspaceChanged(WorkspaceViewModel workspace)
+    {
+        var field = typeof(WorkspaceViewModel).GetField("_workspaceChanged", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Workspace change subject not found.");
+
+        var subject = (IObserver<CoreUnit>)field.GetValue(workspace)!;
+        subject.OnNext(CoreUnit.Default);
+    }
+
     private static GitCommandResult ProbeFailure(string stderr)
         => new("git", new[] { "-C", "workspace", "rev-parse", "--is-inside-work-tree" }, "workspace", 128, string.Empty, stderr);
 

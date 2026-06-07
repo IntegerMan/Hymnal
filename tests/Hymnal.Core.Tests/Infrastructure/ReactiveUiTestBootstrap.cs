@@ -1,3 +1,4 @@
+using Avalonia.Headless;
 using ReactiveUI.Builder;
 
 namespace Hymnal.Core.Tests.Infrastructure;
@@ -5,6 +6,7 @@ namespace Hymnal.Core.Tests.Infrastructure;
 public static class ReactiveUiTestBootstrap
 {
     private static readonly object Gate = new();
+    private static HeadlessUnitTestSession? _session;
     private static bool _initialized;
 
     public static void EnsureInitialized()
@@ -17,11 +19,27 @@ public static class ReactiveUiTestBootstrap
             if (_initialized)
                 return;
 
+            _session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApplication));
+
             RxAppBuilder.CreateReactiveUIBuilder()
                 .WithCoreServices()
                 .BuildApp();
 
             _initialized = true;
         }
+    }
+
+    public static void RunOnUiThread(Action action)
+    {
+        EnsureInitialized();
+        _session!.Dispatch(action, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    public static T RunOnUiThread<T>(Func<T> action)
+    {
+        EnsureInitialized();
+        T? result = default;
+        _session!.Dispatch(() => result = action(), CancellationToken.None).GetAwaiter().GetResult();
+        return result!;
     }
 }

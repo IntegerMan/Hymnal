@@ -25,38 +25,41 @@ public sealed class CorkboardViewSmokeTests
     [Fact]
     public void CorkboardView_LoadsXaml_AndTogglesEmptyStateWithDataContext()
     {
-        using var context = new TestContext();
-        var emptyBoard = context.CreateBoard();
-
-        var emptyView = new CorkboardView
+        ReactiveUiTestBootstrap.RunOnUiThread(() =>
         {
-            DataContext = emptyBoard
-        };
+            using var context = new TestContext();
+            var emptyBoard = context.CreateBoard();
 
-        LayoutView(emptyView);
+            var emptyView = new CorkboardView
+            {
+                DataContext = emptyBoard
+            };
 
-        Assert.False(emptyBoard.HasItems);
-        Assert.NotNull(emptyView.FindControl<TextBlock>("EmptyBoardState"));
-        Assert.True(emptyView.FindControl<TextBlock>("EmptyBoardState")!.IsVisible);
-        Assert.False(emptyView.FindControl<ScrollViewer>("BoardScroll")!.IsVisible);
-        Assert.Same(emptyBoard.Items, emptyView.FindControl<ItemsControl>("BoardItems")!.ItemsSource);
+            LayoutView(emptyView);
 
-        var chapter = context.AddChapter("part-one/chapter-one.md", "Chapter One");
-        context.SeedWorkspace(chapter);
+            Assert.False(emptyBoard.HasItems);
+            Assert.NotNull(emptyView.FindControl<TextBlock>("EmptyBoardState"));
+            Assert.True(emptyView.FindControl<TextBlock>("EmptyBoardState")!.IsVisible);
+            Assert.False(emptyView.FindControl<ListBox>("BoardItems")!.IsVisible);
+            Assert.Same(emptyBoard.Items, emptyView.FindControl<ListBox>("BoardItems")!.ItemsSource);
 
-        var populatedBoard = context.CreateBoard();
-        var populatedView = new CorkboardView
-        {
-            DataContext = populatedBoard
-        };
+            var chapter = context.AddChapter("part-one/chapter-one.md", "Chapter One");
+            context.SeedWorkspace(chapter);
 
-        LayoutView(populatedView);
+            var populatedBoard = context.CreateBoard();
+            var populatedView = new CorkboardView
+            {
+                DataContext = populatedBoard
+            };
 
-        Assert.True(populatedBoard.HasItems);
-        Assert.False(populatedView.FindControl<TextBlock>("EmptyBoardState")!.IsVisible);
-        Assert.True(populatedView.FindControl<ScrollViewer>("BoardScroll")!.IsVisible);
-        Assert.Same(populatedBoard.Items, populatedView.FindControl<ItemsControl>("BoardItems")!.ItemsSource);
-        Assert.Equal(CardDisplaySize.Large, populatedBoard.CardDisplaySize);
+            LayoutView(populatedView);
+
+            Assert.True(populatedBoard.HasItems);
+            Assert.False(populatedView.FindControl<TextBlock>("EmptyBoardState")!.IsVisible);
+            Assert.True(populatedView.FindControl<ListBox>("BoardItems")!.IsVisible);
+            Assert.Same(populatedBoard.Items, populatedView.FindControl<ListBox>("BoardItems")!.ItemsSource);
+            Assert.Equal(CardDisplaySize.Large, populatedBoard.CardDisplaySize);
+        });
     }
 
     // Manual smoke checklist for UI interaction coverage that is brittle to automate:

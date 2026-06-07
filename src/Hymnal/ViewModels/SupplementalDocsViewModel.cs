@@ -78,17 +78,7 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
         _settingsStore = settingsStore;
         _filePicker = filePicker;
 
-        try
-        {
-            var stored = settingsStore.GetAsync<bool?>("docsPaneVisible").GetAwaiter().GetResult();
-            if (stored == null)
-                stored = settingsStore.GetAsync<bool?>("sidebarExpanded").GetAwaiter().GetResult();
-            _isVisible = stored ?? true;
-        }
-        catch
-        {
-            _isVisible = true;
-        }
+        _isVisible = true;
 
         Nodes = new ReadOnlyObservableCollection<SupplementalDocNode>(_nodes);
 
@@ -270,6 +260,24 @@ public sealed class SupplementalDocsViewModel : ViewModelBase
         catch
         {
             // Non-fatal; layout preference may not persist across sessions if storage fails.
+        }
+    }
+
+    public async Task RestoreSettingsAsync()
+    {
+        try
+        {
+            var stored = await _settingsStore.GetAsync<bool?>("docsPaneVisible").ConfigureAwait(false);
+            if (stored == null)
+                stored = await _settingsStore.GetAsync<bool?>("sidebarExpanded").ConfigureAwait(false);
+
+            _isVisible = stored ?? true;
+            this.RaisePropertyChanged(nameof(IsVisible));
+        }
+        catch
+        {
+            _isVisible = true;
+            this.RaisePropertyChanged(nameof(IsVisible));
         }
     }
 }

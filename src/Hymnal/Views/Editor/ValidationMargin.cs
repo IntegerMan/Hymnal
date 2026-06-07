@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Avalonia;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
@@ -54,6 +55,34 @@ internal sealed class ValidationMargin : IBackgroundRenderer
 
     // ── Advisory state ───────────────────────────────────────────────────────
     private readonly HashSet<int> _advisoryLines = new();
+    private Timer? _refreshTimer;
+    private IDocument? _pendingDocument;
+    private TextView? _pendingTextView;
+
+    /// <summary>
+    /// Schedules a debounced document scan so rapid keystrokes coalesce into one refresh.
+    /// </summary>
+    public void ScheduleRefresh(IDocument? document, TextView? textView)
+    {
+        _pendingDocument = document;
+        _pendingTextView = textView;
+
+        _refreshTimer?.Dispose();
+        _refreshTimer = new Timer(
+            _ => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                Refresh(_pendingDocument, _pendingTextView);
+            }),
+            null,
+            150,
+            Timeout.Infinite);
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+        _refreshTimer = null;
+    }
 
     // ── IBackgroundRenderer ──────────────────────────────────────────────────
 

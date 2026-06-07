@@ -110,6 +110,7 @@ public partial class EditorView : UserControl
         {
             try { PART_Editor.TextArea.TextView.BackgroundRenderers.Remove(_validationMargin); }
             catch { /* swallow */ }
+            _validationMargin.Dispose();
             _validationMargin = null;
         }
 
@@ -149,10 +150,10 @@ public partial class EditorView : UserControl
         if (DataContext is EditorViewModel vm)
             vm.Text = PART_Editor.Text;
 
-        // Refresh advisory gutter on every text change.
+        // Refresh advisory gutter on every text change (debounced).
         if (_validationMargin != null)
         {
-            try { _validationMargin.Refresh(PART_Editor.Document, PART_Editor.TextArea.TextView); }
+            try { _validationMargin.ScheduleRefresh(PART_Editor.Document, PART_Editor.TextArea.TextView); }
             catch { /* swallow — advisory only */ }
         }
     }

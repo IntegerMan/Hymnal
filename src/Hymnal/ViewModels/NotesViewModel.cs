@@ -86,7 +86,7 @@ public class NotesViewModel : ViewModelBase, IDisposable
 
         try
         {
-            _isVisible = _settingsStore.GetAsync<bool?>("notesVisible").GetAwaiter().GetResult() ?? false;
+            _isVisible = false;
         }
         catch
         {
@@ -124,6 +124,20 @@ public class NotesViewModel : ViewModelBase, IDisposable
             _saveSubject
                 .Throttle(TimeSpan.FromMilliseconds(1500), TaskPoolScheduler.Default)
                 .Subscribe(text => _ = FlushSaveAsync(text)));
+    }
+
+    public async Task RestoreSettingsAsync()
+    {
+        try
+        {
+            _isVisible = await _settingsStore.GetAsync<bool?>("notesVisible").ConfigureAwait(false) ?? false;
+            this.RaisePropertyChanged(nameof(IsVisible));
+        }
+        catch
+        {
+            _isVisible = false;
+            this.RaisePropertyChanged(nameof(IsVisible));
+        }
     }
 
     // ── Chapter transition handler ────────────────────────────────────────────

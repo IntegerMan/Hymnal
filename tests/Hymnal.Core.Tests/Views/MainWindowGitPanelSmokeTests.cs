@@ -21,9 +21,11 @@ public sealed class MainWindowGitPanelSmokeTests
         Assert.Contains("GitPanelViewModel.IsVisible", mainWindowAxaml);
         Assert.Contains("GitPanelViewModel.ChangeSummaryText", mainWindowAxaml);
         Assert.Contains("GitPanelViewModel.CanSync", mainWindowAxaml);
-        Assert.Contains("GitPanelViewModel.IsFullySynced", mainWindowAxaml);
         Assert.Contains("GitPanelViewModel.PrimaryActionText", mainWindowAxaml);
+        Assert.Contains("HorizontalAlignment=\"Right\"", mainWindowAxaml);
         Assert.Contains("Click=\"SyncButton_Click\"", mainWindowAxaml);
+        Assert.Contains("RowDefinitions=\"48,Auto,*,Auto\"", mainWindowAxaml);
+        Assert.Contains("BoolNotConverter", mainWindowAxaml);
 
         var mainWindowCodeBehind = File.ReadAllText(FindRepositoryFile("src/Hymnal/Views/MainWindow.axaml.cs"));
         Assert.Contains("ExecuteGitSyncActionAsync", mainWindowCodeBehind);

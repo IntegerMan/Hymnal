@@ -40,6 +40,7 @@ public class WorkspaceViewModel : ViewModelBase
 
     public IObservable<Unit> WorkspaceChanged => _workspaceChanged.AsObservable();
     private readonly ObservableCollectionExtended<ChapterViewModel> _nodes = new();
+    private readonly Dictionary<string, ChapterViewModel> _nodesByPath = new(StringComparer.OrdinalIgnoreCase);
     public ReadOnlyObservableCollection<ChapterViewModel> Nodes { get; }
 
     private bool _isLoading;
@@ -101,7 +102,15 @@ public class WorkspaceViewModel : ViewModelBase
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SelectBookCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> ToggleChaptersPaneCommand { get; }
 
-    private bool _isChaptersPaneVisible;
+    private ChapterViewModel? _targetFlyoutChapter;
+    /// <summary>Chapter whose shared target flyout is open in the sidebar.</summary>
+    public ChapterViewModel? TargetFlyoutChapter
+    {
+        get => _targetFlyoutChapter;
+        private set => this.RaiseAndSetIfChanged(ref _targetFlyoutChapter, value);
+    }
+
+    private bool _isChaptersPaneVisible = true;
     /// <summary>True when the CHAPTERS list content area is expanded in the left sidebar.</summary>
     public bool IsChaptersPaneVisible
     {
@@ -141,18 +150,6 @@ public class WorkspaceViewModel : ViewModelBase
         _editor.HasWorkspace = false;
 
         Nodes = new ReadOnlyObservableCollection<ChapterViewModel>(_nodes);
-
-        try
-        {
-            var stored = _settingsStore.GetAsync<bool?>("chaptersPaneVisible").GetAwaiter().GetResult();
-            if (stored == null)
-                stored = _settingsStore.GetAsync<bool?>("sidebarExpanded").GetAwaiter().GetResult();
-            _isChaptersPaneVisible = stored ?? true;
-        }
-        catch
-        {
-            _isChaptersPaneVisible = true;
-        }
 
         ToggleChaptersPaneCommand = ReactiveCommand.Create(
             () => { IsChaptersPaneVisible = !IsChaptersPaneVisible; },
@@ -198,14 +195,13 @@ public class WorkspaceViewModel : ViewModelBase
         // and refresh sidebar title if the heading line changed.
         // Fires on the UI thread (Subject.OnNext is called from SaveAsync).
         Disposables.Add(
-            _editor.Saved.Subscribe(saved =>
+            _editor.Saved.Subscribe(_ =>
             {
                 var activeNode = _editor.ActiveNode;
                 if (activeNode == null || _model == null) return;
 
-                // Lookup by RelativePath so the VM is found even after a title update.
-                var vm = _nodes.FirstOrDefault(v => v.Node.RelativePath == activeNode.RelativePath);
-                if (vm == null) return;
+                if (!_nodesByPath.TryGetValue(activeNode.RelativePath, out var vm))
+                    return;
 
                 var count = _wordCountService.CountWords(_editor.Text);
                 vm.UpdateWordCount(count);
@@ -236,15 +232,10 @@ public class WorkspaceViewModel : ViewModelBase
                             }
                         }, TaskScheduler.Default);
                 }
-            }));
 
-        // When the editor saves Book.txt, reload the workspace so chapter list stays in sync.
-        Disposables.Add(
-            _editor.Saved
-                .Where(_ => _editor.IsBookSelected && _model != null)
-                .Subscribe(_ =>
+                if (_editor.IsBookSelected && _model != null)
                 {
-                    var root = _model!.WorkspaceRoot;
+                    var root = _model.WorkspaceRoot;
                     var bookTxtPath = _model.BookTxtPath;
                     var task = ReloadWorkspaceAsync(root, bookTxtPath);
                     task.ContinueWith(t =>
@@ -253,7 +244,8 @@ public class WorkspaceViewModel : ViewModelBase
                             _notificationService.ShowError(
                                 $"Failed to reload workspace after Book.txt edit: {t.Exception.InnerException?.Message ?? t.Exception.Message}");
                     }, TaskScheduler.Default);
-                }));
+                }
+            }));
     }
 
     // ── Chapter switch ────────────────────────────────────────────────────────
@@ -275,7 +267,8 @@ public class WorkspaceViewModel : ViewModelBase
         }
 
         var previousNode = _editor.ActiveNode != null
-            ? _nodes.FirstOrDefault(vm => vm.Node == _editor.ActiveNode)
+            && _nodesByPath.TryGetValue(_editor.ActiveNode.RelativePath, out var prev)
+            ? prev
             : null;
 
         if (_editor.IsDirty)
@@ -344,32 +337,28 @@ public class WorkspaceViewModel : ViewModelBase
     /// <see cref="Nodes"/> to match, without re-hydrating the registry, phases,
     /// targets, or word counts.
     /// </summary>
-    public virtual Task<Result<Unit>> ReorderNodesAsync()
+    public virtual async Task<Result<Unit>> ReorderNodesAsync()
     {
         if (_model == null)
-            return Task.FromResult(Result<Unit>.Ok(Unit.Default));
+            return Result<Unit>.Ok(Unit.Default);
 
         try
         {
             var bookTxtPath = _model.BookTxtPath;
             if (string.IsNullOrWhiteSpace(bookTxtPath) || !File.Exists(bookTxtPath))
-                return Task.FromResult(Result<Unit>.Fail("Book.txt not found."));
+                return Result<Unit>.Fail("Book.txt not found.");
 
-            var lines = File.ReadAllLines(bookTxtPath);
+            var lines = await File.ReadAllLinesAsync(bookTxtPath).ConfigureAwait(false);
             var newOrder = lines
                 .Select(l => l.Trim())
                 .Where(l => !string.IsNullOrEmpty(l))
                 .Select(l => l.Replace('\\', '/'))
                 .ToList();
 
-            var lookup = new Dictionary<string, ChapterViewModel>(StringComparer.OrdinalIgnoreCase);
-            foreach (var vm in _nodes)
-                lookup[vm.Node.RelativePath] = vm;
-
             var reordered = new List<ChapterViewModel>(newOrder.Count);
             foreach (var path in newOrder)
             {
-                if (lookup.TryGetValue(path, out var vm))
+                if (_nodesByPath.TryGetValue(path, out var vm))
                     reordered.Add(vm);
             }
 
@@ -380,12 +369,13 @@ public class WorkspaceViewModel : ViewModelBase
                     _nodes.Add(vm);
             }
 
+            RebuildNodeLookup();
             _workspaceChanged.OnNext(Unit.Default);
-            return Task.FromResult(Result<Unit>.Ok(Unit.Default));
+            return Result<Unit>.Ok(Unit.Default);
         }
         catch (Exception ex)
         {
-            return Task.FromResult(Result<Unit>.Fail(ex.Message));
+            return Result<Unit>.Fail(ex.Message);
         }
     }
 
@@ -459,6 +449,8 @@ public class WorkspaceViewModel : ViewModelBase
         foreach (var vm in _nodes) vm.Dispose();
         _model = null;
         _nodes.Clear();
+        _nodesByPath.Clear();
+        TargetFlyoutChapter = null;
         _isSwitching = false;
         SelectedNode = null;
         HasWorkspace = false;
@@ -478,6 +470,8 @@ public class WorkspaceViewModel : ViewModelBase
 
     public async Task InitAsync()
     {
+        await RestorePaneSettingsAsync().ConfigureAwait(false);
+
         var lastPath = await _settingsStore.GetAsync<string>("lastWorkspacePath");
         if (lastPath == null) return;
 
@@ -626,24 +620,48 @@ public class WorkspaceViewModel : ViewModelBase
                 })
                 .ToList();
 
-            // Launch background word count for each chapter (independent, failures are silent).
             foreach (var vm in vms)
             {
-                if (vm.Node.Kind != NodeKind.Chapter || vm.Node.IsMissing)
-                    continue;
+                vm.TargetFlyoutOpenRequested += OpenTargetFlyout;
+                vm.TargetFlyoutCloseRequested += CloseTargetFlyout;
+            }
 
-                var localVm = vm;
-                var absPath = Path.Combine(model.ManuscriptRoot, localVm.Node.RelativePath);
+            // Launch background word count for all chapters in one batch.
+            var countTargets = vms
+                .Where(vm => vm.Node.Kind == NodeKind.Chapter && !vm.Node.IsMissing)
+                .Select(vm => (Vm: vm, AbsPath: Path.Combine(model.ManuscriptRoot, vm.Node.RelativePath)))
+                .ToList();
+
+            if (countTargets.Count > 0)
+            {
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        var content = await File.ReadAllTextAsync(absPath).ConfigureAwait(false);
-                        var count = _wordCountService.CountWords(content);
+                        var counts = await Task.WhenAll(countTargets.Select(async target =>
+                        {
+                            try
+                            {
+                                var content = await File.ReadAllTextAsync(target.AbsPath).ConfigureAwait(false);
+                                return (target.Vm, Count: _wordCountService.CountWords(content));
+                            }
+                            catch
+                            {
+                                return (target.Vm, Count: -1);
+                            }
+                        })).ConfigureAwait(false);
+
                         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                         {
-                            if (_workspaceGeneration != generation) return;
-                            localVm.UpdateWordCount(count);
+                            if (_workspaceGeneration != generation)
+                                return;
+
+                            foreach (var (vm, count) in counts)
+                            {
+                                if (count >= 0)
+                                    vm.UpdateWordCount(count);
+                            }
+
                             UpdateTotals();
                         });
                     }
@@ -662,6 +680,7 @@ public class WorkspaceViewModel : ViewModelBase
                 foreach (var old in _nodes) old.Dispose();
                 _nodes.Clear();
                 foreach (var vm in vms) _nodes.Add(vm);
+                RebuildNodeLookup();
                 UpdateTotals();
             });
         }
@@ -679,18 +698,7 @@ public class WorkspaceViewModel : ViewModelBase
     /// </summary>
     private void UpdateTotals()
     {
-        TotalWordCount = _nodes
-            .Where(vm => vm.Node.Kind == NodeKind.Chapter)
-            .Sum(vm => vm.WordCount);
-        RecomputePartTotals();
-    }
-
-    /// <summary>
-    /// Iterates _nodes in display order; for each Part node, accumulates the
-    /// WordCount of the following Chapter nodes until the next Part or end of list.
-    /// </summary>
-    private void RecomputePartTotals()
-    {
+        int total = 0;
         ChapterViewModel? currentPart = null;
         int accumulated = 0;
 
@@ -706,12 +714,58 @@ public class WorkspaceViewModel : ViewModelBase
             }
             else if (vm.Node.Kind == NodeKind.Chapter)
             {
+                total += vm.WordCount;
                 accumulated += vm.WordCount;
             }
         }
 
         if (currentPart != null)
             currentPart.PartTotalWordCount = accumulated;
+
+        TotalWordCount = total;
+    }
+
+    private void RebuildNodeLookup()
+    {
+        _nodesByPath.Clear();
+        foreach (var vm in _nodes)
+            _nodesByPath[vm.Node.RelativePath] = vm;
+    }
+
+    internal void OpenTargetFlyout(ChapterViewModel chapter)
+    {
+        if (TargetFlyoutChapter != null && !ReferenceEquals(TargetFlyoutChapter, chapter))
+            TargetFlyoutChapter.IsTargetFlyoutOpen = false;
+
+        TargetFlyoutChapter = chapter;
+        chapter.IsTargetFlyoutOpen = true;
+    }
+
+    internal void CloseTargetFlyout(ChapterViewModel? chapter = null)
+    {
+        var target = chapter ?? TargetFlyoutChapter;
+        if (target != null)
+            target.IsTargetFlyoutOpen = false;
+
+        if (ReferenceEquals(TargetFlyoutChapter, target))
+            TargetFlyoutChapter = null;
+    }
+
+    public async Task RestorePaneSettingsAsync()
+    {
+        try
+        {
+            var stored = await _settingsStore.GetAsync<bool?>("chaptersPaneVisible").ConfigureAwait(false);
+            if (stored == null)
+                stored = await _settingsStore.GetAsync<bool?>("sidebarExpanded").ConfigureAwait(false);
+
+            _isChaptersPaneVisible = stored ?? true;
+            this.RaisePropertyChanged(nameof(IsChaptersPaneVisible));
+        }
+        catch
+        {
+            IsChaptersPaneVisible = true;
+        }
     }
 
     private static bool RegistryChanged(

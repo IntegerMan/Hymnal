@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading.Tasks;
@@ -140,6 +141,9 @@ public sealed class GanttViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _selectedRow, value);
     }
 
+    private bool _isViewActive = true;
+    private bool _needsRebuild;
+
     public GanttViewModel(
         WorkspaceViewModel workspace,
         PhaseDataService phaseDataService,
@@ -152,7 +156,7 @@ public sealed class GanttViewModel : ViewModelBase
         Rows = new ReadOnlyObservableCollection<GanttRowViewModel>(_rows);
 
         var nodesAsNotify = (INotifyCollectionChanged)workspace.Nodes;
-        NotifyCollectionChangedEventHandler handler = (_, _) => RebuildRows();
+        NotifyCollectionChangedEventHandler handler = (_, _) => RequestRebuild();
         nodesAsNotify.CollectionChanged += handler;
 
         Disposables.Add(Disposable.Create(() => nodesAsNotify.CollectionChanged -= handler));
@@ -181,6 +185,28 @@ public sealed class GanttViewModel : ViewModelBase
             CompleteSelectedRowAsync,
             this.WhenAnyValue(x => x.SelectedRow).Select(r => r?.IsEditable == true));
         Disposables.Add(CompleteSelectedRowCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
+        RebuildRows();
+    }
+
+    /// <summary>Called when Manage mode becomes active or inactive.</summary>
+    public void SetViewActive(bool active)
+    {
+        _isViewActive = active;
+        if (active && _needsRebuild)
+        {
+            _needsRebuild = false;
+            RebuildRows();
+        }
+    }
+
+    private void RequestRebuild()
+    {
+        if (!_isViewActive)
+        {
+            _needsRebuild = true;
+            return;
+        }
 
         RebuildRows();
     }

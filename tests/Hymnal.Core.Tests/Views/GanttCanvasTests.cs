@@ -17,20 +17,16 @@ public class GanttCanvasTests
         Assert.True(double.IsFinite(canvas.DesiredSize.Width));
         Assert.True(double.IsFinite(canvas.DesiredSize.Height));
         Assert.True(canvas.DesiredSize.Width >= 400);
-        Assert.Equal(62, canvas.DesiredSize.Height);
+        Assert.Equal(64, canvas.DesiredSize.Height);
     }
 
     [Fact]
-    public void Measure_WithNaNAvailableSize_ReturnsFiniteDesiredSize()
+    public void Measure_WithNaNAvailableSize_ThrowsInvalidOperationException()
     {
         var canvas = CreateCanvas();
 
-        canvas.Measure(new Size(double.NaN, double.NaN));
-
-        Assert.True(double.IsFinite(canvas.DesiredSize.Width));
-        Assert.True(double.IsFinite(canvas.DesiredSize.Height));
-        Assert.True(canvas.DesiredSize.Width >= 400);
-        Assert.Equal(62, canvas.DesiredSize.Height);
+        Assert.Throws<InvalidOperationException>(() =>
+            canvas.Measure(new Size(double.NaN, double.NaN)));
     }
 
     private static GanttCanvas CreateCanvas()

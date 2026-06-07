@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading.Tasks;
@@ -49,6 +50,8 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     private readonly Subject<ChapterViewModel> _openChapterRequested = new();
     private readonly ObservableCollectionExtended<CorkboardItemViewModel> _items = new();
     private readonly Dictionary<string, bool> _partExpandedState = new(StringComparer.OrdinalIgnoreCase);
+    private bool _isViewActive = true;
+    private bool _needsRebuild;
 
     public ReadOnlyObservableCollection<CorkboardItemViewModel> Items { get; }
 
@@ -107,7 +110,8 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
             Observable.FromEventPattern<NotifyCollectionChangedEventHandler, NotifyCollectionChangedEventArgs>(
                     handler => nodeChanges.CollectionChanged += handler,
                     handler => nodeChanges.CollectionChanged -= handler)
-                .Subscribe(_ => RebuildItems()));
+                .Throttle(TimeSpan.FromMilliseconds(50), TaskPoolScheduler.Default)
+                .Subscribe(_ => RequestRebuild()));
 
         Disposables.Add(_openChapterRequested);
 
@@ -139,6 +143,28 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         RebuildItems();
     }
 
+    /// <summary>Called when Plan mode becomes active or inactive.</summary>
+    public void SetViewActive(bool active)
+    {
+        _isViewActive = active;
+        if (active && _needsRebuild)
+        {
+            _needsRebuild = false;
+            RebuildItems();
+        }
+    }
+
+    private void RequestRebuild()
+    {
+        if (!_isViewActive)
+        {
+            _needsRebuild = true;
+            return;
+        }
+
+        RebuildItems();
+    }
+
     private void TogglePartExpanded(PartDividerItemViewModel part)
     {
         var path = part.RelativePath;
@@ -149,6 +175,13 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
     private void RebuildItems()
     {
+        if (global::Avalonia.Application.Current is not null
+            && !Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+        {
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(RebuildItems).GetAwaiter().GetResult();
+            return;
+        }
+
         var selectedPath = SelectedCard?.RelativePath;
 
         CorkboardItemViewModel.DisposeItems(_items);

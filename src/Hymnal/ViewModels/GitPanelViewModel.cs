@@ -14,6 +14,7 @@ using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 using Unit = System.Reactive.Unit;
 
 namespace Hymnal.ViewModels;
@@ -184,6 +185,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
             _refreshRequests
                 .Throttle(TimeSpan.FromMilliseconds(RefreshDebounceMilliseconds), TaskPoolScheduler.Default)
                 .SelectMany(_ => Observable.FromAsync(RefreshAsync))
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(_ => { }, ex => _notificationService.ShowError($"Failed to refresh Git status: {ex.Message}")));
 
         Disposables.Add(Disposable.Create(() =>
@@ -382,9 +384,9 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         ChangedFiles = status.ChangedFiles;
         ChangedFileTree = GitChangeTreeBuilder.Build(status.ChangedFiles);
         ApplySummaryText(status);
-        CanSync = IsVisible && !HasMergeConflict && !IsBusy;
-        UpdatePrimaryActionText();
         IsVisible = true;
+        UpdatePrimaryActionText();
+        RaiseIsFullySyncedChanged();
 
         if (status.HasMergeConflict)
         {
@@ -609,6 +611,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         LastError = null;
         _conflictNotified = false;
         IsVisible = false;
+        RaiseIsFullySyncedChanged();
     }
 
     private void SetHiddenState(string? lastError)
@@ -626,7 +629,11 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         LastError = lastError;
         _conflictNotified = false;
         IsVisible = false;
+        RaiseIsFullySyncedChanged();
     }
+
+    private void RaiseIsFullySyncedChanged()
+        => this.RaisePropertyChanged(nameof(IsFullySynced));
 
     private static string DescribeProbeFailure(GitCommandResult probeResult, string fallback)
         => !string.IsNullOrWhiteSpace(probeResult.Stderr) ? probeResult.Stderr : fallback;
@@ -657,6 +664,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
             IsBusy = false;
             CanSync = IsVisible && !HasMergeConflict && !IsBusy;
             UpdatePrimaryActionText();
+            RaiseIsFullySyncedChanged();
         }
     }
 

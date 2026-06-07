@@ -53,6 +53,12 @@ public class GanttViewModelTests
         return workspace;
     }
 
+    private static GanttRowViewModel ChapterRow(GanttViewModel gantt, int index = 0) =>
+        gantt.Rows.Where(r => r.IsChapter).ElementAt(index);
+
+    private static GanttRowViewModel PartRow(GanttViewModel gantt, int index = 0) =>
+        gantt.Rows.Where(r => r.IsPart).ElementAt(index);
+
     private static ChapterViewModel CreateChapterViewModel(
         PhaseData? phaseData,
         string title = "Chapter One",
@@ -175,7 +181,7 @@ public class GanttViewModelTests
 
         Assert.NotNull(row.StartDate);
         Assert.Null(row.EndDate);
-        Assert.True(row.IsMissingDates);
+        Assert.False(row.IsMissingDates);
     }
 
     [Fact]
@@ -186,7 +192,7 @@ public class GanttViewModelTests
 
         Assert.Null(row.StartDate);
         Assert.NotNull(row.EndDate);
-        Assert.True(row.IsMissingDates);
+        Assert.False(row.IsMissingDates);
     }
 
     [Fact]
@@ -230,9 +236,10 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(chapter);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        Assert.Single(gantt.Rows);
-        Assert.True(gantt.Rows[0].IsMissingDates);
-        Assert.Equal(chapter.Node.Title, gantt.Rows[0].Title);
+        Assert.Equal(2, gantt.Rows.Count);
+        var row = ChapterRow(gantt);
+        Assert.True(row.IsMissingDates);
+        Assert.Equal(chapter.Node.Title, row.Title);
     }
 
     [Fact]
@@ -243,9 +250,9 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(chapter);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        Assert.Single(gantt.Rows);
-        Assert.True(gantt.Rows[0].IsMissingDates);
-        Assert.Equal(ChapterStatus.Drafting, gantt.Rows[0].Status);
+        var row = ChapterRow(gantt);
+        Assert.True(row.IsMissingDates);
+        Assert.Equal(ChapterStatus.Drafting, row.Status);
 
         chapter.ApplyPhaseData(MakePhase(
             status: ChapterStatus.Reviewing,
@@ -253,10 +260,14 @@ public class GanttViewModelTests
             end: "2024-03-15"));
 
         var updated = SpinWait.SpinUntil(
-            () => gantt.Rows[0].Status == ChapterStatus.Reviewing
-               && gantt.Rows[0].StartDate == new DateOnly(2024, 2, 10)
-               && gantt.Rows[0].EndDate == new DateOnly(2024, 3, 15)
-               && !gantt.Rows[0].IsMissingDates,
+            () =>
+            {
+                row = ChapterRow(gantt);
+                return row.Status == ChapterStatus.Reviewing
+                    && row.StartDate == new DateOnly(2024, 2, 10)
+                    && row.EndDate == new DateOnly(2024, 3, 15)
+                    && !row.IsMissingDates;
+            },
             TimeSpan.FromSeconds(2));
 
         Assert.True(updated, "Gantt rows did not refresh after ChapterViewModel.ApplyPhaseData().");
@@ -288,8 +299,8 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(part, ch1, ch2);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        Assert.Equal(3, gantt.Rows.Count);
-        var partRow = gantt.Rows[0];
+        Assert.Equal(4, gantt.Rows.Count);
+        var partRow = PartRow(gantt);
 
         Assert.True(partRow.IsPart);
         // Start = min(2024-02-01, 2024-01-15) = 2024-01-15
@@ -320,7 +331,7 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(part, ch1, ch2, ch3);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        var partRow = gantt.Rows[0];
+        var partRow = PartRow(gantt);
         Assert.True(partRow.IsPart);
         // 2 out of 3 chapters are Done → ~0.667
         Assert.Equal(2.0 / 3.0, partRow.CompletionPercentage, precision: 10);
@@ -337,7 +348,7 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(part);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        var partRow = gantt.Rows[0];
+        var partRow = PartRow(gantt);
         Assert.True(partRow.IsPart);
         Assert.True(partRow.IsMissingDates);
         Assert.Equal(0.0, partRow.CompletionPercentage);
@@ -361,19 +372,19 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(part1, ch1, ch2, part2, ch3);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        Assert.Equal(5, gantt.Rows.Count);
-        var row1 = gantt.Rows[0]; // Part 1 rollup
-        var row4 = gantt.Rows[3]; // Part 2 rollup
+        Assert.Equal(6, gantt.Rows.Count);
+        var row1 = PartRow(gantt, 0);
+        var row2 = PartRow(gantt, 1);
 
         Assert.True(row1.IsPart);
         // Part 1 spans ch1+ch2 only: 2024-01-01 to 2024-04-30
         Assert.Equal(new DateOnly(2024, 1, 1),  row1.StartDate);
         Assert.Equal(new DateOnly(2024, 4, 30), row1.EndDate);
 
-        Assert.True(row4.IsPart);
+        Assert.True(row2.IsPart);
         // Part 2 spans ch3 only: 2024-06-01 to 2024-12-31
-        Assert.Equal(new DateOnly(2024, 6, 1),   row4.StartDate);
-        Assert.Equal(new DateOnly(2024, 12, 31), row4.EndDate);
+        Assert.Equal(new DateOnly(2024, 6, 1),   row2.StartDate);
+        Assert.Equal(new DateOnly(2024, 12, 31), row2.EndDate);
     }
 
     // ── EditDatesCommand / RowEditRequested ───────────────────────────────────
@@ -390,7 +401,7 @@ public class GanttViewModelTests
         GanttRowViewModel? received = null;
         gantt.RowEditRequested.Subscribe(vm => received = vm);
 
-        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+        ChapterRow(gantt).EditDatesCommand.Execute().Subscribe();
 
         var fired = SpinWait.SpinUntil(() => received != null, TimeSpan.FromSeconds(2));
         Assert.True(fired, "RowEditRequested did not emit after EditDatesCommand.Execute().");
@@ -414,7 +425,7 @@ public class GanttViewModelTests
         gantt.RowEditRequested.Subscribe(_ => editFired = true);
 
         // Execute the Part row's command directly — should NOT propagate to RowEditRequested.
-        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+        PartRow(gantt).EditDatesCommand.Execute().Subscribe();
 
         // Allow 500 ms for any async dispatch; it should still be false.
         Thread.Sleep(500);
@@ -456,7 +467,7 @@ public class GanttViewModelTests
 
         Assert.False(gantt.IsEditingDates);
 
-        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+        ChapterRow(gantt).EditDatesCommand.Execute().Subscribe();
 
         var opened = SpinWait.SpinUntil(() => gantt.IsEditingDates, TimeSpan.FromSeconds(2));
         Assert.True(opened, "IsEditingDates did not become true after EditDatesCommand.");
@@ -473,7 +484,7 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(chapter);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+        ChapterRow(gantt).EditDatesCommand.Execute().Subscribe();
 
         SpinWait.SpinUntil(() => gantt.IsEditingDates, TimeSpan.FromSeconds(2));
 
@@ -492,7 +503,7 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(chapter);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+        ChapterRow(gantt).EditDatesCommand.Execute().Subscribe();
 
         SpinWait.SpinUntil(() => gantt.IsEditingDates, TimeSpan.FromSeconds(2));
 
@@ -509,7 +520,7 @@ public class GanttViewModelTests
         var workspace = CreateWorkspace(chapter);
         var gantt = new GanttViewModel(workspace, new PhaseDataService(Substitute.For<IMetadataStore>()), Substitute.For<INotificationService>());
 
-        gantt.Rows[0].EditDatesCommand.Execute().Subscribe();
+        ChapterRow(gantt).EditDatesCommand.Execute().Subscribe();
         SpinWait.SpinUntil(() => gantt.IsEditingDates, TimeSpan.FromSeconds(2));
         Assert.True(gantt.IsEditingDates);
 

@@ -204,21 +204,28 @@
                        FontSize="12"
                        Foreground="{DynamicResource OnSurfaceMutedBrush}" />
 
-            <ScrollViewer x:Name="BoardScroll"
-                          IsVisible="{Binding HasItems}"
-                          VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled"
-                          Background="#0B0820">
-                <ItemsControl x:Name="BoardItems"
-                              ItemsSource="{Binding Items}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel Margin="16"
-                                       Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                </ItemsControl>
-            </ScrollViewer>
+            <ListBox x:Name="BoardItems"
+                     ItemsSource="{Binding Items}"
+                     IsVisible="{Binding HasItems}"
+                     Background="#0B0820"
+                     BorderThickness="0"
+                     Padding="16,16,16,0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent" />
+                    </Style>
+                    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent" />
+                    </Style>
+                </ListBox.Styles>
+            </ListBox>
         </Grid>
     </Grid>
 

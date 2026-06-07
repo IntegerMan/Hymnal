@@ -201,7 +201,7 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
 
         try
         {
-            _isVisible = _settingsStore.GetAsync<bool?>("chapterInfoVisible").GetAwaiter().GetResult() ?? false;
+            _isVisible = false;
         }
         catch
         {
@@ -265,8 +265,7 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
                 .WhenAnyValue(x => x.ActiveNode)
                 .Subscribe(node => OnActiveNodeChanged(node)));
 
-        // ── Load PrefillPhaseDate preference (default: true) ─────────────────
-        _ = LoadPrefillPreferenceAsync();
+        // Prefill preference restored during RestoreSettingsAsync().
     }
 
     // ── Active-node transition handler ───────────────────────────────────────
@@ -567,6 +566,23 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         if (target.MaxWords.HasValue)
             return $"≤{target.MaxWords:N0} w";
         return "—";
+    }
+
+    public async Task RestoreSettingsAsync()
+    {
+        try
+        {
+            _isVisible = await _settingsStore.GetAsync<bool?>("chapterInfoVisible").ConfigureAwait(false) ?? false;
+            this.RaisePropertyChanged(nameof(IsVisible));
+
+            _prefillPhaseDate = await _settingsStore.GetAsync<bool?>("prefillPhaseDate").ConfigureAwait(false) ?? true;
+            this.RaisePropertyChanged(nameof(PrefillPhaseDate));
+        }
+        catch
+        {
+            _isVisible = false;
+            this.RaisePropertyChanged(nameof(IsVisible));
+        }
     }
 
     // ── IDisposable ───────────────────────────────────────────────────────────
