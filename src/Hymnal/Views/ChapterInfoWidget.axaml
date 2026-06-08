@@ -1,0 +1,210 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:models="using:Hymnal.Core.Models"
+             xmlns:conv="using:Hymnal.Views.Converters"
+             x:Class="Hymnal.Views.ChapterInfoWidget"
+             x:DataType="vm:ChapterDetailViewModel"
+             Background="Transparent">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="14,12,14,16" Spacing="10">
+
+            <!-- Status -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="STATUS"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           LetterSpacing="1.5"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                <ComboBox x:Name="StatusComboBox"
+                          ItemsSource="{x:Static vm:ChapterDetailViewModel.AllStatuses}"
+                          SelectedItem="{Binding Status, Mode=OneWay}"
+                          HorizontalAlignment="Stretch"
+                          Padding="8,6"
+                          Background="{DynamicResource SurfaceBaseBrush}"
+                          Foreground="{DynamicResource OnSurfaceBrush}"
+                          BorderBrush="{DynamicResource BorderSubtleBrush}"
+                          BorderThickness="1">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:ChapterStatus">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Ellipse Width="8" Height="8"
+                                         Fill="{Binding Converter={x:Static conv:StatusToBrushConverter.Instance}}"
+                                         VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding}"
+                                           VerticalAlignment="Center"
+                                           FontSize="12" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Phase schedule -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="PHASE SCHEDULE"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           LetterSpacing="1.5"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+
+                <!-- Column headers -->
+                <Grid ColumnDefinitions="80,*,*,44">
+                    <TextBlock Grid.Column="0" Text="Phase"
+                               FontSize="9" FontWeight="SemiBold" LetterSpacing="1"
+                               Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                    <TextBlock Grid.Column="1" Text="Start"
+                               FontSize="9" FontWeight="SemiBold" LetterSpacing="1"
+                               Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                    <TextBlock Grid.Column="2" Text="End"
+                               FontSize="9" FontWeight="SemiBold" LetterSpacing="1"
+                               Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                    <TextBlock Grid.Column="3" Text="%"
+                               FontSize="9" FontWeight="SemiBold" LetterSpacing="1"
+                               Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                               HorizontalAlignment="Center" />
+                </Grid>
+
+                <!-- One row per phase -->
+                <ItemsControl x:Name="PhaseScheduleTable" ItemsSource="{Binding PhaseScheduleRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PhaseScheduleRowViewModel">
+                            <Grid ColumnDefinitions="80,*,*,44"
+                                  Margin="0,2,0,0">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding PhaseName}"
+                                           FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding StartDate, Mode=TwoWay}"
+                                         PlaceholderText="YYYY-MM-DD"
+                                         Background="{DynamicResource SurfaceBaseBrush}"
+                                         Foreground="{DynamicResource OnSurfaceBrush}"
+                                         BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                         BorderThickness="1"
+                                         FontSize="11"
+                                         Padding="4,4"
+                                         Margin="0,0,4,0" />
+                                <TextBox Grid.Column="2"
+                                         Text="{Binding EndDate, Mode=TwoWay}"
+                                         PlaceholderText="YYYY-MM-DD"
+                                         Background="{DynamicResource SurfaceBaseBrush}"
+                                         Foreground="{DynamicResource OnSurfaceBrush}"
+                                         BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                         BorderThickness="1"
+                                         FontSize="11"
+                                         Padding="4,4"
+                                         Margin="0,0,4,0" />
+                                <TextBox Grid.Column="3"
+                                         Text="{Binding Progress, Mode=TwoWay,
+                                                        Converter={x:Static conv:NullableDoubleToStringConverter.Instance}}"
+                                         PlaceholderText="—"
+                                         Background="{DynamicResource SurfaceBaseBrush}"
+                                         Foreground="{DynamicResource OnSurfaceBrush}"
+                                         BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                         BorderThickness="1"
+                                         FontSize="11"
+                                         Padding="4,4"
+                                         TextAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Auto-saved indicator -->
+                <TextBlock Text="✓ Saved"
+                           FontSize="10"
+                           HorizontalAlignment="Right"
+                           Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                           IsVisible="{Binding ScheduleSavedRecently}"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+
+            <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
+
+            <!-- Word Count -->
+            <StackPanel Spacing="2">
+                <TextBlock Text="WORDS"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           LetterSpacing="1.5"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                <TextBlock Text="{Binding WordCountDisplay}"
+                           FontSize="13"
+                           FontWeight="Medium"
+                           Foreground="{DynamicResource OnSurfaceBrush}" />
+            </StackPanel>
+
+            <!-- Proximity bar (visible only when target is set) -->
+            <ProgressBar Value="{Binding ProximityFill}"
+                         Minimum="0"
+                         Maximum="1"
+                         IsVisible="{Binding HasTarget}"
+                         Height="4"
+                         CornerRadius="2"
+                         Foreground="{DynamicResource SynthwavePurpleBrush}"
+                         Background="{DynamicResource SurfaceHighBrush}" />
+
+            <!-- Target -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="TARGET"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           LetterSpacing="1.5"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                <TextBlock Text="{Binding TargetDisplay}"
+                           IsVisible="{Binding HasTarget}"
+                           FontSize="12"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                <TextBox Text="{Binding PendingTarget, Mode=TwoWay,
+                                        Converter={x:Static conv:NullableIntToStringConverter.Instance}}"
+                         PlaceholderText="e.g. 5000"
+                         Background="{DynamicResource SurfaceBaseBrush}"
+                         Foreground="{DynamicResource OnSurfaceBrush}"
+                         BorderBrush="{DynamicResource BorderSubtleBrush}"
+                         BorderThickness="1"
+                         FontSize="12"
+                         Padding="8,6" />
+                <Grid ColumnDefinitions="*,8,*">
+                    <Button Grid.Column="0"
+                            Content="Set Target"
+                            Command="{Binding SetTargetCommand}"
+                            CommandParameter="{Binding PendingTarget}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Background="{DynamicResource SurfaceHighBrush}"
+                            Foreground="{DynamicResource SynthwavePurpleBrush}"
+                            BorderThickness="0"
+                            CornerRadius="4"
+                            Padding="8,6"
+                            FontSize="12" />
+                    <Button Grid.Column="2"
+                            Content="Clear"
+                            Command="{Binding SetTargetCommand}"
+                            CommandParameter="{x:Null}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Background="{DynamicResource SurfaceHighBrush}"
+                            Foreground="{DynamicResource OnSurfaceDimBrush}"
+                            BorderThickness="0"
+                            CornerRadius="4"
+                            Padding="8,6"
+                            FontSize="12" />
+                </Grid>
+            </StackPanel>
+
+            <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
+
+            <!-- Pre-fill toggle -->
+            <CheckBox Content="Auto-fill today on status change"
+                      IsChecked="{Binding PrefillPhaseDate, Mode=TwoWay}"
+                      FontSize="12"
+                      Foreground="{DynamicResource OnSurfaceDimBrush}" />
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

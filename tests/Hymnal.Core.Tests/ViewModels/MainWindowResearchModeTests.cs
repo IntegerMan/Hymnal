@@ -256,7 +256,8 @@ public sealed class MainWindowResearchModeTests
                 new ResearchViewModel(Workspace, docs, EditorViewModel),
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
-                NotificationService);
+                NotificationService,
+                SettingsStore);
         }
 
         private void SetWorkspaceModel(bool hasWorkspace)

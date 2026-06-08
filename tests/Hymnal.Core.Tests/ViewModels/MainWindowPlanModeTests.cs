@@ -217,7 +217,8 @@ public sealed class MainWindowPlanModeTests
                 new ResearchViewModel(Workspace, docs, EditorViewModel),
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
-                NotificationService);
+                NotificationService,
+                SettingsStore);
         }
 
         public CorkboardViewModel CreateCorkboard()

@@ -156,7 +156,8 @@ public sealed class MainWindowGitPanelTests : IDisposable
                 new ResearchViewModel(Workspace, supplementalDocs, Editor),
                 supplementalDocs,
                 gitPanel,
-                Notifications);
+                Notifications,
+                SettingsStore);
         }
 
         public void EnableWorkspace()

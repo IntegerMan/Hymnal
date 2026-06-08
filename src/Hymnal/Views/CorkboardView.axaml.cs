@@ -370,7 +370,7 @@ public partial class CorkboardView : UserControl
         switch (action)
         {
             case "chapter":
-                vm.BeginInlineCreate(vm.GetBookInsertIndex(), part: null);
+                vm.BeginInlineCreate(vm.GetBookChapterInsertIndex(), part: null);
                 break;
             case "chapter-advanced":
                 await CreateBoardChapterAsync(vm, part: null);
@@ -457,7 +457,7 @@ public partial class CorkboardView : UserControl
         var content = $"# {title}\n\n";
 
         var index = part == null
-            ? vm.GetBookInsertIndex()
+            ? vm.GetBookChapterInsertIndex()
             : vm.GetInsertIndexAfterPart(part.RelativePath);
 
         await ExecuteCommandAsync(vm.CreateChapterCommand.Execute(
@@ -495,7 +495,7 @@ public partial class CorkboardView : UserControl
         else
         {
             await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(
-                new IncludeExistingChapterRequest(relativePath, vm.GetBookInsertIndex())));
+                new IncludeExistingChapterRequest(relativePath, vm.GetBookChapterInsertIndex())));
         }
     }
 
@@ -512,7 +512,7 @@ public partial class CorkboardView : UserControl
         }
 
         await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(
-            new IncludeExistingChapterRequest(excluded.RelativePath, vm.GetBookInsertIndex())));
+            new IncludeExistingChapterRequest(excluded.RelativePath, vm.GetBookChapterInsertIndex())));
     }
 
     private static bool TryGetExcludedCardFromMenu(object? sender, out ExcludedChapterCardItemViewModel excluded)

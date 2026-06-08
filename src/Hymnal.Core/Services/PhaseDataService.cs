@@ -14,6 +14,15 @@ public sealed class PhaseDataService
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
+    /// <summary>
+    /// In-process mutex that serialises concurrent <see cref="UpsertAsync"/> /
+    /// <see cref="SaveAsync"/> calls so that only one operation holds the file lock at a time.
+    /// Without this, multiple rapid saves (e.g. CalendarDatePicker binding initialisation firing
+    /// SelectedDateChanged for several rows simultaneously) would throw IOException because the
+    /// OS-level file lock is not re-entrant.
+    /// </summary>
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     private readonly IMetadataStore _store;
 
     public PhaseDataService(IMetadataStore store)
@@ -90,12 +99,20 @@ public sealed class PhaseDataService
         await _store.WriteTextAtomicAsync(PhasesPath(workspaceRoot), json).ConfigureAwait(false);
     }
 
-    private static async Task WithWorkspaceLockAsync(string workspaceRoot, Func<Task> action)
+    private async Task WithWorkspaceLockAsync(string workspaceRoot, Func<Task> action)
     {
-        var lockPath = PhasesLockPath(workspaceRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
-        using var lockStream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-        await action().ConfigureAwait(false);
+        await _writeLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var lockPath = PhasesLockPath(workspaceRoot);
+            Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
+            using var lockStream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            await action().ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 
     private static string PhasesPath(string workspaceRoot) =>

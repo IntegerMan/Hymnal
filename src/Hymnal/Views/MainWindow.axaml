@@ -131,6 +131,9 @@
                         <MenuItem Header="Toggle _Manage View"
                                   Command="{Binding ToggleGanttCommand}"
                                   InputGesture="F5" />
+                        <Separator />
+                        <MenuItem Header="_Reset Write Layout"
+                                  Command="{Binding ResetWriteLayoutCommand}" />
                     </MenuItem>
                     <MenuItem Header="_Help" Foreground="{DynamicResource OnSurfaceBrush}">
                         <MenuItem Header="_About Hymnal"
@@ -474,8 +477,7 @@
                              Row 3: Notes header (always 48px)
                              Row 4: Notes content (* when visible, 0 when hidden — driven from code-behind)
                         -->
-                        <Grid Width="280"
-                              IsVisible="{Binding IsAnyRightPaneOpen}"
+                        <Grid IsVisible="{Binding IsAnyRightPaneOpen}"
                               RowDefinitions="48,*,Auto,48,*"
                               x:Name="RightPaneGrid">
 

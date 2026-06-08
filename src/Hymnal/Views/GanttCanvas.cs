@@ -5,6 +5,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Hymnal.Core.Models;
 using Hymnal.ViewModels;
@@ -38,6 +39,19 @@ public sealed class GanttCanvas : Control
     }
 
     public event EventHandler<GanttCellEditRequestedEventArgs>? CellEditRequested;
+
+    // ── Bar hover hit-testing ─────────────────────────────────────────────────
+
+    /// <summary>One hittable bar region produced during Render().</summary>
+    private sealed record GanttBarHitInfo(
+        GanttRowViewModel Row,
+        PhaseSegment HoveredSegment,
+        Rect ScreenBounds);
+
+    private List<GanttBarHitInfo> _barHitRegions = [];
+    private GanttBarHitInfo? _currentHitInfo;
+
+    // ── ShowTable property ────────────────────────────────────────────────────
 
     public static readonly StyledProperty<bool> ShowTableProperty =
         AvaloniaProperty.Register<GanttCanvas, bool>(nameof(ShowTable), true);
@@ -111,6 +125,15 @@ public sealed class GanttCanvas : Control
 
     private INotifyCollectionChanged? _trackedCollection;
 
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    public GanttCanvas()
+    {
+        ToolTip.SetShowDelay(this, 300);
+    }
+
+    // ── Property change / collection watching ────────────────────────────────
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -162,6 +185,43 @@ public sealed class GanttCanvas : Control
             }
         }
         catch { /* swallow */ }
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        try
+        {
+            var pos = e.GetPosition(this);
+            GanttBarHitInfo? hit = null;
+
+            foreach (var region in _barHitRegions)
+            {
+                if (region.ScreenBounds.Contains(pos))
+                {
+                    hit = region;
+                    break;
+                }
+            }
+
+            // Only rebuild tooltip when the hovered bar changes.
+            bool changed = hit?.Row != _currentHitInfo?.Row
+                || hit?.HoveredSegment?.PhaseName != _currentHitInfo?.HoveredSegment?.PhaseName;
+
+            if (changed)
+            {
+                _currentHitInfo = hit;
+                ToolTip.SetTip(this, hit != null ? BuildTooltipContent(hit) : null);
+            }
+        }
+        catch { /* swallow */ }
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        _currentHitInfo = null;
+        ToolTip.SetTip(this, null);
     }
 
     // ── MeasureOverride ───────────────────────────────────────────────────────
@@ -255,11 +315,16 @@ public sealed class GanttCanvas : Control
             // ── Draw time axis ────────────────────────────────────────────────
             DrawTimeAxis(ctx, axisStart, axisEnd, chartWidth, logicalWidth, h, showTable);
 
+            // ── Draw rows, accumulating bar hit regions ───────────────────────
+            var hitRegions = new List<GanttBarHitInfo>();
+
             for (int i = 0; i < rows.Count; i++)
             {
                 double rowY = HeaderHeight + i * RowHeight;
-                DrawRow(ctx, rows[i], i, rowY, axisStart, axisEnd, chartWidth);
+                DrawRow(ctx, rows[i], i, rowY, axisStart, axisEnd, chartWidth, showTable, hitRegions);
             }
+
+            _barHitRegions = hitRegions;
 
             transformScope?.Dispose();
         }
@@ -337,7 +402,9 @@ public sealed class GanttCanvas : Control
         int rowIndex,
         double rowY,
         DateOnly axisStart, DateOnly axisEnd,
-        double chartWidth)
+        double chartWidth,
+        bool showTable,
+        List<GanttBarHitInfo> hitRegions)
     {
         try
         {
@@ -392,6 +459,9 @@ public sealed class GanttCanvas : Control
             DrawCellText(ctx, progressText, ProgressColumnLeft, ProgressColumnWidth, rowY, 10.0, labelBrush);
 
             // ── Phase segments on the timeline ────────────────────────────────
+            // X offset to convert from logical drawing coords to screen coords.
+            double screenOffsetX = showTable ? 0.0 : -TimelineLeft;
+
             foreach (var seg in row.PhaseSegments)
             {
                 if (!seg.StartDate.HasValue && !seg.EndDate.HasValue)
@@ -409,6 +479,12 @@ public sealed class GanttCanvas : Control
                         new Pen(new SolidColorBrush(barColor), 1.5),
                         new Point(mx, rowY + BoxVPadding),
                         new Point(mx, rowY + RowHeight - BoxVPadding));
+
+                    // Add a small hit region around the marker line.
+                    double screenMx = mx + screenOffsetX;
+                    hitRegions.Add(new GanttBarHitInfo(
+                        row, seg,
+                        new Rect(screenMx - 4, rowY + BoxVPadding, 8, RowHeight - BoxVPadding * 2)));
                     continue;
                 }
 
@@ -440,19 +516,24 @@ public sealed class GanttCanvas : Control
                         new Rect(boxLeft, boxTop, boxW, boxH), 3, 3);
                 }
 
-                // Phase name inside bar when wide enough.
-                if (boxW > 40)
+                // Bar label: show progress % (the bar colour already conveys the phase).
+                if (boxW > 28)
                 {
-                    var labelText = seg.PhaseName.Length > 4 ? seg.PhaseName[..4] : seg.PhaseName;
-                    var segFt = MakeFormattedText(labelText, 8.5, new SolidColorBrush(Colors.White));
-                    if (segFt.Width + 4 < boxW)
+                    var whiteBrush = new SolidColorBrush(Colors.White);
+                    string label = $"{(int)Math.Round(seg.Progress * 100)}%";
+                    var ft = MakeFormattedText(label, 8.5, whiteBrush);
+                    if (ft.Width + 4 < boxW)
                     {
-                        ctx.DrawText(
-                            segFt,
-                            new Point(boxLeft + (boxW - segFt.Width) / 2,
-                                      boxTop  + (boxH  - segFt.Height) / 2));
+                        ctx.DrawText(ft,
+                            new Point(boxLeft + (boxW - ft.Width) / 2,
+                                      boxTop  + (boxH  - ft.Height) / 2));
                     }
                 }
+
+                // Record hit region in screen coordinates for hover tooltip.
+                hitRegions.Add(new GanttBarHitInfo(
+                    row, seg,
+                    new Rect(boxLeft + screenOffsetX, boxTop, boxW, boxH)));
             }
         }
         catch { /* swallow */ }
@@ -594,6 +675,184 @@ public sealed class GanttCanvas : Control
             ctx.DrawText(ft, new Point((w - ft.Width) / 2, h / 2 - ft.Height / 2));
         }
         catch { /* swallow */ }
+    }
+
+    // ── Tooltip content builder ───────────────────────────────────────────────
+
+    private static Control BuildTooltipContent(GanttBarHitInfo hit)
+    {
+        var row = hit.Row;
+        var hoveredSeg = hit.HoveredSegment;
+
+        var tooltipBg     = new SolidColorBrush(Color.Parse("#160E30"));
+        var borderBrush   = new SolidColorBrush(Color.Parse("#3D2B6E"));
+        var titleBrush    = new SolidColorBrush(Color.Parse("#E2DDFF"));
+        var dimBrush      = new SolidColorBrush(Color.Parse("#94A3B8"));
+        var mutedBrush    = new SolidColorBrush(Color.Parse("#64748B"));
+        var contentBrush  = new SolidColorBrush(Color.Parse("#CBD5E1"));
+        var ruleBrush     = new SolidColorBrush(Color.Parse("#2D1B5E"));
+
+        var statusColor   = StatusToColor(row.Status);
+
+        var container = new StackPanel { Spacing = 5, Margin = new Thickness(10, 8, 10, 10) };
+
+        // ── Chapter title ─────────────────────────────────────────────────────
+        container.Children.Add(new TextBlock
+        {
+            Text       = row.Title,
+            FontSize   = 12.5,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = titleBrush,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth   = 270
+        });
+
+        // ── Current status ────────────────────────────────────────────────────
+        var statusRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        statusRow.Children.Add(new Border
+        {
+            Width = 8, Height = 8,
+            CornerRadius = new CornerRadius(2),
+            Background = new SolidColorBrush(statusColor),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        statusRow.Children.Add(new TextBlock
+        {
+            Text = row.Status.ToString(),
+            FontSize = 11,
+            Foreground = new SolidColorBrush(statusColor),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        container.Children.Add(statusRow);
+
+        // ── Separator ─────────────────────────────────────────────────────────
+        container.Children.Add(new Border { Height = 1, Background = ruleBrush, Margin = new Thickness(0, 1, 0, 1) });
+
+        // ── Phase schedule table ──────────────────────────────────────────────
+        var phases = row.PhaseSegments
+            .Where(s => s.StartDate.HasValue || s.EndDate.HasValue)
+            .ToList();
+
+        if (phases.Count > 0)
+        {
+            // Column header row
+            var headerRow = new Grid { Margin = new Thickness(0, 0, 0, 2) };
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse("92")));
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse("70")));
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse("70")));
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse("32")));
+
+            AddHeaderCell(headerRow, "PHASE", 0, mutedBrush);
+            AddHeaderCell(headerRow, "START", 1, mutedBrush);
+            AddHeaderCell(headerRow, "END", 2, mutedBrush);
+            AddHeaderCell(headerRow, "%", 3, mutedBrush, TextAlignment.Right);
+            container.Children.Add(headerRow);
+
+            foreach (var seg in phases)
+            {
+                bool isHovered = seg.PhaseName == hoveredSeg?.PhaseName;
+                bool isActive  = seg.PhaseName == row.Status.ToString();
+                var phaseColor = PhaseBarColors.TryGetValue(seg.PhaseName, out var c) ? c : Color.Parse("#64748B");
+
+                var phaseRow = new Grid { Margin = new Thickness(0, 1, 0, 0) };
+                phaseRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse("92")));
+                phaseRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse("70")));
+                phaseRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse("70")));
+                phaseRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse("32")));
+
+                if (isHovered)
+                {
+                    phaseRow.Background = new SolidColorBrush(Color.FromArgb(0x22, phaseColor.R, phaseColor.G, phaseColor.B));
+                    phaseRow.Margin = new Thickness(-4, 1, -4, 0);
+                }
+
+                // Phase dot + name
+                var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+                namePanel.Children.Add(new Border
+                {
+                    Width = 7, Height = 7,
+                    CornerRadius = new CornerRadius(1.5),
+                    Background = new SolidColorBrush(Color.FromArgb(
+                        isHovered ? (byte)0xFF : (byte)0xBB, phaseColor.R, phaseColor.G, phaseColor.B)),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                namePanel.Children.Add(new TextBlock
+                {
+                    Text = seg.PhaseName,
+                    FontSize = 10.5,
+                    FontWeight = isHovered || isActive ? FontWeight.SemiBold : FontWeight.Normal,
+                    Foreground = isHovered || isActive
+                        ? new SolidColorBrush(phaseColor)
+                        : dimBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                Grid.SetColumn(namePanel, 0);
+                phaseRow.Children.Add(namePanel);
+
+                AddDataCell(phaseRow, seg.StartDate?.ToString("MMM d") ?? "—", 1, seg.StartDate.HasValue ? contentBrush : mutedBrush);
+                AddDataCell(phaseRow, seg.EndDate?.ToString("MMM d") ?? "—", 2, seg.EndDate.HasValue ? contentBrush : mutedBrush);
+
+                string progressStr = seg.Progress > 0 ? $"{(int)Math.Round(seg.Progress * 100)}%" : "—";
+                AddDataCell(phaseRow, progressStr, 3, seg.Progress > 0 ? contentBrush : mutedBrush, TextAlignment.Right);
+
+                container.Children.Add(phaseRow);
+            }
+        }
+
+        // ── Overall span ──────────────────────────────────────────────────────
+        if (row.StartDate.HasValue || row.EndDate.HasValue)
+        {
+            container.Children.Add(new Border { Height = 1, Background = ruleBrush, Margin = new Thickness(0, 3, 0, 1) });
+
+            var spanStart = row.StartDate?.ToString("MMM d, yyyy") ?? "?";
+            var spanEnd   = row.EndDate?.ToString("MMM d, yyyy")   ?? "?";
+            container.Children.Add(new TextBlock
+            {
+                Text = $"Span: {spanStart} → {spanEnd}",
+                FontSize = 10,
+                Foreground = mutedBrush
+            });
+        }
+
+        return new Border
+        {
+            Child = container,
+            Background = tooltipBg,
+            BorderBrush = borderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            MinWidth = 240,
+            MaxWidth = 310
+        };
+    }
+
+    private static void AddHeaderCell(Grid grid, string text, int column, IBrush brush, TextAlignment align = TextAlignment.Left)
+    {
+        var tb = new TextBlock
+        {
+            Text = text,
+            FontSize = 9,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = brush,
+            TextAlignment = align,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(tb, column);
+        grid.Children.Add(tb);
+    }
+
+    private static void AddDataCell(Grid grid, string text, int column, IBrush brush, TextAlignment align = TextAlignment.Left)
+    {
+        var tb = new TextBlock
+        {
+            Text = text,
+            FontSize = 10.5,
+            Foreground = brush,
+            TextAlignment = align,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(tb, column);
+        grid.Children.Add(tb);
     }
 
     // ── Utility helpers ───────────────────────────────────────────────────────

@@ -607,6 +607,19 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>
+    /// Sets <see cref="IsVisible"/> without requiring an active chapter.
+    /// Used by the shell reset-layout command and tests.
+    /// </summary>
+    public void ApplyVisibility(bool visible)
+    {
+        _isVisible = visible;
+        this.RaisePropertyChanged(nameof(IsVisible));
+    }
+
+    /// <summary>Persists the current <see cref="IsVisible"/> value to the settings store.</summary>
+    public Task PersistVisibilityAsync() => PersistChapterInfoVisibilityAsync(_isVisible);
+
     private async Task PersistChapterInfoVisibilityAsync(bool value)
     {
         try

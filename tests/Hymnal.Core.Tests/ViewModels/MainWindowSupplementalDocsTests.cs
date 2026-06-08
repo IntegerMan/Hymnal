@@ -113,7 +113,8 @@ public sealed class MainWindowSupplementalDocsTests : IDisposable
                 new ResearchViewModel(Workspace, docs, Editor),
                 docs,
                 gitPanel,
-                NotificationService);
+                NotificationService,
+                SettingsStore);
         }
 
         public void EnableWorkspace()

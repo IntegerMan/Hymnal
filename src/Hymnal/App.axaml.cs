@@ -161,7 +161,8 @@ public partial class App : Application
                 sp.GetRequiredService<ResearchViewModel>(),
                 sp.GetRequiredService<SupplementalDocsViewModel>(),
                 sp.GetRequiredService<GitPanelViewModel>(),
-                sp.GetRequiredService<NotificationService>()));
+                sp.GetRequiredService<NotificationService>(),
+                sp.GetRequiredService<IAppSettingsStore>()));
 
         _serviceProvider = services.BuildServiceProvider();
         Services = _serviceProvider;

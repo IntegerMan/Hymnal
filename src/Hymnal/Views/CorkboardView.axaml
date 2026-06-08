@@ -229,12 +229,24 @@
                                Foreground="#9D4EDD"
                                VerticalAlignment="Center"
                                Margin="0,0,0,1" />
-                    <TextBlock Text="PLAN BOARD"
+                    <TextBlock Text="PLAN"
                                FontSize="10"
                                FontWeight="SemiBold"
                                LetterSpacing="2"
                                Foreground="#94A3B8"
                                VerticalAlignment="Center" />
+                    <Button x:Name="BoardAddButton"
+                            Content="+"
+                            Padding="10,4"
+                            FontSize="12"
+                            FontWeight="Bold"
+                            Background="Transparent"
+                            BorderBrush="#2D1B5E"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Foreground="#9D4EDD"
+                            ToolTip.Tip="Add chapter or part"
+                            Click="BoardAddButton_Click" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="1"
@@ -273,18 +285,6 @@
                               IsChecked="{Binding ShowExcludedFiles, Mode=TwoWay}"
                               FontSize="10"
                               Foreground="#94A3B8" />
-                    <Button x:Name="BoardAddButton"
-                            Content="+"
-                            Padding="10,4"
-                            FontSize="12"
-                            FontWeight="Bold"
-                            Background="Transparent"
-                            BorderBrush="#2D1B5E"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            Foreground="#9D4EDD"
-                            ToolTip.Tip="Add chapter or part"
-                            Click="BoardAddButton_Click" />
                     <TextBlock Text="Double-click a card to open in Write mode"
                                FontSize="10"
                                Foreground="#94A3B8"
@@ -338,58 +338,52 @@
 
     <UserControl.DataTemplates>
         <DataTemplate DataType="vm:PartDividerItemViewModel">
-            <Grid ColumnDefinitions="*,Auto"
-                  Width="{Binding Bounds.Width, ElementName=Root}"
-                  Margin="0,0,0,10">
-                <Button Grid.Column="0"
-                        Classes="cork-part-header"
-                        Classes.part-follow="{Binding !IsFirstPart}"
-                        Classes.card-size-list-part="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List}"
-                        Margin="0"
-                        Focusable="False"
-                        Command="{Binding DataContext.TogglePartExpandedCommand, ElementName=Root}"
-                        CommandParameter="{Binding}"
-                        ToolTip.Tip="Click to show or hide chapters in this part">
-                    <Grid ColumnDefinitions="Auto,*,Auto"
-                          ColumnSpacing="12">
-                        <Border Grid.Column="0"
-                                Classes="cork-part-chevron-badge">
-                            <TextBlock Classes="cork-part-chevron"
-                                       Text="{Binding ChevronGlyph}" />
-                        </Border>
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding Title}"
+            <Button Classes="cork-part-header"
+                    Classes.part-follow="{Binding !IsFirstPart}"
+                    Classes.card-size-list-part="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List}"
+                    Width="{Binding Bounds.Width, ElementName=Root}"
+                    Focusable="False"
+                    Command="{Binding DataContext.TogglePartExpandedCommand, ElementName=Root}"
+                    CommandParameter="{Binding}"
+                    ToolTip.Tip="Click to show or hide chapters in this part">
+                <Grid ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="12">
+                    <Border Grid.Column="0"
+                            Classes="cork-part-chevron-badge">
+                        <TextBlock Classes="cork-part-chevron"
+                                   Text="{Binding ChevronGlyph}" />
+                    </Border>
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Spacing="6">
+                        <TextBlock Text="{Binding Title}"
                                    FontSize="14"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource OnSurfaceBrush}"
-                                   VerticalAlignment="Center"
-                                   HorizontalAlignment="Stretch"
-                                   TextAlignment="Left" />
-                        <TextBlock Grid.Column="2"
-                                   Text="{Binding ChapterCountDisplay}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding ChapterCountInParens}"
                                    FontSize="10"
                                    Foreground="#94A3B8"
                                    VerticalAlignment="Center" />
-                    </Grid>
-                </Button>
-                <Button Grid.Column="1"
-                        Content="+"
-                        Margin="8,0,0,0"
-                        Padding="10,4"
-                        MinWidth="32"
-                        MinHeight="40"
-                        FontSize="12"
-                        FontWeight="Bold"
-                        VerticalAlignment="Center"
-                        Background="Transparent"
-                        BorderBrush="#2D1B5E"
-                        BorderThickness="1"
-                        CornerRadius="6"
-                        Foreground="#9D4EDD"
-                        ToolTip.Tip="Add chapter to this part"
-                        Tag="{Binding}"
-                        Click="PartAddButton_Click" />
-            </Grid>
+                    </StackPanel>
+                    <Button Grid.Column="2"
+                            Content="+"
+                            Padding="10,4"
+                            MinWidth="32"
+                            FontSize="12"
+                            FontWeight="Bold"
+                            VerticalAlignment="Center"
+                            Background="Transparent"
+                            BorderBrush="#2D1B5E"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Foreground="#9D4EDD"
+                            ToolTip.Tip="Add chapter to this part"
+                            Tag="{Binding}"
+                            Click="PartAddButton_Click" />
+                </Grid>
+            </Button>
         </DataTemplate>
 
         <DataTemplate DataType="vm:EmptyPartHintItemViewModel">

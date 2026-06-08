@@ -231,6 +231,31 @@ public sealed class GanttViewModel : ViewModelBase
         OpenEditForRow(row);
     }
 
+    /// <summary>
+    /// Creates a <see cref="ChapterDetailViewModel"/> for the given Gantt row so the
+    /// view can open the Chapter Details dialog. Returns null if the chapter cannot be found.
+    /// </summary>
+    public ChapterDetailViewModel? CreateDetailViewModel(GanttRowViewModel row)
+    {
+        if (!row.IsEditable)
+            return null;
+
+        var chapterVm = _workspace.Nodes
+            .FirstOrDefault(n => n.Node.RelativePath == row.RelativePath);
+
+        if (chapterVm == null)
+        {
+            _notificationService.ShowError($"Could not find chapter '{row.Title}'.");
+            return null;
+        }
+
+        return new ChapterDetailViewModel(
+            chapterVm,
+            _phaseDataService,
+            _workspace.WorkspaceRoot,
+            _notificationService);
+    }
+
     public async Task MarkRowCompleteAsync(GanttRowViewModel row)
     {
         if (!row.IsEditable)

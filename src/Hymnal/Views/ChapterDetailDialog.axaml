@@ -1,0 +1,71 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Hymnal.ViewModels"
+        xmlns:views="clr-namespace:Hymnal.Views"
+        x:Class="Hymnal.Views.ChapterDetailDialog"
+        x:DataType="vm:ChapterDetailViewModel"
+        Title="{Binding ChapterTitle}"
+        Width="380" Height="580"
+        MinWidth="320" MinHeight="400"
+        CanResize="True"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#0B0820"
+        FontFamily="{DynamicResource InterFont}">
+
+    <Grid RowDefinitions="5,Auto,*,Auto">
+
+        <!-- Synthwave accent stripe -->
+        <Border Grid.Row="0" Height="5">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                    <GradientStop Color="#9D4EDD" Offset="0" />
+                    <GradientStop Color="#E91E8C" Offset="0.5" />
+                    <GradientStop Color="#38BDF8" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <!-- Header -->
+        <Border Grid.Row="1"
+                Background="#120932"
+                BorderBrush="#2D1B5E"
+                BorderThickness="0,0,0,1"
+                Padding="14,10">
+            <StackPanel Spacing="2">
+                <TextBlock Text="{Binding ChapterTitle}"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#E2DDFF"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="Chapter Details"
+                           FontSize="10"
+                           LetterSpacing="1.5"
+                           Foreground="#64748B" />
+            </StackPanel>
+        </Border>
+
+        <!-- Reusable chapter info widget -->
+        <views:ChapterInfoWidget Grid.Row="2"
+                                 DataContext="{Binding}" />
+
+        <!-- Footer with close button -->
+        <Border Grid.Row="3"
+                Background="#120932"
+                BorderBrush="#2D1B5E"
+                BorderThickness="0,1,0,0"
+                Padding="14,10">
+            <Button Content="Close"
+                    Click="CloseButton_Click"
+                    HorizontalAlignment="Right"
+                    Padding="20,6"
+                    CornerRadius="4"
+                    Background="{DynamicResource SurfaceHighBrush}"
+                    Foreground="{DynamicResource OnSurfaceBrush}"
+                    BorderThickness="0"
+                    FontSize="12" />
+        </Border>
+
+    </Grid>
+
+</Window>

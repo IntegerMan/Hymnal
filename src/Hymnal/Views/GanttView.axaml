@@ -14,13 +14,27 @@
     </UserControl.KeyBindings>
 
     <UserControl.Styles>
-        <Style Selector="CalendarDatePicker.inline-date-editor /template/ Button">
-            <Setter Property="IsVisible" Value="False" />
-            <Setter Property="Width" Value="0" />
-            <Setter Property="MinWidth" Value="0" />
+        <!-- CalendarDatePicker embedded directly in cells (no edit-mode required) -->
+        <Style Selector="CalendarDatePicker.gantt-date-cell">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="PlaceholderText" Value="" />
+        </Style>
+        <Style Selector="CalendarDatePicker.gantt-date-cell /template/ TextBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="10" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <!-- Hide the calendar dropdown button (its glyph font renders as "7") -->
+        <Style Selector="CalendarDatePicker.gantt-date-cell /template/ Button#PART_Button">
+            <Setter Property="IsVisible" Value="False" />
         </Style>
     </UserControl.Styles>
 
@@ -110,6 +124,9 @@
 
                     <dg:DataGrid.ContextMenu>
                         <ContextMenu Opening="ChapterGrid_ContextMenuOpening">
+                            <MenuItem Header="View details..."
+                                      Click="ViewDetails_Click" />
+                            <Separator />
                             <MenuItem Header="Mark complete"
                                       Click="MarkComplete_Click" />
                         </ContextMenu>
@@ -173,58 +190,46 @@
                             </dg:DataGridTemplateColumn.CellEditingTemplate>
                         </dg:DataGridTemplateColumn>
 
-                        <dg:DataGridTemplateColumn Header="START" Width="110">
+                        <dg:DataGridTemplateColumn Header="START" Width="130" IsReadOnly="True">
                             <dg:DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="vm:GanttRowViewModel">
-                                    <Border Padding="6,0" Background="{Binding RowBackground}">
+                                    <Grid Background="{Binding RowBackground}">
+                                        <CalendarDatePicker SelectedDate="{Binding EditableStartDate, Mode=TwoWay}"
+                                                            Classes="gantt-date-cell"
+                                                            IsEnabled="{Binding IsEditable}"
+                                                            IsVisible="{Binding IsEditable}"
+                                                            GotFocus="DatePicker_GotFocus"
+                                                            SelectedDateChanged="InlineStart_SelectedDateChanged" />
                                         <TextBlock Text="{Binding StartDateDisplay}"
+                                                   IsVisible="{Binding !IsEditable}"
                                                    Foreground="{Binding RowForeground}"
                                                    VerticalAlignment="Center"
+                                                   Margin="6,0"
                                                    FontSize="10" />
-                                    </Border>
+                                    </Grid>
                                 </DataTemplate>
                             </dg:DataGridTemplateColumn.CellTemplate>
-                            <dg:DataGridTemplateColumn.CellEditingTemplate>
-                                <DataTemplate x:DataType="vm:GanttRowViewModel">
-                                    <CalendarDatePicker SelectedDate="{Binding EditableStartDate, Mode=TwoWay}"
-                                                        Classes="inline-date-editor"
-                                                        FontSize="10"
-                                                        MinHeight="24"
-                                                        Height="24"
-                                                        HorizontalAlignment="Stretch"
-                                                        VerticalAlignment="Center"
-                                                        IsEnabled="{Binding IsEditable}"
-                                                        SelectedDateChanged="InlineStart_SelectedDateChanged"
-                                                        LostFocus="InlineStart_LostFocus" />
-                                </DataTemplate>
-                            </dg:DataGridTemplateColumn.CellEditingTemplate>
                         </dg:DataGridTemplateColumn>
 
-                        <dg:DataGridTemplateColumn Header="END" Width="110">
+                        <dg:DataGridTemplateColumn Header="END" Width="130" IsReadOnly="True">
                             <dg:DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="vm:GanttRowViewModel">
-                                    <Border Padding="6,0" Background="{Binding RowBackground}">
+                                    <Grid Background="{Binding RowBackground}">
+                                        <CalendarDatePicker SelectedDate="{Binding EditableEndDate, Mode=TwoWay}"
+                                                            Classes="gantt-date-cell"
+                                                            IsEnabled="{Binding IsEditable}"
+                                                            IsVisible="{Binding IsEditable}"
+                                                            GotFocus="DatePicker_GotFocus"
+                                                            SelectedDateChanged="InlineEnd_SelectedDateChanged" />
                                         <TextBlock Text="{Binding EndDateDisplay}"
+                                                   IsVisible="{Binding !IsEditable}"
                                                    Foreground="{Binding RowForeground}"
                                                    VerticalAlignment="Center"
+                                                   Margin="6,0"
                                                    FontSize="10" />
-                                    </Border>
+                                    </Grid>
                                 </DataTemplate>
                             </dg:DataGridTemplateColumn.CellTemplate>
-                            <dg:DataGridTemplateColumn.CellEditingTemplate>
-                                <DataTemplate x:DataType="vm:GanttRowViewModel">
-                                    <CalendarDatePicker SelectedDate="{Binding EditableEndDate, Mode=TwoWay}"
-                                                        Classes="inline-date-editor"
-                                                        FontSize="10"
-                                                        MinHeight="24"
-                                                        Height="24"
-                                                        HorizontalAlignment="Stretch"
-                                                        VerticalAlignment="Center"
-                                                        IsEnabled="{Binding IsEditable}"
-                                                        SelectedDateChanged="InlineEnd_SelectedDateChanged"
-                                                        LostFocus="InlineEnd_LostFocus" />
-                                </DataTemplate>
-                            </dg:DataGridTemplateColumn.CellEditingTemplate>
                         </dg:DataGridTemplateColumn>
 
                         <dg:DataGridTemplateColumn Header="%" Width="58">

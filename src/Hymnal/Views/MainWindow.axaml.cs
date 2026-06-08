@@ -3,11 +3,14 @@ using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
+using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Hymnal.ViewModels;
 using ReactiveUI;
 using ReactiveUI.Avalonia;
@@ -18,11 +21,19 @@ public partial class MainWindow : Window
 {
     private readonly CompositeDisposable _layoutDisposables = new();
 
+    // Suppresses LayoutUpdated capture while we are programmatically applying stored/reset sizes.
+    private bool _suppressLayoutCapture;
+    private readonly Subject<Unit> _layoutChangedSubject = new();
+
     public MainWindow()
     {
         InitializeComponent();
 
-        Closed += (_, _) => _layoutDisposables.Dispose();
+        Closed += (_, _) =>
+        {
+            _layoutDisposables.Dispose();
+            _layoutChangedSubject.Dispose();
+        };
 
         // RightPaneGrid row heights must track ChapterInfoViewModel.IsVisible and
         // NotesViewModel.IsVisible so that a hidden pane collapses to 0 and the
@@ -40,11 +51,10 @@ public partial class MainWindow : Window
 
             if (DataContext is MainWindowViewModel vm)
             {
-                SetupModeChrome(vm);
-                SetupSidebarWidth(vm);
+                SetupColumnWidths(vm);
                 SetupLeftPaneRowHeights(vm);
                 SetupRightPaneRowHeights(vm);
-                SetupRightPaneColumnWidth(vm);
+                SetupLayoutPersistence(vm);
 
                 // About dialog — needs Window reference so it's wired here, not in the VM.
                 _layoutDisposables.Add(
@@ -86,12 +96,17 @@ public partial class MainWindow : Window
         await ExecuteGitSyncActionAsync(gitPanel, dialog.CommitMessage);
     }
 
-    private void SetupModeChrome(MainWindowViewModel vm)
+    // ── Column widths ─────────────────────────────────────────────────────────
+    // Merged from the former SetupModeChrome + SetupSidebarWidth + SetupRightPaneColumnWidth.
+    // All column-width decisions now go through one place to avoid races between the
+    // three former subscribers.
+
+    private void SetupColumnWidths(MainWindowViewModel vm)
     {
         var grid = ShellGrid;
         if (grid is null || grid.ColumnDefinitions.Count < 5) return;
 
-        void ApplyMode(ShellMode mode)
+        void ApplyColumnWidths(ShellMode mode, bool anyLeftOpen, bool anyRightOpen, WriteLayoutSettings layout)
         {
             if (mode is ShellMode.Manage or ShellMode.Plan or ShellMode.Research)
             {
@@ -102,42 +117,36 @@ public partial class MainWindow : Window
                 return;
             }
 
-            grid.ColumnDefinitions[0].Width = new GridLength(vm.IsAnyLeftPaneOpen ? 220 : 48);
+            // Splitter columns are always 4px in Write mode.
             grid.ColumnDefinitions[1].Width = new GridLength(4);
             grid.ColumnDefinitions[3].Width = new GridLength(4);
-            grid.ColumnDefinitions[4].Width = new GridLength(vm.IsAnyRightPaneOpen ? 280 : 48);
+
+            // Left sidebar: expanded uses stored width; collapsed uses 48px icon rail.
+            grid.ColumnDefinitions[0].Width = anyLeftOpen
+                ? new GridLength(layout.LeftSidebarWidth)
+                : new GridLength(48);
+
+            // Right sidebar: expanded uses stored width; collapsed uses 48px icon rail.
+            grid.ColumnDefinitions[4].Width = anyRightOpen
+                ? new GridLength(layout.RightSidebarWidth)
+                : new GridLength(48);
         }
 
-        ApplyMode(vm.ActiveMode);
+        ApplyColumnWidths(vm.ActiveMode, vm.IsAnyLeftPaneOpen, vm.IsAnyRightPaneOpen, vm.CurrentWriteLayout);
 
         _layoutDisposables.Add(
-            vm.WhenAnyValue(x => x.ActiveMode, x => x.IsAnyLeftPaneOpen, x => x.IsAnyRightPaneOpen)
-                .ObserveOn(AvaloniaScheduler.Instance)
-                .Subscribe(_ => ApplyMode(vm.ActiveMode), _ => { /* non-fatal */ }));
-    }
-
-    private void SetupSidebarWidth(MainWindowViewModel vm)
-    {
-        var grid = ShellGrid;   // x:Name="ShellGrid" field from generated partial class
-        if (grid is null || grid.ColumnDefinitions.Count < 1) return;
-
-        void ApplyWidth(bool expanded)
-        {
-            if (vm.ActiveMode is ShellMode.Manage or ShellMode.Plan or ShellMode.Research)
-                return;
-
-            grid.ColumnDefinitions[0].Width = new GridLength(expanded ? 220 : 48);
-        }
-
-        ApplyWidth(vm.IsAnyLeftPaneOpen);
-
-        _layoutDisposables.Add(
-            vm.WhenAnyValue(x => x.IsAnyLeftPaneOpen)
+            vm.WhenAnyValue(
+                    x => x.ActiveMode,
+                    x => x.IsAnyLeftPaneOpen,
+                    x => x.IsAnyRightPaneOpen,
+                    x => x.CurrentWriteLayout)
                 .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
-                    expanded => ApplyWidth(expanded),
+                    t => ApplyColumnWidths(t.Item1, t.Item2, t.Item3, t.Item4),
                     _ => { /* non-fatal */ }));
     }
+
+    // ── Left-pane row heights ──────────────────────────────────────────────────
 
     private void SetupLeftPaneRowHeights(MainWindowViewModel vm)
     {
@@ -147,7 +156,7 @@ public partial class MainWindow : Window
         if (outerGrid is null || chaptersSection is null || docsSection is null)
             return;
 
-        void ApplyLayout(bool chaptersVisible, bool docsVisible)
+        void ApplyLayout(bool chaptersVisible, bool docsVisible, WriteLayoutSettings layout)
         {
             chaptersSection.RowDefinitions[1].Height =
                 chaptersVisible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
@@ -156,8 +165,9 @@ public partial class MainWindow : Window
 
             if (chaptersVisible && docsVisible)
             {
-                outerGrid.RowDefinitions[0].Height = new GridLength(1, GridUnitType.Star);
-                outerGrid.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
+                // Both open: restore stored split ratio.
+                outerGrid.RowDefinitions[0].Height = new GridLength(layout.LeftPaneTopStar, GridUnitType.Star);
+                outerGrid.RowDefinitions[2].Height = new GridLength(layout.LeftPaneBottomStar, GridUnitType.Star);
             }
             else if (chaptersVisible)
             {
@@ -171,41 +181,25 @@ public partial class MainWindow : Window
             }
         }
 
-        ApplyLayout(vm.WorkspaceViewModel.IsChaptersPaneVisible, vm.SupplementalDocsViewModel.IsVisible);
+        ApplyLayout(
+            vm.WorkspaceViewModel.IsChaptersPaneVisible,
+            vm.SupplementalDocsViewModel.IsVisible,
+            vm.CurrentWriteLayout);
 
         _layoutDisposables.Add(
             vm.WorkspaceViewModel
                 .WhenAnyValue(x => x.IsChaptersPaneVisible)
                 .CombineLatest(
                     vm.SupplementalDocsViewModel.WhenAnyValue(x => x.IsVisible),
-                    (chapters, docs) => (chapters, docs))
+                    vm.WhenAnyValue(x => x.CurrentWriteLayout),
+                    (chapters, docs, layout) => (chapters, docs, layout))
                 .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
-                    state => ApplyLayout(state.chapters, state.docs),
+                    state => ApplyLayout(state.chapters, state.docs, state.layout),
                     _ => { /* non-fatal */ }));
     }
 
-    private void SetupRightPaneColumnWidth(MainWindowViewModel vm)
-    {
-        var grid = ShellGrid;
-        if (grid is null || grid.ColumnDefinitions.Count < 5) return;
-
-        void ApplyWidth(bool anyOpen)
-        {
-            if (vm.ActiveMode is ShellMode.Manage or ShellMode.Plan or ShellMode.Research)
-                return;
-
-            // Column 4 is the right pane: 280px when expanded, 48px icon-rail when collapsed.
-            grid.ColumnDefinitions[4].Width = new GridLength(anyOpen ? 280 : 48);
-        }
-
-        ApplyWidth(vm.IsAnyRightPaneOpen);
-
-        _layoutDisposables.Add(
-            vm.WhenAnyValue(x => x.IsAnyRightPaneOpen)
-                .ObserveOn(AvaloniaScheduler.Instance)
-                .Subscribe(ApplyWidth, _ => { /* non-fatal */ }));
-    }
+    // ── Right-pane row heights ─────────────────────────────────────────────────
 
     private void SetupRightPaneRowHeights(MainWindowViewModel vm)
     {
@@ -241,26 +235,159 @@ public partial class MainWindow : Window
         // Row 3: Notes header (fixed 48px — not managed here)
         // Row 4: Notes content (* or 0)
 
-        // Subscribe to ChapterInfo visibility changes: collapse/expand Row 1
+        void ApplyRowHeights(bool ciVisible, bool notesVisible, WriteLayoutSettings layout)
+        {
+            if (ciVisible && notesVisible)
+            {
+                grid.RowDefinitions[1].Height = new GridLength(layout.RightPaneTopStar, GridUnitType.Star);
+                grid.RowDefinitions[4].Height = new GridLength(layout.RightPaneBottomStar, GridUnitType.Star);
+            }
+            else
+            {
+                grid.RowDefinitions[1].Height = ciVisible
+                    ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+                grid.RowDefinitions[4].Height = notesVisible
+                    ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            }
+        }
+
+        ApplyRowHeights(
+            vm.ChapterInfoViewModel.IsVisible,
+            vm.NotesViewModel.IsVisible,
+            vm.CurrentWriteLayout);
+
         _layoutDisposables.Add(
             vm.ChapterInfoViewModel
                 .WhenAnyValue(x => x.IsVisible)
+                .CombineLatest(
+                    vm.NotesViewModel.WhenAnyValue(x => x.IsVisible),
+                    vm.WhenAnyValue(x => x.CurrentWriteLayout),
+                    (ci, notes, layout) => (ci, notes, layout))
                 .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
-                    ci => grid.RowDefinitions[1].Height =
-                        ci ? new GridLength(1, GridUnitType.Star) : new GridLength(0),
-                    _ => { /* non-fatal */ }));
-
-        // Subscribe to Notes visibility changes: collapse/expand Row 4
-        _layoutDisposables.Add(
-            vm.NotesViewModel
-                .WhenAnyValue(x => x.IsVisible)
-                .ObserveOn(AvaloniaScheduler.Instance)
-                .Subscribe(
-                    notes => grid.RowDefinitions[4].Height =
-                        notes ? new GridLength(1, GridUnitType.Star) : new GridLength(0),
+                    state => ApplyRowHeights(state.ci, state.notes, state.layout),
                     _ => { /* non-fatal */ }));
     }
+
+    // ── Layout persistence ────────────────────────────────────────────────────
+    // Captures user-driven splitter positions (debounced) and persists them.
+    // Also re-applies grid geometry when the stored layout changes (async restore / reset).
+
+    private void SetupLayoutPersistence(MainWindowViewModel vm)
+    {
+        var shellGrid  = ShellGrid;
+        var leftOuter  = LeftPaneGrid;
+        var rightPane  = RightPaneGrid;
+
+        if (shellGrid is null) return;
+
+        // Re-apply geometry whenever CurrentWriteLayout changes (async restore + reset).
+        // The subscriptions in SetupColumnWidths / SetupLeftPaneRowHeights /
+        // SetupRightPaneRowHeights already react to CurrentWriteLayout, so we only
+        // need to suppress the capture that LayoutUpdated would otherwise trigger.
+        _layoutDisposables.Add(
+            vm.WhenAnyValue(x => x.CurrentWriteLayout)
+                .Skip(1)                        // skip the initial value; the setup calls already applied it
+                .ObserveOn(AvaloniaScheduler.Instance)
+                .Subscribe(_ => SuppressNextCapture(), _ => { /* non-fatal */ }));
+
+        // When a reset fires, suppress capture to prevent re-persisting the defaults.
+        _layoutDisposables.Add(
+            vm.WriteLayoutReset
+                .ObserveOn(AvaloniaScheduler.Instance)
+                .Subscribe(_ => SuppressNextCapture(), _ => { /* non-fatal */ }));
+
+        // Capture user-driven layout changes via LayoutUpdated, debounced.
+        _layoutDisposables.Add(
+            _layoutChangedSubject
+                .Throttle(TimeSpan.FromMilliseconds(500), TaskPoolScheduler.Default)
+                .ObserveOn(AvaloniaScheduler.Instance)
+                .Subscribe(_ => CaptureAndPersistLayout(vm, shellGrid, leftOuter, rightPane),
+                    _ => { /* non-fatal */ }));
+
+        shellGrid.LayoutUpdated += OnShellGridLayoutUpdated;
+        _layoutDisposables.Add(Disposable.Create(() =>
+            shellGrid.LayoutUpdated -= OnShellGridLayoutUpdated));
+    }
+
+    private void OnShellGridLayoutUpdated(object? sender, EventArgs e)
+    {
+        if (_suppressLayoutCapture) return;
+        if (DataContext is not MainWindowViewModel vm) return;
+        if (vm.ActiveMode != ShellMode.Write) return;
+        _layoutChangedSubject.OnNext(Unit.Default);
+    }
+
+    private void SuppressNextCapture()
+    {
+        _suppressLayoutCapture = true;
+        Dispatcher.UIThread.Post(
+            () => _suppressLayoutCapture = false,
+            DispatcherPriority.Background);
+    }
+
+    private void CaptureAndPersistLayout(
+        MainWindowViewModel vm,
+        Grid shellGrid,
+        Grid? leftOuter,
+        Grid? rightPane)
+    {
+        // Start from the current persisted layout so we only overwrite visible panes.
+        var current = vm.CurrentWriteLayout;
+        var captured = new WriteLayoutSettings
+        {
+            LeftSidebarWidth  = current.LeftSidebarWidth,
+            RightSidebarWidth = current.RightSidebarWidth,
+            LeftPaneTopStar     = current.LeftPaneTopStar,
+            LeftPaneBottomStar  = current.LeftPaneBottomStar,
+            RightPaneTopStar    = current.RightPaneTopStar,
+            RightPaneBottomStar = current.RightPaneBottomStar,
+        };
+
+        // Capture left sidebar width only when a pane is open (avoid persisting 48).
+        if (vm.IsAnyLeftPaneOpen && shellGrid.ColumnDefinitions.Count > 0)
+        {
+            var w = shellGrid.ColumnDefinitions[0].Width;
+            if (w.GridUnitType == GridUnitType.Pixel && w.Value >= WriteLayoutSettings.MinSidebarWidth)
+                captured.LeftSidebarWidth = w.Value;
+        }
+
+        // Capture right sidebar width only when a pane is open.
+        if (vm.IsAnyRightPaneOpen && shellGrid.ColumnDefinitions.Count >= 5)
+        {
+            var w = shellGrid.ColumnDefinitions[4].Width;
+            if (w.GridUnitType == GridUnitType.Pixel && w.Value >= WriteLayoutSettings.MinSidebarWidth)
+                captured.RightSidebarWidth = w.Value;
+        }
+
+        // Capture left-pane vertical split only when both panes are open.
+        if (vm.IsBothLeftPanesOpen && leftOuter?.RowDefinitions.Count >= 3)
+        {
+            var top = leftOuter.RowDefinitions[0].Height;
+            var bot = leftOuter.RowDefinitions[2].Height;
+            if (top.IsStar && bot.IsStar && top.Value > 0 && bot.Value > 0)
+            {
+                captured.LeftPaneTopStar    = top.Value;
+                captured.LeftPaneBottomStar = bot.Value;
+            }
+        }
+
+        // Capture right-pane vertical split only when both panes are open.
+        if (vm.IsBothRightPanesOpen && rightPane?.RowDefinitions.Count >= 5)
+        {
+            var top = rightPane.RowDefinitions[1].Height;
+            var bot = rightPane.RowDefinitions[4].Height;
+            if (top.IsStar && bot.IsStar && top.Value > 0 && bot.Value > 0)
+            {
+                captured.RightPaneTopStar    = top.Value;
+                captured.RightPaneBottomStar = bot.Value;
+            }
+        }
+
+        _ = vm.PersistWriteLayoutAsync(captured);
+    }
+
+    // ── Chapter add button ────────────────────────────────────────────────────
 
     private async void AddChapterButton_Click(object? sender, RoutedEventArgs e)
     {

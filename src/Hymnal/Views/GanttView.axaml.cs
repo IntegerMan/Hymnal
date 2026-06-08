@@ -15,18 +15,56 @@ namespace Hymnal.Views;
 
 public partial class GanttView : UserControl
 {
+    private long _lastDatePickerOpenTick;
+
     public GanttView()
     {
         InitializeComponent();
         ArgumentNullException.ThrowIfNull(ChapterGrid);
     }
 
+    private void DatePicker_GotFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is CalendarDatePicker picker && picker.IsEnabled && !picker.IsDropDownOpen)
+        {
+            var now = Environment.TickCount64;
+            if (now - _lastDatePickerOpenTick > 400)
+            {
+                _lastDatePickerOpenTick = now;
+                picker.IsDropDownOpen = true;
+            }
+        }
+    }
+
     private void ChapterGrid_ContextMenuOpening(object? sender, CancelEventArgs e)
     {
-        if (sender is not ContextMenu menu || menu.Items[0] is not MenuItem markComplete)
+        if (sender is not ContextMenu menu)
             throw new InvalidOperationException("GanttView context menu is misconfigured.");
 
-        markComplete.IsVisible = ChapterGrid.SelectedItem is GanttRowViewModel { IsEditable: true };
+        // Items: 0=View details, 1=Separator, 2=Mark complete
+        bool isEditableRow = ChapterGrid.SelectedItem is GanttRowViewModel { IsEditable: true };
+        if (menu.Items[0] is MenuItem viewDetails)
+            viewDetails.IsVisible = isEditableRow;
+        if (menu.Items[2] is MenuItem markComplete)
+            markComplete.IsVisible = isEditableRow;
+    }
+
+    private async void ViewDetails_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (ChapterGrid.SelectedItem is not GanttRowViewModel row || !row.IsEditable)
+            return;
+
+        var detailVm = vm.CreateDetailViewModel(row);
+        if (detailVm == null)
+            return;
+
+        var dialog = new ChapterDetailDialog { DataContext = detailVm };
+        var parent = TopLevel.GetTopLevel(this) as Window;
+        if (parent != null)
+            await dialog.ShowDialog(parent);
     }
 
     private async void MarkComplete_Click(object? sender, RoutedEventArgs e)
@@ -82,7 +120,7 @@ public partial class GanttView : UserControl
         await vm.SaveInlineCellAsync(row, GanttEditableColumn.EndDate);
     }
 
-    private async void InlineStart_LostFocus(object? sender, RoutedEventArgs e)
+    private async void DateClear_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not GanttViewModel vm)
             return;
@@ -93,21 +131,17 @@ public partial class GanttView : UserControl
         if (!row.IsEditable)
             return;
 
-        await vm.SaveInlineCellAsync(row, GanttEditableColumn.StartDate);
-    }
-
-    private async void InlineEnd_LostFocus(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not GanttViewModel vm)
-            return;
-
-        if (sender is not Control control || control.DataContext is not GanttRowViewModel row)
-            return;
-
-        if (!row.IsEditable)
-            return;
-
-        await vm.SaveInlineCellAsync(row, GanttEditableColumn.EndDate);
+        var isStart = control.Tag is string tag && tag == "start";
+        if (isStart)
+        {
+            row.EditableStartDate = null;
+            await vm.SaveInlineCellAsync(row, GanttEditableColumn.StartDate);
+        }
+        else
+        {
+            row.EditableEndDate = null;
+            await vm.SaveInlineCellAsync(row, GanttEditableColumn.EndDate);
+        }
     }
 
     private async void InlineProgress_LostFocus(object? sender, RoutedEventArgs e)
@@ -187,7 +221,8 @@ public partial class GanttView : UserControl
 
         return focused.FindAncestorOfType<TextBox>() != null
                || focused.FindAncestorOfType<ComboBox>() != null
-               || focused.FindAncestorOfType<CalendarDatePicker>() != null;
+               || focused.FindAncestorOfType<CalendarDatePicker>() != null
+               || focused.FindAncestorOfType<Calendar>() != null;
     }
 
     private GanttEditableColumn GetCurrentColumn()

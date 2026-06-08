@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Infrastructure;
 using ReactiveUI;
@@ -9,11 +10,18 @@ using System.Threading.Tasks;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 
 namespace Hymnal.ViewModels;
 
 public class MainWindowViewModel : ViewModelBase
 {
+    private readonly IAppSettingsStore _settingsStore;
+    private readonly WorkspaceViewModel _workspaceVm;
+    private readonly SupplementalDocsViewModel _supplementalDocsVm;
+    private readonly NotesViewModel _notesVm;
+    private readonly ChapterInfoViewModel _chapterInfoVm;
+
     public WorkspaceViewModel WorkspaceViewModel { get; }
     public EditorViewModel EditorViewModel { get; }
     public NotesViewModel NotesViewModel { get; }
@@ -142,6 +150,26 @@ public class MainWindowViewModel : ViewModelBase
     /// <summary>True when the editor chapter metadata bar should be shown.</summary>
     public bool IsEditorChapterBarVisible => _isEditorChapterBarVisible.Value;
 
+    // ── Write layout settings ─────────────────────────────────────────────────
+
+    private WriteLayoutSettings _currentWriteLayout = WriteLayoutSettings.CreateDefault();
+
+    /// <summary>
+    /// The Write-tab geometry that was last persisted (or defaults on first run).
+    /// Code-behind reads this to size grid columns/rows after restore or reset.
+    /// </summary>
+    public WriteLayoutSettings CurrentWriteLayout
+    {
+        get => _currentWriteLayout;
+        private set => this.RaiseAndSetIfChanged(ref _currentWriteLayout, value);
+    }
+
+    /// <summary>Broadcast when the layout is reset, so code-behind can reapply grid sizes.</summary>
+    private readonly Subject<WriteLayoutSettings> _layoutReset = new();
+    public IObservable<WriteLayoutSettings> WriteLayoutReset => _layoutReset.AsObservable();
+
+    public ReactiveCommand<Unit, Unit> ResetWriteLayoutCommand { get; }
+
     // ── Exit ─────────────────────────────────────────────────────────────────
 
     public ReactiveCommand<Unit, Unit> ExitCommand { get; } =
@@ -166,8 +194,15 @@ public class MainWindowViewModel : ViewModelBase
         ResearchViewModel researchViewModel,
         SupplementalDocsViewModel supplementalDocsViewModel,
         GitPanelViewModel gitPanelViewModel,
-        NotificationService notificationService)
+        NotificationService notificationService,
+        IAppSettingsStore settingsStore)
     {
+        _settingsStore = settingsStore;
+        _workspaceVm = workspaceViewModel;
+        _supplementalDocsVm = supplementalDocsViewModel;
+        _notesVm = notesViewModel;
+        _chapterInfoVm = chapterInfoViewModel;
+
         WorkspaceViewModel = workspaceViewModel;
         EditorViewModel = editorViewModel;
         NotesViewModel = notesViewModel;
@@ -218,6 +253,11 @@ public class MainWindowViewModel : ViewModelBase
         {
             ActiveMode = IsGanttVisible ? ShellMode.Write : ShellMode.Manage;
         });
+
+        ResetWriteLayoutCommand = ReactiveCommand.CreateFromTask(ResetWriteLayoutAsync);
+        Disposables.Add(ResetWriteLayoutCommand.ThrownExceptions.Subscribe(ex =>
+            notificationService.ShowError($"Failed to reset layout: {ex.Message}")));
+        Disposables.Add(_layoutReset);
 
         // ── Right-rail pane aggregates ────────────────────────────────────────
         _isAnyRightPaneOpen = Observable.CombineLatest(
@@ -325,6 +365,7 @@ public class MainWindowViewModel : ViewModelBase
         await NotesViewModel.RestoreSettingsAsync().ConfigureAwait(false);
         await ChapterInfoViewModel.RestoreSettingsAsync().ConfigureAwait(false);
         await SupplementalDocsViewModel.RestoreSettingsAsync().ConfigureAwait(false);
+        await RestoreWriteLayoutAsync().ConfigureAwait(false);
         CorkboardViewModel.SetViewActive(ActiveMode == ShellMode.Plan);
         GanttViewModel.SetViewActive(ActiveMode == ShellMode.Manage);
     }
@@ -353,4 +394,67 @@ public class MainWindowViewModel : ViewModelBase
 
         ActiveMode = ShellMode.Research;
     }
+
+    // ── Write layout persistence ──────────────────────────────────────────────
+
+    private async Task RestoreWriteLayoutAsync()
+    {
+        try
+        {
+            var stored = await _settingsStore.GetAsync<WriteLayoutSettings>("writeLayout").ConfigureAwait(false);
+            if (stored != null)
+            {
+                stored.LeftSidebarWidth  = Clamp(stored.LeftSidebarWidth,  WriteLayoutSettings.MinSidebarWidth, WriteLayoutSettings.MaxSidebarWidth);
+                stored.RightSidebarWidth = Clamp(stored.RightSidebarWidth, WriteLayoutSettings.MinSidebarWidth, WriteLayoutSettings.MaxSidebarWidth);
+                stored.LeftPaneTopStar     = Math.Max(0.01, stored.LeftPaneTopStar);
+                stored.LeftPaneBottomStar  = Math.Max(0.01, stored.LeftPaneBottomStar);
+                stored.RightPaneTopStar    = Math.Max(0.01, stored.RightPaneTopStar);
+                stored.RightPaneBottomStar = Math.Max(0.01, stored.RightPaneBottomStar);
+                CurrentWriteLayout = stored;
+            }
+        }
+        catch
+        {
+            // Non-fatal; defaults remain.
+        }
+    }
+
+    /// <summary>
+    /// Persists a new layout snapshot, called from code-behind after debouncing splitter moves.
+    /// </summary>
+    public async Task PersistWriteLayoutAsync(WriteLayoutSettings layout)
+    {
+        try
+        {
+            _currentWriteLayout = layout;
+            await _settingsStore.SetAsync("writeLayout", layout).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal; splitter position may not survive restart if storage fails.
+        }
+    }
+
+    private async Task ResetWriteLayoutAsync()
+    {
+        var defaults = WriteLayoutSettings.CreateDefault();
+
+        // WorkspaceViewModel and SupplementalDocsViewModel auto-persist on setter.
+        _workspaceVm.IsChaptersPaneVisible = true;
+        _supplementalDocsVm.IsVisible = false;
+
+        // Notes and ChapterInfo have private setters; use the internal helpers.
+        _notesVm.ApplyVisibility(false);
+        await _notesVm.PersistVisibilityAsync().ConfigureAwait(false);
+        _chapterInfoVm.ApplyVisibility(false);
+        await _chapterInfoVm.PersistVisibilityAsync().ConfigureAwait(false);
+
+        // Persist and broadcast the geometry defaults.
+        await PersistWriteLayoutAsync(defaults).ConfigureAwait(false);
+        CurrentWriteLayout = defaults;
+        _layoutReset.OnNext(defaults);
+    }
+
+    private static double Clamp(double value, double min, double max) =>
+        value < min ? min : value > max ? max : value;
 }

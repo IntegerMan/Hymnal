@@ -369,6 +369,46 @@ public sealed class CorkboardViewModelTests
         Assert.Equal(0, context.Workspace.ReloadCount);
     }
 
+    [Fact]
+    public void GetBookChapterInsertIndex_WithParts_ReturnsIndexOfFirstPart()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "prologue.md", "Prologue"),
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+
+        // The first Part is at node index 1 (prologue is 0).
+        Assert.Equal(1, board.GetBookChapterInsertIndex());
+    }
+
+    [Fact]
+    public void GetBookChapterInsertIndex_WithNoParts_ReturnsNodeCount()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "chapter-one.md", "Chapter One"),
+            CreateChapter(context, "chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+
+        Assert.Equal(2, board.GetBookChapterInsertIndex());
+    }
+
+    [Fact]
+    public void GetBookChapterInsertIndex_WithEmptyBook_ReturnsZero()
+    {
+        var context = CreateContext();
+
+        using var board = context.CreateCorkboard();
+
+        Assert.Equal(0, board.GetBookChapterInsertIndex());
+    }
+
     private static TestContext CreateContext() => new();
 
     private static ChapterViewModel CreateChapter(TestContext context, string relativePath, string title, NodeKind kind = NodeKind.Chapter)

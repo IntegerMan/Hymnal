@@ -200,7 +200,8 @@ public sealed class SupplementalDocsViewSmokeTests
                 new ResearchViewModel(Workspace, docsVm, EditorViewModel),
                 docsVm,
                 gitPanelVm,
-                NotificationService);
+                NotificationService,
+                SettingsStore);
         }
 
         private void SeedWorkspace()

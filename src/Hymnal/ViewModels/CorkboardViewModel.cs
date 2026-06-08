@@ -218,6 +218,18 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     public int GetBookInsertIndex() => _workspace.Nodes.Count;
 
     /// <summary>
+    /// Returns the Book.txt insert index for a new book-level chapter: the position of the
+    /// first Part node, so the chapter lands before any parts. Falls back to
+    /// <see cref="GetBookInsertIndex"/> when the book contains no parts.
+    /// </summary>
+    public int GetBookChapterInsertIndex()
+    {
+        var nodes = _workspace.Nodes.ToList();
+        var firstPartIndex = nodes.FindIndex(n => n.Node.Kind == NodeKind.Part);
+        return firstPartIndex >= 0 ? firstPartIndex : nodes.Count;
+    }
+
+    /// <summary>
     /// Returns the Book.txt insert index immediately after the specified chapter node
     /// (all entries: parts + chapters). Used for inline chapter creation via context menu.
     /// </summary>

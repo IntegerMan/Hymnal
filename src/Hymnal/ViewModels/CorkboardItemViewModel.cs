@@ -410,6 +410,8 @@ public sealed class PartDividerItemViewModel : CorkboardItemViewModel
 
     public string ChapterCountDisplay => ChapterCount == 1 ? "1 chapter" : $"{ChapterCount} chapters";
 
+    public string ChapterCountInParens => $"({ChapterCountDisplay})";
+
 
 
     public string ChevronGlyph => IsExpanded ? "\u25BE" : "\u25B8";
