@@ -39,11 +39,14 @@ public class WorkspaceViewModel : ViewModelBase
     private Task? _hydrationTask;
     private bool _isSwitching;
     private readonly Subject<Unit> _workspaceChanged = new();
+    private CompositeDisposable _partSubscriptions = new();
 
     public IObservable<Unit> WorkspaceChanged => _workspaceChanged.AsObservable();
     private readonly ObservableCollectionExtended<ChapterViewModel> _nodes = new();
+    private readonly ObservableCollectionExtended<ChapterViewModel> _visibleNodes = new();
     private readonly Dictionary<string, ChapterViewModel> _nodesByPath = new(StringComparer.OrdinalIgnoreCase);
     public ReadOnlyObservableCollection<ChapterViewModel> Nodes { get; }
+    public ReadOnlyObservableCollection<ChapterViewModel> VisibleNodes { get; }
 
     private bool _isLoading;
     public bool IsLoading
@@ -101,6 +104,14 @@ public class WorkspaceViewModel : ViewModelBase
     /// <summary>Full tooltip for the book total word count label.</summary>
     public string TotalWordCountTooltip => _totalWordCountTooltip.Value;
 
+    private IReadOnlyList<StatusCount> _bookStatusSummary = Array.Empty<StatusCount>();
+    /// <summary>Status breakdown for all chapters in the book, used by the Book header pie chart.</summary>
+    public IReadOnlyList<StatusCount> BookStatusSummary
+    {
+        get => _bookStatusSummary;
+        private set => this.RaiseAndSetIfChanged(ref _bookStatusSummary, value);
+    }
+
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenWorkspaceCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> CloseWorkspaceCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SelectBookCommand { get; }
@@ -108,6 +119,7 @@ public class WorkspaceViewModel : ViewModelBase
     public ReactiveCommand<CreateChapterRequest, System.Reactive.Unit> CreateChapterCommand { get; }
     public ReactiveCommand<CreatePartRequest, System.Reactive.Unit> CreatePartCommand { get; }
     public ReactiveCommand<IncludeExistingChapterRequest, System.Reactive.Unit> IncludeExistingFileCommand { get; }
+    public ReactiveCommand<string, System.Reactive.Unit> RemoveFromBookCommand { get; }
 
     private ChapterViewModel? _targetFlyoutChapter;
     private IDisposable? _targetFlyoutSubscription;
@@ -175,6 +187,7 @@ public class WorkspaceViewModel : ViewModelBase
         _editor.HasWorkspace = false;
 
         Nodes = new ReadOnlyObservableCollection<ChapterViewModel>(_nodes);
+        VisibleNodes = new ReadOnlyObservableCollection<ChapterViewModel>(_visibleNodes);
 
         ToggleChaptersPaneCommand = ReactiveCommand.Create(
             () => { IsChaptersPaneVisible = !IsChaptersPaneVisible; },
@@ -190,6 +203,8 @@ public class WorkspaceViewModel : ViewModelBase
             this.WhenAnyValue(x => x.HasWorkspace));
         IncludeExistingFileCommand = ReactiveCommand.CreateFromTask<IncludeExistingChapterRequest>(IncludeExistingFileAsync,
             this.WhenAnyValue(x => x.HasWorkspace));
+        RemoveFromBookCommand = ReactiveCommand.CreateFromTask<string>(RemoveFromBookAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
 
         Disposables.Add(
             CreateChapterCommand.ThrownExceptions
@@ -199,6 +214,9 @@ public class WorkspaceViewModel : ViewModelBase
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
         Disposables.Add(
             IncludeExistingFileCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            RemoveFromBookCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
 
         Disposables.Add(
@@ -212,6 +230,7 @@ public class WorkspaceViewModel : ViewModelBase
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
         Disposables.Add(Disposable.Create(() => _workspaceChanged.Dispose()));
         Disposables.Add(Disposable.Create(() => _targetFlyoutSubscription?.Dispose()));
+        Disposables.Add(Disposable.Create(() => _partSubscriptions.Dispose()));
 
         Disposables.Add(
             this.WhenAnyValue(x => x.SelectedNode)
@@ -240,6 +259,21 @@ public class WorkspaceViewModel : ViewModelBase
         Disposables.Add(
             _editor.Saved.Subscribe(_ =>
             {
+                // Book.txt save: reload workspace first, before the activeNode guard.
+                if (_editor.IsBookSelected && _model != null)
+                {
+                    var root = _model.WorkspaceRoot;
+                    var bookTxtPath = _model.BookTxtPath;
+                    var task = ReloadWorkspaceAsync(root, bookTxtPath);
+                    task.ContinueWith(t =>
+                    {
+                        if (!t.IsCompletedSuccessfully && t.Exception != null)
+                            _notificationService.ShowError(
+                                $"Failed to reload workspace after Book.txt edit: {t.Exception.InnerException?.Message ?? t.Exception.Message}");
+                    }, TaskScheduler.Default);
+                    return;
+                }
+
                 var activeNode = _editor.ActiveNode;
                 if (activeNode == null || _model == null) return;
 
@@ -276,18 +310,6 @@ public class WorkspaceViewModel : ViewModelBase
                         }, TaskScheduler.Default);
                 }
 
-                if (_editor.IsBookSelected && _model != null)
-                {
-                    var root = _model.WorkspaceRoot;
-                    var bookTxtPath = _model.BookTxtPath;
-                    var task = ReloadWorkspaceAsync(root, bookTxtPath);
-                    task.ContinueWith(t =>
-                    {
-                        if (!t.IsCompletedSuccessfully && t.Exception != null)
-                            _notificationService.ShowError(
-                                $"Failed to reload workspace after Book.txt edit: {t.Exception.InnerException?.Message ?? t.Exception.Message}");
-                    }, TaskScheduler.Default);
-                }
             }));
     }
 
@@ -413,6 +435,8 @@ public class WorkspaceViewModel : ViewModelBase
             }
 
             RebuildNodeLookup();
+            UpdateTotals();
+            UpdateVisibility();
             _workspaceChanged.OnNext(Unit.Default);
             return Result<Unit>.Ok(Unit.Default);
         }
@@ -639,6 +663,13 @@ public class WorkspaceViewModel : ViewModelBase
             if (generation != _workspaceGeneration)
                 return;
 
+            // Load previously collapsed Part paths for this workspace.
+            Dictionary<string, List<string>>? collapsedMap = null;
+            try { collapsedMap = await _settingsStore.GetAsync<Dictionary<string, List<string>>>("partCollapsedStates").ConfigureAwait(false); } catch { }
+            var collapsedPartPaths = collapsedMap != null && collapsedMap.TryGetValue(model.WorkspaceRoot, out var savedPaths)
+                ? new HashSet<string>(savedPaths, StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             // Build ChapterViewModels in index order.
             var vms = activeNodes
                 .Select(node =>
@@ -725,6 +756,42 @@ public class WorkspaceViewModel : ViewModelBase
                 foreach (var vm in vms) _nodes.Add(vm);
                 RebuildNodeLookup();
                 UpdateTotals();
+
+                // Restore Part expand/collapse state before wiring subscriptions so
+                // the initial restore doesn't trigger spurious saves.
+                foreach (var vm in _nodes.Where(v => v.Node.Kind == NodeKind.Part))
+                    vm.IsExpanded = !collapsedPartPaths.Contains(vm.Node.RelativePath);
+
+                _partSubscriptions.Dispose();
+                _partSubscriptions = new CompositeDisposable();
+                foreach (var vm in _nodes)
+                {
+                    if (vm.Node.Kind == NodeKind.Part)
+                    {
+                        _partSubscriptions.Add(
+                            vm.WhenAnyValue(x => x.IsExpanded)
+                                .Skip(1)
+                                .Subscribe(expanded =>
+                                {
+                                    UpdateVisibility();
+                                    var root = _model?.WorkspaceRoot;
+                                    if (root == null) return;
+                                    var collapsed = _nodes
+                                        .Where(v => v.Node.Kind == NodeKind.Part && !v.IsExpanded)
+                                        .Select(v => v.Node.RelativePath)
+                                        .ToList();
+                                    _ = PersistPartExpandedStatesAsync(root, collapsed);
+                                }));
+                    }
+                    else
+                    {
+                        _partSubscriptions.Add(
+                            vm.WhenAnyValue(x => x.Status)
+                                .Skip(1)
+                                .Subscribe(_ => UpdateTotals()));
+                    }
+                }
+                UpdateVisibility();
             });
         }
         catch (Exception ex)
@@ -744,28 +811,63 @@ public class WorkspaceViewModel : ViewModelBase
         int total = 0;
         ChapterViewModel? currentPart = null;
         int accumulated = 0;
+        var partStatuses = new Dictionary<ChapterStatus, int>();
+        var bookStatuses = new Dictionary<ChapterStatus, int>();
 
         foreach (var vm in _nodes)
         {
             if (vm.Node.Kind == NodeKind.Part)
             {
                 if (currentPart != null)
+                {
                     currentPart.PartTotalWordCount = accumulated;
+                    currentPart.PartStatusSummary = ToStatusList(partStatuses);
+                }
 
                 currentPart = vm;
                 accumulated = 0;
+                partStatuses = new Dictionary<ChapterStatus, int>();
             }
             else if (vm.Node.Kind == NodeKind.Chapter)
             {
                 total += vm.WordCount;
                 accumulated += vm.WordCount;
+                bookStatuses[vm.Status] = bookStatuses.GetValueOrDefault(vm.Status) + 1;
+                partStatuses[vm.Status] = partStatuses.GetValueOrDefault(vm.Status) + 1;
             }
         }
 
         if (currentPart != null)
+        {
             currentPart.PartTotalWordCount = accumulated;
+            currentPart.PartStatusSummary = ToStatusList(partStatuses);
+        }
 
         TotalWordCount = total;
+        BookStatusSummary = ToStatusList(bookStatuses);
+    }
+
+    private static IReadOnlyList<StatusCount> ToStatusList(Dictionary<ChapterStatus, int> counts)
+        => counts.Count == 0
+            ? Array.Empty<StatusCount>()
+            : counts.Select(kv => new StatusCount(kv.Key, kv.Value)).ToList();
+
+    private void UpdateVisibility()
+    {
+        bool partExpanded = true;
+        _visibleNodes.Clear();
+        foreach (var vm in _nodes)
+        {
+            if (vm.Node.Kind == NodeKind.Part)
+            {
+                partExpanded = vm.IsExpanded;
+                _visibleNodes.Add(vm);
+            }
+            else if (partExpanded)
+            {
+                _visibleNodes.Add(vm);
+            }
+        }
     }
 
     private void RebuildNodeLookup()
@@ -927,6 +1029,18 @@ public class WorkspaceViewModel : ViewModelBase
         await ExecuteStructuralOperationAsync("Include file", request.ChapterPath, action).ConfigureAwait(false);
     }
 
+    private async Task RemoveFromBookAsync(string chapterPath)
+    {
+        if (_model == null) return;
+        var result = await _structureService.RemoveEntryAsync(_model.BookTxtPath, chapterPath).ConfigureAwait(false);
+        if (!result.IsSuccess)
+        {
+            _notificationService.ShowError($"Failed to remove chapter: {result.Error}");
+            return;
+        }
+        await ReloadWorkspaceAsync(_model.WorkspaceRoot, _model.BookTxtPath, reselectBook: false).ConfigureAwait(false);
+    }
+
     private async Task ExecuteStructuralOperationAsync(
         string operation,
         string? path,
@@ -971,6 +1085,21 @@ public class WorkspaceViewModel : ViewModelBase
         catch
         {
             // Non-fatal; layout preference may not persist across sessions if storage fails.
+        }
+    }
+
+    private async Task PersistPartExpandedStatesAsync(string workspaceRoot, List<string> collapsedPaths)
+    {
+        try
+        {
+            var existing = await _settingsStore.GetAsync<Dictionary<string, List<string>>>("partCollapsedStates")
+                .ConfigureAwait(false) ?? new();
+            existing[workspaceRoot] = collapsedPaths;
+            await _settingsStore.SetAsync("partCollapsedStates", existing).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal; expand/collapse state may not persist across sessions if storage fails.
         }
     }
 }

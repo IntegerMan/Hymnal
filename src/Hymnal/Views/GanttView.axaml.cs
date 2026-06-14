@@ -7,6 +7,8 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 using Hymnal.Core.Models;
 using Hymnal.ViewModels;
@@ -31,9 +33,69 @@ public partial class GanttView : UserControl
             if (now - _lastDatePickerOpenTick > 400)
             {
                 _lastDatePickerOpenTick = now;
+                EnsureClearButton(picker);
                 picker.IsDropDownOpen = true;
             }
         }
+    }
+
+    private void EnsureClearButton(CalendarDatePicker picker)
+    {
+        if (picker.Tag is "has-clear")
+            return;
+
+        var popup = picker.FindDescendantOfType<Popup>();
+        if (popup?.Child == null)
+            return;
+
+        var clearBtn = BuildPopupClearButton(picker);
+
+        if (popup.Child is Border border && border.Child is Control calendarContent)
+        {
+            border.Child = null;
+            var panel = new StackPanel();
+            panel.Children.Add(calendarContent);
+            panel.Children.Add(clearBtn);
+            border.Child = panel;
+        }
+        else
+        {
+            var existing = popup.Child;
+            popup.Child = null;
+            var panel = new StackPanel();
+            panel.Children.Add(existing);
+            panel.Children.Add(clearBtn);
+            popup.Child = panel;
+        }
+
+        picker.Tag = "has-clear";
+    }
+
+    private Button BuildPopupClearButton(CalendarDatePicker picker)
+    {
+        var btn = new Button
+        {
+            Content = "Clear date",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Background = new SolidColorBrush(Color.Parse("#2D1B5E")),
+            Foreground = new SolidColorBrush(Color.Parse("#E2DDFF")),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            BorderBrush = new SolidColorBrush(Color.Parse("#3D2B6E")),
+            CornerRadius = new CornerRadius(0, 0, 4, 4),
+            Padding = new Thickness(8, 7),
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+        };
+
+        btn.Click += (_, _) =>
+        {
+            picker.SelectedDate = null;
+            picker.IsDropDownOpen = false;
+            _lastDatePickerOpenTick = Environment.TickCount64;
+        };
+
+        return btn;
     }
 
     private void ChapterGrid_ContextMenuOpening(object? sender, CancelEventArgs e)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Concurrency;
@@ -98,6 +99,23 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
         get => _partTotalWordCount;
         set => this.RaiseAndSetIfChanged(ref _partTotalWordCount, value);
     }
+
+    private IReadOnlyList<StatusCount> _partStatusSummary = Array.Empty<StatusCount>();
+    /// <summary>Only meaningful for Part nodes; status breakdown of child chapters set by WorkspaceViewModel.</summary>
+    public IReadOnlyList<StatusCount> PartStatusSummary
+    {
+        get => _partStatusSummary;
+        set => this.RaiseAndSetIfChanged(ref _partStatusSummary, value);
+    }
+
+    private bool _isExpanded = true;
+    /// <summary>Only meaningful for Part nodes; controls whether child chapters are visible in the sidebar.</summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set => this.RaiseAndSetIfChanged(ref _isExpanded, value);
+    }
+
 
     // ── Target state ──────────────────────────────────────────────────────────
 
@@ -222,6 +240,9 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
     /// </summary>
     public ReactiveCommand<Unit, Unit> CompletePhaseCommand { get; }
 
+    /// <summary>Toggles IsExpanded on Part nodes to show/hide child chapters.</summary>
+    public ReactiveCommand<Unit, Unit> ToggleExpandedCommand { get; }
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public ChapterViewModel(
@@ -341,6 +362,8 @@ public sealed class ChapterViewModel : ViewModelBase, IDisposable
         Disposables.Add(
             CompletePhaseCommand.ThrownExceptions
                 .Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
+        ToggleExpandedCommand = ReactiveCommand.Create(() => { IsExpanded = !IsExpanded; });
     }
 
     // ── Public mutators ───────────────────────────────────────────────────────

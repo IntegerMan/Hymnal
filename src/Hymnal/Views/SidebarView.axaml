@@ -3,6 +3,7 @@
              xmlns:vm="using:Hymnal.ViewModels"
              xmlns:models="using:Hymnal.Core.Models"
              xmlns:conv="using:Hymnal.Views.Converters"
+             xmlns:controls="using:Hymnal.Views.Controls"
              x:Class="Hymnal.Views.SidebarView"
              x:DataType="vm:WorkspaceViewModel"
              Background="{DynamicResource SurfaceElevatedBrush}">
@@ -11,6 +12,7 @@
         <conv:NodeKindToFontWeightConverter x:Key="NodeKindToFontWeightConverter" />
         <conv:NodeKindToMarginConverter x:Key="NodeKindToMarginConverter" />
         <conv:NodeKindToForegroundConverter x:Key="NodeKindToForegroundConverter" />
+        <conv:NodeKindAndMissingToForegroundConverter x:Key="NodeKindAndMissingToForegroundConverter" />
         <conv:NodeKindIsChapterConverter x:Key="NodeKindIsChapterConverter" />
         <conv:NodeKindIsPartConverter x:Key="NodeKindIsPartConverter" />
         <conv:NodeKindIsChapterAndPresentConverter x:Key="NodeKindIsChapterAndPresentConverter" />
@@ -118,12 +120,16 @@
                             <TextBlock Text="{Binding TotalWordCountTooltip}" />
                         </ToolTip.Tip>
                     </TextBlock>
-                    <!-- Col 2: spacer matching status button column -->
+                    <controls:StatusPieChart Grid.Column="2"
+                                            Segments="{Binding BookStatusSummary}"
+                                            Width="18" Height="18"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center" />
                 </Grid>
             </Button>
 
             <!-- Chapter tree -->
-            <ListBox ItemsSource="{Binding Nodes}"
+            <ListBox ItemsSource="{Binding VisibleNodes}"
                      SelectedItem="{Binding SelectedNode}"
                      Background="Transparent"
                      BorderThickness="0"
@@ -162,27 +168,67 @@
                                     <MenuItem Header="Set Target…"
                                               IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
                                               Command="{Binding OpenTargetFlyoutCommand}" />
+                                    <Separator IsVisible="{Binding Node.IsMissing}" />
+                                    <MenuItem Header="Remove"
+                                              IsVisible="{Binding Node.IsMissing}"
+                                              Click="RemoveFromBook_Click" />
                                 </ContextMenu>
                             </Grid.ContextMenu>
 
                             <!-- Title + proximity fill bar [Col 0] -->
-                            <StackPanel Grid.Column="0" Spacing="0">
-                                <TextBlock Text="{Binding Node.Title}"
-                                           FontWeight="{Binding Node.Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
-                                           Margin="{Binding Node.Kind, Converter={StaticResource NodeKindToMarginConverter}}"
-                                           Foreground="{Binding Node.Kind, Converter={StaticResource NodeKindToForegroundConverter}}"
-                                           VerticalAlignment="Center" />
-                                <!-- Proximity fill bar: visible only when chapter has a target -->
-                                <ProgressBar IsVisible="{Binding HasTarget}"
-                                             Minimum="0"
-                                             Maximum="1"
-                                             Value="{Binding ProximityFill}"
-                                             Height="2"
-                                             Margin="0,3,4,0"
-                                             Background="Transparent"
-                                             Foreground="#669D4EDD"
-                                             VerticalAlignment="Bottom" />
-                            </StackPanel>
+                            <Grid Grid.Column="0" ColumnDefinitions="20,*">
+                                <!-- Chevron toggle (Part nodes only) -->
+                                <Button Grid.Column="0"
+                                        IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsPartConverter}}"
+                                        Command="{Binding ToggleExpandedCommand}"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="0"
+                                        Width="16" Height="16"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center"
+                                        Cursor="Hand">
+                                    <Grid Width="12" Height="12">
+                                        <TextBlock Text="▼"
+                                                   IsVisible="{Binding IsExpanded}"
+                                                   FontSize="8"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                        <TextBlock Text="▶"
+                                                   IsVisible="{Binding IsExpanded, Converter={StaticResource BoolNotConverter}}"
+                                                   FontSize="8"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    </Grid>
+                                </Button>
+
+                                <!-- Title + proximity fill bar -->
+                                <StackPanel Grid.Column="1" Spacing="0">
+                                    <TextBlock Text="{Binding Node.Title}"
+                                               FontWeight="{Binding Node.Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
+                                               Margin="{Binding Node.Kind, Converter={StaticResource NodeKindToMarginConverter}}"
+                                               VerticalAlignment="Center">
+                                        <TextBlock.Foreground>
+                                            <MultiBinding Converter="{StaticResource NodeKindAndMissingToForegroundConverter}">
+                                                <Binding Path="Node.Kind" />
+                                                <Binding Path="Node.IsMissing" />
+                                            </MultiBinding>
+                                        </TextBlock.Foreground>
+                                    </TextBlock>
+                                    <!-- Proximity fill bar: visible only when chapter has a target -->
+                                    <ProgressBar IsVisible="{Binding HasTarget}"
+                                                 Minimum="0"
+                                                 Maximum="1"
+                                                 Value="{Binding ProximityFill}"
+                                                 Height="2"
+                                                 Margin="0,3,4,0"
+                                                 Background="Transparent"
+                                                 Foreground="#669D4EDD"
+                                                 VerticalAlignment="Bottom" />
+                                </StackPanel>
+                            </Grid>
 
                             <!-- Word count / Part total + target popup anchor [Col 1] -->
                             <StackPanel Grid.Column="1"
@@ -215,6 +261,14 @@
                                 </TextBlock>
 
                             </StackPanel>
+
+                            <!-- Status pie chart for Part nodes [Col 2] -->
+                            <controls:StatusPieChart Grid.Column="2"
+                                                     IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsPartConverter}}"
+                                                     Segments="{Binding PartStatusSummary}"
+                                                     Width="18" Height="18"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center" />
 
                             <!-- Status button [Col 2] -->
                             <Button Grid.Column="2"

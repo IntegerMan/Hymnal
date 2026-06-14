@@ -45,6 +45,23 @@ public class NodeKindToForegroundConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>Returns purple for parts, grey for missing chapters, and light for present chapters.</summary>
+public class NodeKindAndMissingToForegroundConverter : IMultiValueConverter
+{
+    public static readonly NodeKindAndMissingToForegroundConverter Instance = new();
+
+    private static readonly SolidColorBrush PartBrush    = new(Color.Parse("#9D4EDD"));
+    private static readonly SolidColorBrush ChapterBrush = new(Color.Parse("#EDE8F5"));
+    private static readonly SolidColorBrush MissingBrush = new(Color.Parse("#6B7280"));
+
+    public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Count < 2) return ChapterBrush;
+        if (values[0] is NodeKind.Part) return PartBrush;
+        return values[1] is true ? MissingBrush : ChapterBrush;
+    }
+}
+
 public class NodeKindIsChapterConverter : IValueConverter
 {
     public static readonly NodeKindIsChapterConverter Instance = new();

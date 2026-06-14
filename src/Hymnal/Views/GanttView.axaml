@@ -18,9 +18,11 @@
         <Style Selector="CalendarDatePicker.gantt-date-cell">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="Padding" Value="0" />
             <Setter Property="Height" Value="28" />
             <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="FontSize" Value="10" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="PlaceholderText" Value="" />
@@ -30,6 +32,8 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="FontSize" Value="10" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
         <!-- Hide the calendar dropdown button (its glyph font renders as "7") -->
