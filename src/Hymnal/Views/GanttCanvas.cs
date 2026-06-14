@@ -130,6 +130,8 @@ public sealed class GanttCanvas : Control
     public GanttCanvas()
     {
         ToolTip.SetShowDelay(this, 300);
+        ToolTip.SetPlacement(this, PlacementMode.Pointer);
+        ToolTip.SetHorizontalOffset(this, 24);
     }
 
     // ── Property change / collection watching ────────────────────────────────

@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Hymnal.Core.Models;
 
@@ -30,27 +31,44 @@ public class StatusPieChart : Control
     private void UpdateTooltip()
     {
         var segments = Segments;
-        if (segments == null || segments.Count == 0)
-        {
-            ToolTip.SetTip(this, null);
-            return;
-        }
-
+        if (segments == null || segments.Count == 0) { ToolTip.SetTip(this, null); return; }
         int total = segments.Sum(s => s.Count);
-        if (total == 0)
-        {
-            ToolTip.SetTip(this, null);
-            return;
-        }
+        if (total == 0) { ToolTip.SetTip(this, null); return; }
 
-        var sb = new StringBuilder();
+        var panel = new StackPanel { Spacing = 5 };
         foreach (var s in segments.OrderByDescending(s => s.Count))
         {
             int pct = (int)Math.Round(s.Count * 100.0 / total);
-            sb.AppendLine($"{s.Status}: {s.Count} ({pct}%)");
+            var color = StatusColors.TryGetValue(s.Status, out var c) ? c : Colors.Gray;
+
+            var dot = new Ellipse
+            {
+                Width = 10, Height = 10,
+                Fill = new SolidColorBrush(color),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var nameLabel = new TextBlock
+            {
+                Text = s.Status.ToString(),
+                Width = 76,
+                Foreground = new SolidColorBrush(Color.Parse("#EDE8F5"))
+            };
+
+            var countLabel = new TextBlock
+            {
+                Text = $"{s.Count}  ({pct}%)",
+                Foreground = new SolidColorBrush(Color.Parse("#9589B0"))
+            };
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            row.Children.Add(dot);
+            row.Children.Add(nameLabel);
+            row.Children.Add(countLabel);
+            panel.Children.Add(row);
         }
 
-        ToolTip.SetTip(this, sb.ToString().TrimEnd());
+        ToolTip.SetTip(this, panel);
     }
 
     private static readonly Dictionary<ChapterStatus, Color> StatusColors = new()

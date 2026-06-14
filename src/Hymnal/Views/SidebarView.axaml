@@ -281,10 +281,34 @@
                                     <Binding Path="Node.Kind" Converter="{StaticResource NodeKindIsChapterConverter}" />
                                 </Button.IsVisible>
                                 <ToolTip.Tip>
-                                    <MultiBinding Converter="{StaticResource StatusDotTooltipConverter}">
-                                        <Binding Path="Node.IsMissing" />
-                                        <Binding Path="Status" />
-                                    </MultiBinding>
+                                    <Panel>
+                                        <!-- Missing file case -->
+                                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                                    IsVisible="{Binding Node.IsMissing}">
+                                            <Path Data="M12 2L2 20h20L12 2zm0 5.5L18.25 18H5.75L12 7.5zm-1 4.5h2v4h-2zm0 5.2h2v2h-2z"
+                                                  Fill="{DynamicResource OrangeBrush}"
+                                                  Width="14" Height="14" Stretch="Uniform"
+                                                  VerticalAlignment="Center" />
+                                            <TextBlock Text="File not found"
+                                                       Foreground="{DynamicResource OrangeBrush}"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <!-- Normal status case -->
+                                        <StackPanel Orientation="Horizontal" Spacing="8"
+                                                    IsVisible="{Binding Node.IsMissing, Converter={StaticResource BoolNotConverter}}">
+                                            <Ellipse Width="10" Height="10"
+                                                     Fill="{Binding Status, Converter={StaticResource StatusToBrushConverter}}"
+                                                     VerticalAlignment="Center" />
+                                            <StackPanel Spacing="1">
+                                                <TextBlock Text="{Binding Status}"
+                                                           Foreground="{DynamicResource OnSurfaceBrush}"
+                                                           FontWeight="SemiBold" />
+                                                <TextBlock Text="Click to change status"
+                                                           Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                           FontSize="11" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Panel>
                                 </ToolTip.Tip>
                                 <Button.Flyout>
                                     <MenuFlyout>
