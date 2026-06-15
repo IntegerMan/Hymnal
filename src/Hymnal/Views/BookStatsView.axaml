@@ -1,0 +1,107 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:conv="using:Hymnal.Views.Converters"
+             xmlns:controls="using:Hymnal.Views.Controls"
+             x:Class="Hymnal.Views.BookStatsView"
+             x:DataType="vm:BookStatsViewModel"
+             Background="{DynamicResource SurfaceElevatedBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="12,10,12,16" Spacing="10">
+
+            <!-- Context title (workspace name or part name) -->
+            <TextBlock Text="{Binding ContextTitle}"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource OnSurfaceBrush}"
+                       TextWrapping="Wrap" />
+
+            <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
+
+            <!-- Word count -->
+            <StackPanel Spacing="2">
+                <TextBlock Text="WORDS"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           LetterSpacing="1.5"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                <TextBlock Text="{Binding TotalWordCountDisplay}"
+                           FontSize="18"
+                           FontWeight="Medium"
+                           Foreground="{DynamicResource OnSurfaceBrush}" />
+            </StackPanel>
+
+            <!-- Status breakdown -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="STATUS"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           LetterSpacing="1.5"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                <controls:StatusPieChart Segments="{Binding StatusSummary}"
+                                         Width="80"
+                                         Height="80"
+                                         HorizontalAlignment="Left" />
+            </StackPanel>
+
+            <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
+
+            <!-- Word count bar chart -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="{Binding BarSectionLabel}"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           LetterSpacing="1.5"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+
+                <ItemsControl ItemsSource="{Binding BarItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:BarItemViewModel">
+                            <StackPanel Spacing="2" Margin="0,0,0,6">
+                                <!-- Title + word count -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Title}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource OnSurfaceBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding WordCountDisplay}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                               Margin="6,0,0,0" />
+                                </Grid>
+                                <!-- Proportional fill bar -->
+                                <ProgressBar Value="{Binding FillFraction}"
+                                             Minimum="0"
+                                             Maximum="1"
+                                             Height="6"
+                                             CornerRadius="3"
+                                             Foreground="{Binding Status, Converter={x:Static conv:StatusToBrushConverter.Instance}}"
+                                             Background="{DynamicResource SurfaceHighBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Stacked word count history chart -->
+            <StackPanel Spacing="6"
+                        IsVisible="{Binding HasStackedHistory}">
+                <Separator Background="{DynamicResource BorderSubtleBrush}" Height="1" />
+                <TextBlock Text="WORDS BY DAY"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           LetterSpacing="1.5"
+                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                <controls:StackedWordCountHistoryChart Items="{Binding StackedHistoryItems}"
+                                                       Target="{Binding TotalTarget}"
+                                                       ShowTrendline="True" />
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

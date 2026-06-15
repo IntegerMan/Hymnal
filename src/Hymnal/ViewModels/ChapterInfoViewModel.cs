@@ -41,6 +41,7 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
     private readonly TargetsService _targetsService;
     private readonly IAppSettingsStore _settingsStore;
     private readonly INotificationService _notificationService;
+    private readonly WordCountHistoryService _historyService;
 
     // ── Per-chapter state ────────────────────────────────────────────────────
 
@@ -153,6 +154,19 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _scheduleSavedRecently, value);
     }
 
+    private IReadOnlyList<HistoryChartPoint> _historyItems = Array.Empty<HistoryChartPoint>();
+    public IReadOnlyList<HistoryChartPoint> HistoryItems
+    {
+        get => _historyItems;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _historyItems, value);
+            this.RaisePropertyChanged(nameof(HasHistoryItems));
+        }
+    }
+
+    public bool HasHistoryItems => _historyItems.Count > 0;
+
     // ── PrefillPhaseDate ─────────────────────────────────────────────────────
 
     private bool _prefillPhaseDate = true;
@@ -205,7 +219,8 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         PhaseDataService phaseDataService,
         TargetsService targetsService,
         IAppSettingsStore settingsStore,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        WordCountHistoryService historyService)
     {
         _editorViewModel = editorViewModel;
         _workspaceViewModel = workspaceViewModel;
@@ -213,6 +228,7 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         _targetsService = targetsService;
         _settingsStore = settingsStore;
         _notificationService = notificationService;
+        _historyService = historyService;
 
         try
         {
@@ -335,6 +351,9 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
             // Sync display state from the ChapterViewModel immediately.
             SyncFromChapterVm(chapterVm);
 
+            if (!string.IsNullOrEmpty(_loadedUuid))
+                _ = LoadChapterHistoryAsync(_loadedUuid);
+
             // Subscribe to live word count, status, and target changes.
             _chapterDisposables.Add(
                 chapterVm.WhenAnyValue(x => x.WordCount)
@@ -370,6 +389,33 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         else
         {
             IsVisible = wasVisible;
+        }
+    }
+
+    private async Task LoadChapterHistoryAsync(string uuid)
+    {
+        var workspaceRoot = _workspaceViewModel.WorkspaceRoot;
+        if (string.IsNullOrEmpty(workspaceRoot))
+        {
+            HistoryItems = Array.Empty<HistoryChartPoint>();
+            return;
+        }
+
+        try
+        {
+            var all = await _historyService.GetAllAsync(workspaceRoot).ConfigureAwait(false);
+            var points = all
+                .Where(e => string.Equals(e.Uuid, uuid, StringComparison.Ordinal))
+                .Select(e => new HistoryChartPoint(e.Date, e.WordCount))
+                .OrderBy(p => p.Date)
+                .ToList();
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                HistoryItems = points);
+        }
+        catch
+        {
+            // Non-fatal; chart stays empty
         }
     }
 

@@ -47,6 +47,17 @@ public sealed class WordCountHistoryService
     }
 
     // -------------------------------------------------------------------------
+    // Read
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns all recorded word-count history entries for the workspace.
+    /// Safe to call without a write lock; the file is written atomically.
+    /// </summary>
+    public async Task<IReadOnlyList<WordCountHistoryEntry>> GetAllAsync(string workspaceRoot)
+        => await LoadUnlockedAsync(workspaceRoot).ConfigureAwait(false);
+
+    // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
 

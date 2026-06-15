@@ -206,18 +206,7 @@ public partial class MainWindow : Window
         var grid = RightPaneGrid;   // x:Name="RightPaneGrid" field from generated partial class
         if (grid is null) return;
 
-        // IsVisible is driven from code-behind: compiled bindings on these controls inherit
-        // the child view's x:DataType, so a path like ChapterInfoViewModel.IsVisible fails.
-        if (ChapterInfoViewContent is not null)
-        {
-            ChapterInfoViewContent.IsVisible = vm.ChapterInfoViewModel.IsVisible;
-            _layoutDisposables.Add(
-                vm.ChapterInfoViewModel
-                    .WhenAnyValue(x => x.IsVisible)
-                    .ObserveOn(AvaloniaScheduler.Instance)
-                    .Subscribe(v => ChapterInfoViewContent.IsVisible = v));
-        }
-
+        // Notes visibility is still driven from code-behind (compiled binding limitation in child views).
         if (NotesViewContent is not null)
         {
             NotesViewContent.IsVisible = vm.NotesViewModel.IsVisible;
@@ -228,44 +217,44 @@ public partial class MainWindow : Window
                     .Subscribe(v => NotesViewContent.IsVisible = v));
         }
 
-        // Outlook-style layout: 5 rows — header | content | splitter | header | content
-        // Row 0: ChapterInfo header (fixed 48px — not managed here)
-        // Row 1: ChapterInfo content (* or 0)
-        // Row 2: Splitter (Auto — not managed here)
-        // Row 3: Notes header (fixed 48px — not managed here)
-        // Row 4: Notes content (* or 0)
+        // ChapterPanelContentControl.IsVisible is bound in AXAML to IsChapterPanelOpen;
+        // we only need to drive the row heights here.
 
-        void ApplyRowHeights(bool ciVisible, bool notesVisible, WriteLayoutSettings layout)
+        // Outlook-style layout: 3 rows — DockPanel(header+content) | splitter | DockPanel(header+content)
+        // Row 0: Chapter panel DockPanel (* or Auto — managed here)
+        // Row 1: Splitter (Auto — not managed here)
+        // Row 2: Notes DockPanel (* or Auto — managed here)
+
+        void ApplyRowHeights(bool chPanelVisible, bool notesVisible, WriteLayoutSettings layout)
         {
-            if (ciVisible && notesVisible)
+            if (chPanelVisible && notesVisible)
             {
-                grid.RowDefinitions[1].Height = new GridLength(layout.RightPaneTopStar, GridUnitType.Star);
-                grid.RowDefinitions[4].Height = new GridLength(layout.RightPaneBottomStar, GridUnitType.Star);
+                grid.RowDefinitions[0].Height = new GridLength(layout.RightPaneTopStar, GridUnitType.Star);
+                grid.RowDefinitions[2].Height = new GridLength(layout.RightPaneBottomStar, GridUnitType.Star);
             }
             else
             {
-                grid.RowDefinitions[1].Height = ciVisible
-                    ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-                grid.RowDefinitions[4].Height = notesVisible
-                    ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+                grid.RowDefinitions[0].Height = chPanelVisible
+                    ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+                grid.RowDefinitions[2].Height = notesVisible
+                    ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
             }
         }
 
         ApplyRowHeights(
-            vm.ChapterInfoViewModel.IsVisible,
+            vm.IsChapterPanelOpen,
             vm.NotesViewModel.IsVisible,
             vm.CurrentWriteLayout);
 
         _layoutDisposables.Add(
-            vm.ChapterInfoViewModel
-                .WhenAnyValue(x => x.IsVisible)
+            vm.WhenAnyValue(x => x.IsChapterPanelOpen)
                 .CombineLatest(
                     vm.NotesViewModel.WhenAnyValue(x => x.IsVisible),
                     vm.WhenAnyValue(x => x.CurrentWriteLayout),
-                    (ci, notes, layout) => (ci, notes, layout))
+                    (chPanel, notes, layout) => (chPanel, notes, layout))
                 .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
-                    state => ApplyRowHeights(state.ci, state.notes, state.layout),
+                    state => ApplyRowHeights(state.chPanel, state.notes, state.layout),
                     _ => { /* non-fatal */ }));
     }
 
@@ -373,10 +362,10 @@ public partial class MainWindow : Window
         }
 
         // Capture right-pane vertical split only when both panes are open.
-        if (vm.IsBothRightPanesOpen && rightPane?.RowDefinitions.Count >= 5)
+        if (vm.IsBothRightPanesOpen && rightPane?.RowDefinitions.Count >= 3)
         {
-            var top = rightPane.RowDefinitions[1].Height;
-            var bot = rightPane.RowDefinitions[4].Height;
+            var top = rightPane.RowDefinitions[0].Height;
+            var bot = rightPane.RowDefinitions[2].Height;
             if (top.IsStar && bot.IsStar && top.Value > 0 && bot.Value > 0)
             {
                 captured.RightPaneTopStar    = top.Value;

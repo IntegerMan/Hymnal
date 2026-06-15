@@ -107,7 +107,8 @@ public partial class App : Application
                 sp.GetRequiredService<PhaseDataService>(),
                 sp.GetRequiredService<TargetsService>(),
                 sp.GetRequiredService<IAppSettingsStore>(),
-                sp.GetRequiredService<INotificationService>()));
+                sp.GetRequiredService<INotificationService>(),
+                sp.GetRequiredService<WordCountHistoryService>()));
 
         services.AddSingleton<GanttViewModel>(sp =>
             new GanttViewModel(
@@ -150,12 +151,19 @@ public partial class App : Application
                 sp.GetRequiredService<IGitService>(),
                 sp.GetRequiredService<INotificationService>()));
 
+        services.AddSingleton<BookStatsViewModel>(sp =>
+            new BookStatsViewModel(
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<WordCountHistoryService>(),
+                sp.GetRequiredService<TargetsService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<EditorViewModel>(),
                 sp.GetRequiredService<NotesViewModel>(),
                 sp.GetRequiredService<ChapterInfoViewModel>(),
+                sp.GetRequiredService<BookStatsViewModel>(),
                 sp.GetRequiredService<GanttViewModel>(),
                 sp.GetRequiredService<CorkboardViewModel>(),
                 sp.GetRequiredService<ResearchViewModel>(),

@@ -3,6 +3,7 @@
              xmlns:vm="using:Hymnal.ViewModels"
              xmlns:models="using:Hymnal.Core.Models"
              xmlns:conv="using:Hymnal.Views.Converters"
+             xmlns:controls="using:Hymnal.Views.Controls"
              x:Class="Hymnal.Views.ChapterInfoView"
              x:DataType="vm:ChapterInfoViewModel"
              Background="{DynamicResource SurfaceElevatedBrush}">
@@ -172,6 +173,17 @@
                              CornerRadius="2"
                              Foreground="{DynamicResource SynthwavePurpleBrush}"
                              Background="{DynamicResource SurfaceHighBrush}" />
+
+                <!-- Word count history chart -->
+                <StackPanel Spacing="6"
+                            IsVisible="{Binding HasHistoryItems}">
+                    <TextBlock Text="WORDS BY DAY"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               LetterSpacing="1.5"
+                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                    <controls:WordCountHistoryChart Items="{Binding HistoryItems}" />
+                </StackPanel>
 
                 <!-- Target -->
                 <StackPanel Spacing="4">

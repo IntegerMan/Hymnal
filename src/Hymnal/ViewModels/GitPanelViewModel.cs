@@ -205,7 +205,12 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
 
     public async Task SyncAsync(string? commitMessage)
     {
-        if (HasMergeConflict || IsBusy || !IsVisible)
+        if (HasMergeConflict)
+        {
+            _notificationService.ShowError("Resolve merge conflicts before syncing.");
+            return;
+        }
+        if (IsBusy || !IsVisible)
             return;
 
         var workspaceRoot = _workspaceViewModel.WorkspaceRoot;
@@ -295,7 +300,10 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
 
             LastError = null;
             _lastRemoteFetchUtc = DateTimeOffset.UtcNow;
-            SetTransientSummary(GitSyncSummary.FormatPullResult(behindBefore));
+            var pullResultText = GitSyncSummary.FormatPullResult(behindBefore);
+            SetTransientSummary(pullResultText);
+            if (behindBefore == 0)
+                _notificationService.ShowSuccess(pullResultText);
         }
         catch (Exception ex)
         {

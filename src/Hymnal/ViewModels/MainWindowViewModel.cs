@@ -26,6 +26,7 @@ public class MainWindowViewModel : ViewModelBase
     public EditorViewModel EditorViewModel { get; }
     public NotesViewModel NotesViewModel { get; }
     public ChapterInfoViewModel ChapterInfoViewModel { get; }
+    public BookStatsViewModel BookStatsViewModel { get; }
     public GanttViewModel GanttViewModel { get; }
     public CorkboardViewModel CorkboardViewModel { get; }
     public ResearchViewModel ResearchViewModel { get; }
@@ -138,12 +139,29 @@ public class MainWindowViewModel : ViewModelBase
 
     // ── Right-rail pane aggregates ────────────────────────────────────────────
 
+    private readonly ObservableAsPropertyHelper<object?> _chapterPanelContent;
+    /// <summary>
+    /// The view-model shown in the right sidebar's top panel slot.
+    /// Returns <see cref="ChapterInfoViewModel"/> when a chapter is active,
+    /// <see cref="BookStatsViewModel"/> when a part or the book is selected,
+    /// or null when no workspace is open.
+    /// </summary>
+    public object? ChapterPanelContent => _chapterPanelContent.Value;
+
+    private readonly ObservableAsPropertyHelper<string> _chapterPanelTitle;
+    /// <summary>Header label for the right-sidebar top panel: "CHAPTER INFO", "PART STATS", or "BOOK STATS".</summary>
+    public string ChapterPanelTitle => _chapterPanelTitle.Value;
+
+    private readonly ObservableAsPropertyHelper<bool> _isChapterPanelOpen;
+    /// <summary>True when the top-right panel (chapter info or book/part stats) is expanded.</summary>
+    public bool IsChapterPanelOpen => _isChapterPanelOpen.Value;
+
     private readonly ObservableAsPropertyHelper<bool> _isAnyRightPaneOpen;
-    /// <summary>True when either the Notes or Chapter Info pane is visible.</summary>
+    /// <summary>True when either the Notes or the top-right panel is visible.</summary>
     public bool IsAnyRightPaneOpen => _isAnyRightPaneOpen.Value;
 
     private readonly ObservableAsPropertyHelper<bool> _isBothRightPanesOpen;
-    /// <summary>True when both the Notes and Chapter Info panes are visible.</summary>
+    /// <summary>True when both the Notes and top-right panels are visible.</summary>
     public bool IsBothRightPanesOpen => _isBothRightPanesOpen.Value;
 
     private readonly ObservableAsPropertyHelper<bool> _isEditorChapterBarVisible;
@@ -189,6 +207,7 @@ public class MainWindowViewModel : ViewModelBase
         EditorViewModel editorViewModel,
         NotesViewModel notesViewModel,
         ChapterInfoViewModel chapterInfoViewModel,
+        BookStatsViewModel bookStatsViewModel,
         GanttViewModel ganttViewModel,
         CorkboardViewModel corkboardViewModel,
         ResearchViewModel researchViewModel,
@@ -207,6 +226,7 @@ public class MainWindowViewModel : ViewModelBase
         EditorViewModel = editorViewModel;
         NotesViewModel = notesViewModel;
         ChapterInfoViewModel = chapterInfoViewModel;
+        BookStatsViewModel = bookStatsViewModel;
         GanttViewModel = ganttViewModel;
         CorkboardViewModel = corkboardViewModel;
         ResearchViewModel = researchViewModel;
@@ -260,17 +280,50 @@ public class MainWindowViewModel : ViewModelBase
         Disposables.Add(_layoutReset);
 
         // ── Right-rail pane aggregates ────────────────────────────────────────
+
+        // Switch between ChapterInfoViewModel (chapter active) and BookStatsViewModel (part/book selected).
+        _chapterPanelContent = Observable.CombineLatest(
+                workspaceViewModel.WhenAnyValue(x => x.SelectedNode),
+                workspaceViewModel.WhenAnyValue(x => x.HasWorkspace),
+                (selected, hasWorkspace) =>
+                {
+                    if (!hasWorkspace) return (object?)null;
+                    if (selected == null || selected.Node.Kind == NodeKind.Part)
+                        return bookStatsViewModel;
+                    return chapterInfoViewModel;
+                })
+            .ToProperty(this, x => x.ChapterPanelContent);
+        Disposables.Add(_chapterPanelContent);
+
+        _chapterPanelTitle = this.WhenAnyValue(x => x.ChapterPanelContent)
+            .Select(content => content is BookStatsViewModel bsvm
+                ? bsvm.WhenAnyValue(x => x.PanelTitle)
+                : Observable.Return("CHAPTER INFO"))
+            .Switch()
+            .ToProperty(this, x => x.ChapterPanelTitle, initialValue: "CHAPTER INFO");
+        Disposables.Add(_chapterPanelTitle);
+
+        // Combined observable drives both IsChapterPanelOpen and the right-rail aggregates.
+        var chapterPanelOpenObs = Observable.CombineLatest(
+            chapterInfoViewModel.WhenAnyValue(x => x.IsVisible),
+            bookStatsViewModel.WhenAnyValue(x => x.IsVisible),
+            (ci, bs) => ci || bs);
+
+        _isChapterPanelOpen = chapterPanelOpenObs
+            .ToProperty(this, x => x.IsChapterPanelOpen);
+        Disposables.Add(_isChapterPanelOpen);
+
         _isAnyRightPaneOpen = Observable.CombineLatest(
-                ChapterInfoViewModel.WhenAnyValue(x => x.IsVisible),
+                chapterPanelOpenObs,
                 NotesViewModel.WhenAnyValue(x => x.IsVisible),
-                (a, b) => a || b)
+                (chPanel, notes) => chPanel || notes)
             .ToProperty(this, x => x.IsAnyRightPaneOpen);
         Disposables.Add(_isAnyRightPaneOpen);
 
         _isBothRightPanesOpen = Observable.CombineLatest(
-                ChapterInfoViewModel.WhenAnyValue(x => x.IsVisible),
+                chapterPanelOpenObs,
                 NotesViewModel.WhenAnyValue(x => x.IsVisible),
-                (a, b) => a && b)
+                (chPanel, notes) => chPanel && notes)
             .ToProperty(this, x => x.IsBothRightPanesOpen);
         Disposables.Add(_isBothRightPanesOpen);
 
