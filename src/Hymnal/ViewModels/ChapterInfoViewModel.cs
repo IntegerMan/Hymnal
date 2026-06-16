@@ -311,6 +311,10 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
 
     private void OnActiveNodeChanged(ChapterNode? node)
     {
+        // Flush any pending schedule edits for the outgoing chapter before switching.
+        if (_loadedUuid != null && !_suppressAutoSave)
+            _ = SaveScheduleAsync();
+
         // Cancel any pending in-flight operation for the previous chapter.
         _saveCts.Cancel();
         _saveCts.Dispose();
@@ -352,7 +356,7 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
             SyncFromChapterVm(chapterVm);
 
             if (!string.IsNullOrEmpty(_loadedUuid))
-                _ = LoadChapterHistoryAsync(_loadedUuid);
+                _ = RecordHistoryAndReloadAsync(_loadedUuid, chapterVm.WordCount);
 
             // Subscribe to live word count, status, and target changes.
             _chapterDisposables.Add(
@@ -390,6 +394,25 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         {
             IsVisible = wasVisible;
         }
+    }
+
+    private async Task RecordHistoryAndReloadAsync(string uuid, int wordCount)
+    {
+        var workspaceRoot = _workspaceViewModel.WorkspaceRoot;
+        if (!string.IsNullOrEmpty(workspaceRoot) && wordCount > 0)
+        {
+            try
+            {
+                var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                await _historyService.AppendAsync(workspaceRoot, uuid, today, wordCount).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Non-fatal; chart will still reload from whatever data exists.
+            }
+        }
+
+        await LoadChapterHistoryAsync(uuid).ConfigureAwait(false);
     }
 
     private async Task LoadChapterHistoryAsync(string uuid)
@@ -437,16 +460,26 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         _suppressAutoSave = true;
         try
         {
-            var segments = pd != null
-                ? GanttProjection.BuildSegments(pd)
-                : (IReadOnlyList<PhaseSegment>)Array.Empty<PhaseSegment>();
-
             foreach (var row in PhaseScheduleRows)
             {
-                var seg = segments.FirstOrDefault(s => s.PhaseName == row.PhaseName);
-                row.StartDate = seg?.StartDate?.ToString("yyyy-MM-dd");
-                row.EndDate   = seg?.EndDate?.ToString("yyyy-MM-dd");
-                row.Progress  = seg?.Progress > 0 ? seg.Progress * 100.0 : null;
+                // Read raw strings directly so partial/in-progress edits survive the round-trip.
+                PhaseScheduleEntry? entry = null;
+                pd?.Schedule?.TryGetValue(row.PhaseName, out entry);
+
+                string? startDate = entry?.StartDate;
+                string? endDate   = entry?.EndDate;
+
+                // Fall back to legacy fields for the currently-active phase.
+                if (startDate == null && endDate == null && pd?.Status.ToString() == row.PhaseName)
+                {
+                    startDate = pd?.PhaseStartDate;
+                    endDate   = pd?.PhaseEndDate;
+                }
+
+                row.StartDate = startDate;
+                row.EndDate   = endDate;
+                var prog = entry?.Progress;
+                row.Progress  = prog > 0 ? prog : null;
             }
         }
         finally
@@ -503,19 +536,59 @@ public sealed class ChapterInfoViewModel : ViewModelBase, IDisposable
         PhaseData? updated = null;
         await _phaseDataService.UpsertAsync(workspaceRoot, uuid, current =>
         {
-            var existingStart = current?.PhaseStartDate;
-            var existingEnd = current?.PhaseEndDate;
+            var statusChanged = current?.Status != newStatus;
+            var isAdvancing = (int)newStatus > (int)(current?.Status ?? ChapterStatus.Planned);
 
-            // Pre-fill phase start date if the toggle is on and status actually changed.
-            var startDate = (_prefillPhaseDate && current?.Status != newStatus)
-                ? DateTime.UtcNow.ToString("yyyy-MM-dd")
-                : existingStart;
+            // Preserve the existing per-phase schedule; never wipe it on a status change.
+            var schedule = current?.Schedule != null
+                ? new Dictionary<string, PhaseScheduleEntry>(current.Schedule)
+                : new Dictionary<string, PhaseScheduleEntry>();
 
+            if (_prefillPhaseDate && statusChanged)
+            {
+                var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+
+                // Close out the previous phase when advancing forward.
+                if (isAdvancing)
+                {
+                    var oldPhaseName = current?.Status.ToString();
+                    if (oldPhaseName != null && Array.IndexOf(GanttProjection.PhaseNames, oldPhaseName) >= 0)
+                    {
+                        schedule.TryGetValue(oldPhaseName, out var old);
+                        schedule[oldPhaseName] = new PhaseScheduleEntry
+                        {
+                            StartDate = old?.StartDate,
+                            EndDate   = old?.EndDate ?? today,
+                            Progress  = (old?.Progress ?? 0) < 100 ? 100.0 : old!.Progress
+                        };
+                    }
+                }
+
+                // Open the new phase (fill start date if not already set).
+                var newPhaseName = newStatus.ToString();
+                if (Array.IndexOf(GanttProjection.PhaseNames, newPhaseName) >= 0)
+                {
+                    schedule.TryGetValue(newPhaseName, out var newEntry);
+                    if (newEntry?.StartDate == null)
+                    {
+                        schedule[newPhaseName] = new PhaseScheduleEntry
+                        {
+                            StartDate = today,
+                            EndDate   = newEntry?.EndDate,
+                            Progress  = newEntry?.Progress
+                        };
+                    }
+                }
+            }
+
+            // Derive legacy fields from the new active phase for backward compat.
+            schedule.TryGetValue(newStatus.ToString(), out var activeEntry);
             updated = new PhaseData
             {
-                Status = newStatus,
-                PhaseStartDate = startDate,
-                PhaseEndDate = existingEnd
+                Status         = newStatus,
+                PhaseStartDate = activeEntry?.StartDate ?? current?.PhaseStartDate,
+                PhaseEndDate   = activeEntry?.EndDate   ?? current?.PhaseEndDate,
+                Schedule       = schedule.Count > 0 ? schedule : null
             };
             return updated;
         }).ConfigureAwait(false);

@@ -170,10 +170,22 @@ public sealed class BookStatsViewModel : ViewModelBase
         StatusSummary = _workspace.BookStatusSummary;
         RefreshBookBars();
 
-        var chapters = _workspace.Nodes
-            .Where(vm => vm.Node.Kind == NodeKind.Chapter && !string.IsNullOrEmpty(vm.Uuid))
-            .Select(vm => (Uuid: vm.Uuid!, Title: vm.Node.Title, Status: vm.Status))
-            .ToList();
+        // Each chapter is tagged with its parent part name so history aggregates BY PART
+        var chapters = new List<(string Uuid, string Title, ChapterStatus Status)>();
+        string currentPartName = "";
+        ChapterStatus currentPartStatus = ChapterStatus.Planned;
+        foreach (var vm in _workspace.Nodes)
+        {
+            if (vm.Node.Kind == NodeKind.Part)
+            {
+                currentPartName = vm.Node.Title;
+                currentPartStatus = DominantStatus(vm.PartStatusSummary);
+            }
+            else if (vm.Node.Kind == NodeKind.Chapter && !string.IsNullOrEmpty(vm.Uuid))
+            {
+                chapters.Add((vm.Uuid!, currentPartName, currentPartStatus));
+            }
+        }
         _ = LoadStackedHistoryAsync(chapters);
 
         _selectionDisposables.Add(
@@ -251,19 +263,35 @@ public sealed class BookStatsViewModel : ViewModelBase
 
             var uuidLookup = chapters.ToDictionary(c => c.Uuid, c => (c.Title, c.Status), StringComparer.Ordinal);
 
+            // Stable ordered list of unique labels (part names in Book mode, chapter titles in Part mode)
+            var seenLabels = new HashSet<string>(StringComparer.Ordinal);
+            var orderedLabels = chapters
+                .Select(c => (c.Title, c.Status))
+                .Where(x => seenLabels.Add(x.Title))
+                .ToList();
+
             // Group history entries by date
             var byDate = allHistory
                 .Where(e => uuidLookup.ContainsKey(e.Uuid))
                 .GroupBy(e => e.Date)
                 .Select(g =>
                 {
-                    // One segment per UUID present that day, in chapter-list order
+                    // Max word count per UUID that day (idempotent writes)
                     var segMap = g.GroupBy(e => e.Uuid)
                         .ToDictionary(ug => ug.Key, ug => ug.Max(e => e.WordCount), StringComparer.Ordinal);
 
-                    var segments = chapters
+                    // Aggregate by label: sum chapters that share the same label (e.g. same part)
+                    var labelTotals = chapters
                         .Where(c => segMap.ContainsKey(c.Uuid))
-                        .Select(c => new HistorySegment(c.Title, segMap[c.Uuid], c.Status))
+                        .GroupBy(c => c.Title, StringComparer.Ordinal)
+                        .ToDictionary(
+                            lg => lg.Key,
+                            lg => lg.Sum(c => segMap[c.Uuid]),
+                            StringComparer.Ordinal);
+
+                    var segments = orderedLabels
+                        .Where(x => labelTotals.ContainsKey(x.Title))
+                        .Select(x => new HistorySegment(x.Title, labelTotals[x.Title], x.Status))
                         .ToList();
 
                     return new StackedHistoryPoint(g.Key, segments);

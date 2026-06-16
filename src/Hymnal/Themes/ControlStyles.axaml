@@ -8,25 +8,32 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <ControlTemplate>
-                <Border Background="{TemplateBinding Background}"
-                        BorderBrush="{TemplateBinding BorderBrush}"
-                        BorderThickness="{TemplateBinding BorderThickness}"
-                        Padding="{TemplateBinding Padding}"
-                        CornerRadius="4">
-                    <ContentPresenter Content="{TemplateBinding Content}"
-                                      ContentTemplate="{TemplateBinding ContentTemplate}"
-                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
-                </Border>
+                <Panel>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}"
+                            CornerRadius="4">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                    <Border x:Name="PART_Overlay"
+                            Background="Transparent"
+                            CornerRadius="4"
+                            IsHitTestVisible="False" />
+                </Panel>
             </ControlTemplate>
         </Setter>
-        <Style Selector="^:pointerover">
-            <Setter Property="Background" Value="{DynamicResource SurfaceHighBrush}" />
+        <Style Selector="^:pointerover /template/ Border#PART_Overlay">
+            <Setter Property="Background" Value="#20FFFFFF" />
         </Style>
-        <Style Selector="^:pressed">
-            <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+        <Style Selector="^:pressed /template/ Border#PART_Overlay">
+            <Setter Property="Background" Value="#40000000" />
         </Style>
     </ControlTheme>
 
