@@ -120,6 +120,7 @@ public class WorkspaceViewModel : ViewModelBase
     public ReactiveCommand<CreatePartRequest, System.Reactive.Unit> CreatePartCommand { get; }
     public ReactiveCommand<IncludeExistingChapterRequest, System.Reactive.Unit> IncludeExistingFileCommand { get; }
     public ReactiveCommand<string, System.Reactive.Unit> RemoveFromBookCommand { get; }
+    public ReactiveCommand<ReorderCardRequest, System.Reactive.Unit> ReorderChapterCommand { get; }
 
     private ChapterViewModel? _targetFlyoutChapter;
     private IDisposable? _targetFlyoutSubscription;
@@ -205,6 +206,8 @@ public class WorkspaceViewModel : ViewModelBase
             this.WhenAnyValue(x => x.HasWorkspace));
         RemoveFromBookCommand = ReactiveCommand.CreateFromTask<string>(RemoveFromBookAsync,
             this.WhenAnyValue(x => x.HasWorkspace));
+        ReorderChapterCommand = ReactiveCommand.CreateFromTask<ReorderCardRequest>(ReorderChapterAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
 
         Disposables.Add(
             CreateChapterCommand.ThrownExceptions
@@ -217,6 +220,9 @@ public class WorkspaceViewModel : ViewModelBase
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
         Disposables.Add(
             RemoveFromBookCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            ReorderChapterCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
 
         Disposables.Add(
@@ -1032,6 +1038,9 @@ public class WorkspaceViewModel : ViewModelBase
     private async Task RemoveFromBookAsync(string chapterPath)
     {
         if (_model == null) return;
+
+        using var _ = _manuscriptService.SuppressFileWatcher();
+
         var result = await _structureService.RemoveEntryAsync(_model.BookTxtPath, chapterPath).ConfigureAwait(false);
         if (!result.IsSuccess)
         {
@@ -1039,6 +1048,95 @@ public class WorkspaceViewModel : ViewModelBase
             return;
         }
         await ReloadWorkspaceAsync(_model.WorkspaceRoot, _model.BookTxtPath, reselectBook: false).ConfigureAwait(false);
+    }
+
+    private async Task ReorderChapterAsync(ReorderCardRequest request)
+    {
+        if (_model == null) return;
+
+        if (!TryResolveChapterReorderIndex(request, out var newIndex, out var error))
+        {
+            _notificationService.ShowError($"Reorder failed: {error}");
+            return;
+        }
+
+        try
+        {
+            using var _ = _manuscriptService.SuppressFileWatcher();
+
+            var result = await _structureService.ReorderEntryAsync(_model.BookTxtPath, request.RelativePath, newIndex)
+                .ConfigureAwait(false);
+
+            if (!result.IsSuccess)
+            {
+                _notificationService.ShowError($"Failed to reorder chapter: {result.Error}");
+                return;
+            }
+
+            var reorderResult = await ReorderNodesAsync().ConfigureAwait(false);
+            if (!reorderResult.IsSuccess)
+                _notificationService.ShowError($"Failed to sync chapter order: {reorderResult.Error}");
+        }
+        catch (Exception ex)
+        {
+            _notificationService.ShowError($"Reorder chapter failed: {ex.Message}");
+        }
+    }
+
+    private bool TryResolveChapterReorderIndex(ReorderCardRequest request, out int newIndex, out string? error)
+    {
+        var nodes = _nodes.ToList();
+
+        var sourceIndex = nodes.FindIndex(n =>
+            string.Equals(n.Node.RelativePath, request.RelativePath, StringComparison.OrdinalIgnoreCase));
+
+        if (sourceIndex < 0)
+        {
+            newIndex = 0;
+            error = $"Chapter '{request.RelativePath}' not found.";
+            return false;
+        }
+
+        if (request.NewIndex.HasValue)
+        {
+            newIndex = request.NewIndex.Value;
+            error = null;
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.AfterRelativePath))
+        {
+            var afterIndex = nodes.FindIndex(n =>
+                string.Equals(n.Node.RelativePath, request.AfterRelativePath, StringComparison.OrdinalIgnoreCase));
+            if (afterIndex < 0)
+            {
+                newIndex = 0;
+                error = $"Target '{request.AfterRelativePath}' not found.";
+                return false;
+            }
+            newIndex = sourceIndex > afterIndex ? afterIndex + 1 : afterIndex;
+            error = null;
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BeforeRelativePath))
+        {
+            var beforeIndex = nodes.FindIndex(n =>
+                string.Equals(n.Node.RelativePath, request.BeforeRelativePath, StringComparison.OrdinalIgnoreCase));
+            if (beforeIndex < 0)
+            {
+                newIndex = 0;
+                error = $"Target '{request.BeforeRelativePath}' not found.";
+                return false;
+            }
+            newIndex = sourceIndex < beforeIndex ? beforeIndex - 1 : beforeIndex;
+            error = null;
+            return true;
+        }
+
+        newIndex = 0;
+        error = "Reorder requires either a target index or a neighbor path.";
+        return false;
     }
 
     private async Task ExecuteStructuralOperationAsync(

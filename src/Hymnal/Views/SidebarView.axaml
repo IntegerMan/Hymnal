@@ -157,9 +157,17 @@
                 </ListBox.Styles>
                 <ListBox.ItemTemplate>
                     <DataTemplate DataType="vm:ChapterViewModel">
-                        <Grid ColumnDefinitions="*,60,30">
+                        <Panel>
+                            <Border Name="InsertBefore"
+                                    Height="2"
+                                    Background="{DynamicResource AccentBrush}"
+                                    IsVisible="False"
+                                    VerticalAlignment="Top"
+                                    ZIndex="10" />
+                        <Grid ColumnDefinitions="*,60,30"
+                              Loaded="ChapterRow_Loaded">
 
-                            <!-- Right-click context menu for Set Target -->
+                            <!-- Right-click context menu -->
                             <Grid.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="Mark complete"
@@ -168,6 +176,10 @@
                                     <MenuItem Header="Set Target…"
                                               IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
                                               Command="{Binding OpenTargetFlyoutCommand}" />
+                                    <Separator IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}" />
+                                    <MenuItem Header="Exclude from book"
+                                              IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
+                                              Click="ExcludeFromBook_Click" />
                                     <Separator IsVisible="{Binding Node.IsMissing}" />
                                     <MenuItem Header="Remove"
                                               IsVisible="{Binding Node.IsMissing}"
@@ -386,6 +398,13 @@
                             </Button>
 
                         </Grid>
+                            <Border Name="InsertAfter"
+                                    Height="2"
+                                    Background="{DynamicResource AccentBrush}"
+                                    IsVisible="False"
+                                    VerticalAlignment="Bottom"
+                                    ZIndex="10" />
+                        </Panel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
