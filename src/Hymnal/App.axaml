@@ -18,6 +18,20 @@
             <Setter Property="ToolTip.Placement" Value="Right" />
             <Setter Property="ToolTip.ShowDelay" Value="500" />
         </Style>
+        <!-- ScrollBar color overrides — applied as styles so the Fluent template is preserved -->
+        <Style Selector="ScrollBar">
+            <Setter Property="Background" Value="{DynamicResource SurfaceElevatedBrush}" />
+        </Style>
+        <Style Selector="ScrollBar /template/ RepeatButton#PART_PageUpButton,
+                         ScrollBar /template/ RepeatButton#PART_PageDownButton">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ScrollBar /template/ Thumb">
+            <Setter Property="Background" Value="{DynamicResource OnSurfaceDimBrush}" />
+        </Style>
+        <Style Selector="ScrollBar /template/ Thumb:pointerover">
+            <Setter Property="Background" Value="{DynamicResource PrimaryBrightBrush}" />
+        </Style>
     </Application.Styles>
 
     <Application.Resources>

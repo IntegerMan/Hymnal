@@ -93,18 +93,6 @@
         </Style>
     </ControlTheme>
 
-    <!-- ScrollBar ControlTheme -->
-    <ControlTheme x:Key="{x:Type ScrollBar}" TargetType="ScrollBar">
-        <Setter Property="Background" Value="{DynamicResource SurfaceElevatedBrush}" />
-        <Style Selector="^ /template/ RepeatButton#PART_PageUpButton,
-                         ^ /template/ RepeatButton#PART_PageDownButton">
-            <Setter Property="Background" Value="Transparent" />
-        </Style>
-        <Style Selector="^ /template/ Thumb">
-            <Setter Property="Background" Value="{DynamicResource BorderDefaultBrush}" />
-        </Style>
-    </ControlTheme>
-
     <!-- ToolTip ControlTheme: synthwave dark style matching the app palette -->
     <ControlTheme x:Key="{x:Type ToolTip}" TargetType="ToolTip">
         <Setter Property="Background" Value="#1B1232" />
