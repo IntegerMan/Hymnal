@@ -30,13 +30,13 @@ jobs:
         run: dotnet nuget locals all --clear
 
       - name: Restore
-        run: dotnet restore Hymnal.sln
+        run: dotnet restore Hymnal.slnx
 
       - name: Verify resolved ReactiveUI graph
         run: dotnet list src/Hymnal/Hymnal.csproj package --include-transitive | grep -iE 'reactiveui|splat'
 
       - name: Build
-        run: dotnet build Hymnal.sln --configuration Release --no-restore
+        run: dotnet build Hymnal.slnx --configuration Release --no-restore
 
       - name: Test
         run: dotnet test tests/Hymnal.Core.Tests/ --configuration Release --no-build --no-restore
