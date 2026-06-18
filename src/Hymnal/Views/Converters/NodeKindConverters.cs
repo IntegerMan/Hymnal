@@ -45,20 +45,22 @@ public class NodeKindToForegroundConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
-/// <summary>Returns purple for parts, grey for missing chapters, and light for present chapters.</summary>
+/// <summary>Returns purple for parts, grey for missing chapters, muted lavender for excluded chapters, and light for included chapters.</summary>
 public class NodeKindAndMissingToForegroundConverter : IMultiValueConverter
 {
     public static readonly NodeKindAndMissingToForegroundConverter Instance = new();
 
-    private static readonly SolidColorBrush PartBrush    = new(Color.Parse("#9D4EDD"));
-    private static readonly SolidColorBrush ChapterBrush = new(Color.Parse("#EDE8F5"));
-    private static readonly SolidColorBrush MissingBrush = new(Color.Parse("#6B7280"));
+    private static readonly SolidColorBrush PartBrush     = new(Color.Parse("#9D4EDD"));
+    private static readonly SolidColorBrush ChapterBrush  = new(Color.Parse("#EDE8F5"));
+    private static readonly SolidColorBrush MissingBrush  = new(Color.Parse("#6B7280"));
+    private static readonly SolidColorBrush ExcludedBrush = new(Color.Parse("#9589B0"));
 
     public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
     {
         if (values.Count < 2) return ChapterBrush;
         if (values[0] is NodeKind.Part) return PartBrush;
-        return values[1] is true ? MissingBrush : ChapterBrush;
+        if (values[1] is true) return MissingBrush;
+        return values.Count > 2 && values[2] is true ? ExcludedBrush : ChapterBrush;
     }
 }
 
@@ -73,7 +75,7 @@ public class NodeKindIsChapterConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
-/// <summary>Returns true when NodeKind == Chapter AND IsMissing == false.</summary>
+/// <summary>Returns true when NodeKind == Chapter, IsMissing == false, and IsExcluded == false when supplied.</summary>
 public class NodeKindIsChapterAndPresentConverter : IMultiValueConverter
 {
     public static readonly NodeKindIsChapterAndPresentConverter Instance = new();
@@ -81,7 +83,10 @@ public class NodeKindIsChapterAndPresentConverter : IMultiValueConverter
     public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
     {
         if (values.Count < 2) return false;
-        return values[0] is NodeKind.Chapter && values[1] is false;
+        if (values[0] is not NodeKind.Chapter || values[1] is not false)
+            return false;
+
+        return values.Count < 3 || values[2] is false;
     }
 }
 

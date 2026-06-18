@@ -18,6 +18,7 @@
         <conv:NodeKindIsChapterAndPresentConverter x:Key="NodeKindIsChapterAndPresentConverter" />
         <conv:StatusToBrushConverter x:Key="StatusToBrushConverter" />
         <conv:BoolToOpacityConverter x:Key="BoolToOpacityConverter" />
+        <conv:BoolToFontStyleConverter x:Key="BoolToFontStyleConverter" />
         <conv:BoolNotConverter x:Key="BoolNotConverter" />
         <conv:StatusEqualsConverter x:Key="StatusEqualsConverter" />
         <conv:StatusDotTooltipConverter x:Key="StatusDotTooltipConverter" />
@@ -181,8 +182,15 @@
                                               IsVisible="{Binding Node.IsExcluded}"
                                               Click="IncludeInBook_Click" />
                                     <MenuItem Header="Exclude from book"
-                                              IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
-                                              Click="ExcludeFromBook_Click" />
+                                              Click="ExcludeFromBook_Click">
+                                        <MenuItem.IsVisible>
+                                            <MultiBinding Converter="{StaticResource NodeKindIsChapterAndPresentConverter}">
+                                                <Binding Path="Node.Kind" />
+                                                <Binding Path="Node.IsMissing" />
+                                                <Binding Path="Node.IsExcluded" />
+                                            </MultiBinding>
+                                        </MenuItem.IsVisible>
+                                    </MenuItem>
                                     <Separator IsVisible="{Binding Node.IsMissing}" />
                                     <MenuItem Header="Remove"
                                               IsVisible="{Binding Node.IsMissing}"
@@ -221,17 +229,36 @@
 
                                 <!-- Title + proximity fill bar -->
                                 <StackPanel Grid.Column="1" Spacing="0">
-                                    <TextBlock Text="{Binding Node.Title}"
-                                               FontWeight="{Binding Node.Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
-                                               Margin="{Binding Node.Kind, Converter={StaticResource NodeKindToMarginConverter}}"
-                                               VerticalAlignment="Center">
-                                        <TextBlock.Foreground>
-                                            <MultiBinding Converter="{StaticResource NodeKindAndMissingToForegroundConverter}">
-                                                <Binding Path="Node.Kind" />
-                                                <Binding Path="Node.IsMissing" />
-                                            </MultiBinding>
-                                        </TextBlock.Foreground>
-                                    </TextBlock>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Node.Title}"
+                                                   FontWeight="{Binding Node.Kind, Converter={StaticResource NodeKindToFontWeightConverter}}"
+                                                   FontStyle="{Binding Node.IsExcluded, Converter={StaticResource BoolToFontStyleConverter}}"
+                                                   Margin="{Binding Node.Kind, Converter={StaticResource NodeKindToMarginConverter}}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Foreground>
+                                                <MultiBinding Converter="{StaticResource NodeKindAndMissingToForegroundConverter}">
+                                                    <Binding Path="Node.Kind" />
+                                                    <Binding Path="Node.IsMissing" />
+                                                    <Binding Path="Node.IsExcluded" />
+                                                </MultiBinding>
+                                            </TextBlock.Foreground>
+                                        </TextBlock>
+                                        <Border Grid.Column="1"
+                                                IsVisible="{Binding Node.IsExcluded}"
+                                                Margin="6,0,0,0"
+                                                Padding="6,1"
+                                                CornerRadius="4"
+                                                Background="{DynamicResource SurfaceHighBrush}"
+                                                VerticalAlignment="Center">
+                                            <TextBlock Text="excluded"
+                                                       Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                       FontSize="10"
+                                                       FontStyle="Italic"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                    </Grid>
                                     <!-- Proximity fill bar: visible only when chapter has a target -->
                                     <ProgressBar IsVisible="{Binding HasTarget}"
                                                  Minimum="0"
