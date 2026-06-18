@@ -72,13 +72,18 @@ public sealed class CorkboardViewSmokeTests
     }
 
     [Fact]
-    public void CorkboardView_XamlDeclaresDropTargetsForCardsPartsAndEmptyParts()
+    public void CorkboardView_XamlDeclaresStructuralMenusExcludedAffordancesAndDropTargets()
     {
         var xaml = File.ReadAllText(GetCorkboardViewPath());
 
         Assert.Contains("Loaded=\"Card_Loaded\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Loaded=\"PartHeader_Loaded\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Loaded=\"EmptyPartHint_Loaded\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Header=\"New Chapter…\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Header=\"Remove from Book\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Header=\"Include in Book\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"EXCLUDED\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Excluded from Book.txt. Right-click to include it again.", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -146,6 +151,86 @@ public sealed class CorkboardViewSmokeTests
         emptyPart.Dispose();
         partOne.Dispose();
         partTwo.Dispose();
+    }
+
+    [Fact]
+    public void CorkboardView_IncludeExcludedCardRouting_UsesPartPathOrCanonicalBookIndex()
+    {
+        using var context = new TestContext();
+        var opener = context.AddNode("front-matter.md", "Front Matter");
+        var partChapter = context.AddNode("part-one/chapter-one.md", "Chapter One");
+        var partNode = context.AddNode("part-one/part.md", "Part One", NodeKind.Part);
+        context.SeedWorkspace(opener, partNode, partChapter);
+
+        using var board = context.CreateBoard();
+        var part = Assert.Single(board.Items.OfType<PartDividerItemViewModel>());
+
+        using var partExcluded = new ExcludedChapterCardItemViewModel(
+            new OrphanFileInfo("part-one/excluded.md", "Excluded in Part", null),
+            part);
+        var partRequest = CorkboardView.CreateIncludeExcludedCardRequest(board, partExcluded);
+        Assert.Equal("part-one/excluded.md", partRequest.ChapterPath);
+        Assert.Equal("part-one/part.md", partRequest.PartPath);
+        Assert.Null(partRequest.Index);
+
+        using var bookExcluded = new ExcludedChapterCardItemViewModel(
+            new OrphanFileInfo("book-level-excluded.md", "Book Level Excluded", null),
+            owningPart: null);
+        var bookRequest = CorkboardView.CreateIncludeExcludedCardRequest(board, bookExcluded);
+        Assert.Equal("book-level-excluded.md", bookRequest.ChapterPath);
+        Assert.Equal(board.GetBookChapterInsertIndex(), bookRequest.Index);
+        Assert.Null(bookRequest.PartPath);
+    }
+
+    [Fact]
+    public void CorkboardView_NewChapterRouting_UsesCanonicalPlacementHelpers()
+    {
+        using var context = new TestContext();
+        var opener = context.AddNode("front-matter.md", "Front Matter");
+        var partNode = context.AddNode("part-one/part.md", "Part One", NodeKind.Part);
+        var chapterOne = context.AddNode("part-one/chapter-one.md", "Chapter One");
+        var chapterTwo = context.AddNode("part-one/chapter-two.md", "Chapter Two");
+        context.SeedWorkspace(opener, partNode, chapterOne, chapterTwo);
+
+        using var board = context.CreateBoard();
+        var part = Assert.Single(board.Items.OfType<PartDividerItemViewModel>());
+        var chapterCard = board.Items.OfType<ChapterCardItemViewModel>()
+            .First(card => string.Equals(card.RelativePath, "part-one/chapter-one.md", StringComparison.OrdinalIgnoreCase));
+
+        var afterChapter = CorkboardView.CreateInlineCreatePlacementAfterChapter(board, chapterCard);
+        Assert.Equal(board.GetInsertIndexAfterChapter("part-one/chapter-one.md"), afterChapter.InsertIndex);
+        Assert.Same(part, afterChapter.Part);
+
+        var afterPart = CorkboardView.CreateInlineCreatePlacementAfterPart(board, part);
+        Assert.Equal(board.GetInsertIndexAfterPart("part-one/part.md"), afterPart.InsertIndex);
+        Assert.Same(part, afterPart.Part);
+
+        var atBookLevel = CorkboardView.CreateInlineCreatePlacementAtBookLevel(board);
+        Assert.Equal(board.GetBookChapterInsertIndex(), atBookLevel.InsertIndex);
+        Assert.Null(atBookLevel.Part);
+    }
+
+    [Fact]
+    public void CorkboardView_IncludeExistingChapterAfterCard_UsesCanonicalInsertIndex()
+    {
+        using var context = new TestContext();
+        var opener = context.AddNode("front-matter.md", "Front Matter");
+        var partNode = context.AddNode("part-one/part.md", "Part One", NodeKind.Part);
+        var chapterOne = context.AddNode("part-one/chapter-one.md", "Chapter One");
+        context.SeedWorkspace(opener, partNode, chapterOne);
+
+        using var board = context.CreateBoard();
+        var chapterCard = board.Items.OfType<ChapterCardItemViewModel>()
+            .First(card => string.Equals(card.RelativePath, "part-one/chapter-one.md", StringComparison.OrdinalIgnoreCase));
+
+        var request = CorkboardView.CreateIncludeExistingChapterRequestAfterCard(
+            board,
+            chapterCard,
+            "part-one/existing.md");
+
+        Assert.Equal("part-one/existing.md", request.ChapterPath);
+        Assert.Equal(board.GetInsertIndexAfterChapter("part-one/chapter-one.md"), request.Index);
+        Assert.Null(request.PartPath);
     }
 
     // Manual smoke checklist for real desktop drag/drop coverage that is brittle to automate:

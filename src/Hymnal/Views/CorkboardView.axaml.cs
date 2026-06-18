@@ -447,18 +447,8 @@ public partial class CorkboardView : UserControl
         if (!TryGetCardFromMenu(sender, out var card) || DataContext is not CorkboardViewModel vm)
             return;
 
-        var insertIndex = vm.GetInsertIndexAfterChapter(card.RelativePath);
-
-        // Find the owning part (if any) so the inline item respects part visibility.
-        PartDividerItemViewModel? owningPart = null;
-        if (!string.IsNullOrEmpty(card.OwningPartPath))
-        {
-            owningPart = vm.Items
-                .OfType<PartDividerItemViewModel>()
-                .FirstOrDefault(p => string.Equals(p.RelativePath, card.OwningPartPath, StringComparison.OrdinalIgnoreCase));
-        }
-
-        vm.BeginInlineCreate(insertIndex, owningPart);
+        var placement = CreateInlineCreatePlacementAfterChapter(vm, card);
+        vm.BeginInlineCreate(placement.InsertIndex, placement.Part);
     }
 
     private async void IncludeExistingChapter_Click(object? sender, RoutedEventArgs e)
@@ -470,8 +460,8 @@ public partial class CorkboardView : UserControl
         if (string.IsNullOrWhiteSpace(path))
             return;
 
-        var index = GetChapterInsertIndex(vm, card.RelativePath) + 1;
-        await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(new IncludeExistingChapterRequest(path, index)));
+        var request = CreateIncludeExistingChapterRequestAfterCard(vm, card, path);
+        await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(request));
     }
 
     private async void RemoveFromBook_Click(object? sender, RoutedEventArgs e)
@@ -544,8 +534,11 @@ public partial class CorkboardView : UserControl
         switch (action)
         {
             case "chapter":
-                vm.BeginInlineCreate(vm.GetBookChapterInsertIndex(), part: null);
-                break;
+                {
+                    var placement = CreateInlineCreatePlacementAtBookLevel(vm);
+                    vm.BeginInlineCreate(placement.InsertIndex, placement.Part);
+                    break;
+                }
             case "chapter-advanced":
                 await CreateBoardChapterAsync(vm, part: null);
                 break;
@@ -597,8 +590,11 @@ public partial class CorkboardView : UserControl
         switch (action)
         {
             case "chapter":
-                vm.BeginInlineCreate(vm.GetInsertIndexAfterPart(part.RelativePath), part);
-                break;
+                {
+                    var placement = CreateInlineCreatePlacementAfterPart(vm, part);
+                    vm.BeginInlineCreate(placement.InsertIndex, placement.Part);
+                    break;
+                }
             case "chapter-advanced":
                 await CreateBoardChapterAsync(vm, part);
                 break;
@@ -678,15 +674,8 @@ public partial class CorkboardView : UserControl
         if (!TryGetExcludedCardFromMenu(sender, out var excluded) || DataContext is not CorkboardViewModel vm)
             return;
 
-        if (!string.IsNullOrWhiteSpace(excluded.OwningPartPath))
-        {
-            await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(
-                new IncludeExistingChapterRequest(excluded.RelativePath, PartPath: excluded.OwningPartPath)));
-            return;
-        }
-
-        await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(
-            new IncludeExistingChapterRequest(excluded.RelativePath, vm.GetBookChapterInsertIndex())));
+        var request = CreateIncludeExcludedCardRequest(vm, excluded);
+        await ExecuteCommandAsync(vm.IncludeExistingChapterCommand.Execute(request));
     }
 
     private static bool TryGetExcludedCardFromMenu(object? sender, out ExcludedChapterCardItemViewModel excluded)
@@ -700,6 +689,66 @@ public partial class CorkboardView : UserControl
         excluded = null!;
         return false;
     }
+
+    public static InlineCreatePlacement CreateInlineCreatePlacementAfterChapter(
+        CorkboardViewModel vm,
+        ChapterCardItemViewModel card)
+    {
+        ArgumentNullException.ThrowIfNull(vm);
+        ArgumentNullException.ThrowIfNull(card);
+
+        PartDividerItemViewModel? owningPart = null;
+        if (!string.IsNullOrWhiteSpace(card.OwningPartPath))
+        {
+            owningPart = vm.Items
+                .OfType<PartDividerItemViewModel>()
+                .FirstOrDefault(p => string.Equals(p.RelativePath, card.OwningPartPath, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return new InlineCreatePlacement(vm.GetInsertIndexAfterChapter(card.RelativePath), owningPart);
+    }
+
+    public static InlineCreatePlacement CreateInlineCreatePlacementAfterPart(
+        CorkboardViewModel vm,
+        PartDividerItemViewModel part)
+    {
+        ArgumentNullException.ThrowIfNull(vm);
+        ArgumentNullException.ThrowIfNull(part);
+
+        return new InlineCreatePlacement(vm.GetInsertIndexAfterPart(part.RelativePath), part);
+    }
+
+    public static InlineCreatePlacement CreateInlineCreatePlacementAtBookLevel(CorkboardViewModel vm)
+    {
+        ArgumentNullException.ThrowIfNull(vm);
+        return new InlineCreatePlacement(vm.GetBookChapterInsertIndex(), Part: null);
+    }
+
+    public static IncludeExistingChapterRequest CreateIncludeExistingChapterRequestAfterCard(
+        CorkboardViewModel vm,
+        ChapterCardItemViewModel card,
+        string chapterPath)
+    {
+        ArgumentNullException.ThrowIfNull(vm);
+        ArgumentNullException.ThrowIfNull(card);
+        ArgumentException.ThrowIfNullOrWhiteSpace(chapterPath);
+
+        return new IncludeExistingChapterRequest(chapterPath, vm.GetInsertIndexAfterChapter(card.RelativePath));
+    }
+
+    public static IncludeExistingChapterRequest CreateIncludeExcludedCardRequest(
+        CorkboardViewModel vm,
+        ExcludedChapterCardItemViewModel excluded)
+    {
+        ArgumentNullException.ThrowIfNull(vm);
+        ArgumentNullException.ThrowIfNull(excluded);
+
+        return !string.IsNullOrWhiteSpace(excluded.OwningPartPath)
+            ? new IncludeExistingChapterRequest(excluded.RelativePath, PartPath: excluded.OwningPartPath)
+            : new IncludeExistingChapterRequest(excluded.RelativePath, vm.GetBookChapterInsertIndex());
+    }
+
+    public sealed record InlineCreatePlacement(int InsertIndex, PartDividerItemViewModel? Part);
 
     private async void DeleteChapter_Click(object? sender, RoutedEventArgs e)
     {
@@ -742,17 +791,6 @@ public partial class CorkboardView : UserControl
         return string.IsNullOrWhiteSpace(directory)
             ? "new-chapter.md"
             : $"{directory}/new-chapter.md";
-    }
-
-    private static int GetChapterInsertIndex(CorkboardViewModel vm, string relativePath)
-    {
-        var chapterPaths = vm.Items
-            .OfType<ChapterCardItemViewModel>()
-            .Select(item => item.RelativePath)
-            .ToList();
-
-        var index = chapterPaths.FindIndex(path => string.Equals(path, relativePath, StringComparison.OrdinalIgnoreCase));
-        return Math.Max(index, 0);
     }
 
     private async Task<string?> PromptForTextAsync(string title, string prompt, string initialValue)

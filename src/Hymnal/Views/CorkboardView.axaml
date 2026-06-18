@@ -193,9 +193,9 @@
             <Setter Property="Margin" Value="0,0,0,2" />
         </Style>
         <Style Selector="Button.cork-excluded-card">
-            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Background" Value="#0F1022" />
             <Setter Property="BorderBrush" Value="#64748B" />
-            <Setter Property="BorderThickness" Value="1,1,1,1" />
+            <Setter Property="BorderThickness" Value="1,1,1,2" />
             <Setter Property="CornerRadius" Value="12" />
             <Setter Property="Padding" Value="14,12" />
             <Setter Property="HorizontalAlignment" Value="Left" />
@@ -204,12 +204,19 @@
             <Setter Property="MinWidth" Value="320" />
             <Setter Property="MaxWidth" Value="520" />
             <Setter Property="Margin" Value="0,0,12,12" />
-            <Setter Property="Opacity" Value="0.72" />
+            <Setter Property="Opacity" Value="0.82" />
         </Style>
         <Style Selector="Button.cork-excluded-card:pointerover">
             <Setter Property="BorderBrush" Value="{DynamicResource SynthwavePurpleBrush}" />
-            <Setter Property="Background" Value="#12102A" />
+            <Setter Property="Background" Value="#151233" />
             <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="Border.cork-excluded-badge">
+            <Setter Property="Background" Value="#1F2937" />
+            <Setter Property="BorderBrush" Value="#475569" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="8,2" />
         </Style>
     </UserControl.Styles>
 
@@ -712,7 +719,7 @@
                                   Click="IncludeExcludedCard_Click" />
                     </ContextMenu>
                 </Button.ContextMenu>
-                <StackPanel Spacing="6">
+                <StackPanel Spacing="8">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="{Binding Title}"
                                    FontSize="15"
@@ -721,12 +728,19 @@
                                    TextWrapping="Wrap"
                                    MaxLines="2"
                                    TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding ExcludedLabel}"
-                                   FontSize="10"
-                                   FontStyle="Italic"
-                                   Foreground="#94A3B8"
-                                   VerticalAlignment="Center" />
+                        <Border Classes="cork-excluded-badge"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="EXCLUDED"
+                                       FontSize="9"
+                                       FontWeight="SemiBold"
+                                       LetterSpacing="1.2"
+                                       Foreground="#CBD5E1" />
+                        </Border>
                     </StackPanel>
+                    <TextBlock Text="Excluded from Book.txt. Right-click to include it again."
+                               FontSize="10"
+                               Foreground="#94A3B8"
+                               TextWrapping="Wrap" />
                     <TextBlock Text="{Binding RelativePath}"
                                FontSize="10"
                                Foreground="#64748B"
