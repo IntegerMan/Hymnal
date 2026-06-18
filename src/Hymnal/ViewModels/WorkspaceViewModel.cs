@@ -11,6 +11,7 @@ using System.Reactive.Disposables;
 using DynamicData;
 using DynamicData.Binding;
 using Hymnal.Core.Common;
+using Hymnal.Core.Infrastructure;
 using Unit = Hymnal.Core.Common.Unit;
 using PathHelper = Hymnal.Core.Common.PathHelper;
 using Hymnal.Core.Interfaces;
@@ -34,6 +35,8 @@ public class WorkspaceViewModel : ViewModelBase
     private readonly TargetsService _targetsService;
     private readonly WordCountService _wordCountService;
     private readonly WordCountHistoryService _historyService;
+    private readonly IExclusionManifestService _exclusionManifestService;
+    private readonly IOrphanFileDiscoveryService _orphanFileDiscoveryService;
     private ManuscriptModel? _model;
     private int _workspaceGeneration;
     private Task? _hydrationTask;
@@ -171,7 +174,9 @@ public class WorkspaceViewModel : ViewModelBase
         PhaseDataService phaseDataService,
         TargetsService targetsService,
         WordCountService wordCountService,
-        WordCountHistoryService historyService)
+        WordCountHistoryService historyService,
+        IExclusionManifestService? exclusionManifestService = null,
+        IOrphanFileDiscoveryService? orphanFileDiscoveryService = null)
     {
         _manuscriptService = manuscriptService;
         _structureService = structureService;
@@ -185,6 +190,8 @@ public class WorkspaceViewModel : ViewModelBase
         _targetsService = targetsService;
         _wordCountService = wordCountService;
         _historyService = historyService;
+        _exclusionManifestService = exclusionManifestService ?? new ExclusionManifestService(new MetadataStore());
+        _orphanFileDiscoveryService = orphanFileDiscoveryService ?? new OrphanFileDiscoveryService();
         _editor.HasWorkspace = false;
 
         Nodes = new ReadOnlyObservableCollection<ChapterViewModel>(_nodes);
@@ -426,11 +433,27 @@ public class WorkspaceViewModel : ViewModelBase
                 .Select(l => l.Replace('\\', '/'))
                 .ToList();
 
-            var reordered = new List<ChapterViewModel>(newOrder.Count);
+            var reorderedActive = new List<ChapterNode>(newOrder.Count);
             foreach (var path in newOrder)
             {
                 if (_nodesByPath.TryGetValue(path, out var vm))
+                    reorderedActive.Add(vm.Node with { IsExcluded = false });
+            }
+
+            var projectedExcluded = _nodes
+                .Where(vm => vm.Node.IsExcluded)
+                .Select(vm => vm.Node)
+                .ToList();
+
+            var reorderedNodes = MergeProjectedSidebarNodes(reorderedActive, projectedExcluded);
+            var reordered = new List<ChapterViewModel>(reorderedNodes.Count);
+            foreach (var node in reorderedNodes)
+            {
+                if (_nodesByPath.TryGetValue(node.RelativePath, out var vm))
+                {
+                    vm.UpdateNode(node);
                     reordered.Add(vm);
+                }
             }
 
             using (_nodes.SuspendNotifications())
@@ -625,10 +648,10 @@ public class WorkspaceViewModel : ViewModelBase
             var registry = await _registryService.LoadAsync(model.WorkspaceRoot).ConfigureAwait(false);
             var originalRegistry = new Dictionary<string, ChapterRegistryEntry>(registry);
 
-            // Mark orphans first so delete/reopen state is preserved.
+            // Registry continuity is defined only by Book.txt membership. Excluded sidebar
+            // projections remain visible in the UI but do not get fresh UUID assignments.
             registry = _registryService.ReconcileOrphans(registry, activePaths);
 
-            // Preserve UUIDs across renames when the old and new chapter titles match.
             var orphanedEntries = registry.Values.Where(entry => entry.Orphaned).ToList();
             var matchedOrphans = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var node in activeNodes)
@@ -660,43 +683,37 @@ public class WorkspaceViewModel : ViewModelBase
             if (RegistryChanged(originalRegistry, registry))
                 await _registryService.SaveAsync(model.WorkspaceRoot, registry).ConfigureAwait(false);
 
-            // Load phase data.
             var phases = await _phaseDataService.LoadAsync(model.WorkspaceRoot).ConfigureAwait(false);
-
-            // Load word-count targets so they can be passed into ChapterViewModel constructors.
             var targets = await _targetsService.LoadAsync(model.WorkspaceRoot).ConfigureAwait(false);
+            var projectedNodes = await ProjectSidebarNodesAsync(model, activeNodes, activePaths).ConfigureAwait(false);
 
             if (generation != _workspaceGeneration)
                 return;
 
-            // Load previously collapsed Part paths for this workspace.
             Dictionary<string, List<string>>? collapsedMap = null;
             try { collapsedMap = await _settingsStore.GetAsync<Dictionary<string, List<string>>>("partCollapsedStates").ConfigureAwait(false); } catch { }
             var collapsedPartPaths = collapsedMap != null && collapsedMap.TryGetValue(model.WorkspaceRoot, out var savedPaths)
                 ? new HashSet<string>(savedPaths, StringComparer.OrdinalIgnoreCase)
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // Build ChapterViewModels in index order.
-            var vms = activeNodes
+            var vms = projectedNodes
                 .Select(node =>
                 {
-                    // Find UUID for this node.
-                    string uuid = string.Empty;
-                    foreach (var (u, entry) in registry)
-                    {
-                        if (string.Equals(entry.CurrentPath, node.RelativePath,
-                                StringComparison.OrdinalIgnoreCase))
-                        {
-                            uuid = u;
-                            break;
-                        }
-                    }
+                    var uuid = TryGetRegistryUuid(registry, node.RelativePath);
                     phases.TryGetValue(uuid, out var phaseData);
-                    var target = _targetsService.GetTarget(targets, uuid);
+                    var target = string.IsNullOrWhiteSpace(uuid)
+                        ? null
+                        : _targetsService.GetTarget(targets, uuid);
                     return new ChapterViewModel(
-                        node, uuid, phaseData,
-                        _phaseDataService, _targetsService, _settingsStore, _notificationService,
-                        model.WorkspaceRoot, target);
+                        node,
+                        uuid,
+                        phaseData,
+                        _phaseDataService,
+                        _targetsService,
+                        _settingsStore,
+                        _notificationService,
+                        model.WorkspaceRoot,
+                        target);
                 })
                 .ToList();
 
@@ -706,9 +723,8 @@ public class WorkspaceViewModel : ViewModelBase
                 vm.TargetFlyoutCloseRequested += CloseTargetFlyout;
             }
 
-            // Launch background word count for all chapters in one batch.
             var countTargets = vms
-                .Where(vm => vm.Node.Kind == NodeKind.Chapter && !vm.Node.IsMissing)
+                .Where(vm => vm.Node.Kind == NodeKind.Chapter && !vm.Node.IsMissing && !vm.Node.IsExcluded)
                 .Select(vm => (Vm: vm, AbsPath: Path.Combine(model.ManuscriptRoot, vm.Node.RelativePath)))
                 .ToList();
 
@@ -763,8 +779,6 @@ public class WorkspaceViewModel : ViewModelBase
                 RebuildNodeLookup();
                 UpdateTotals();
 
-                // Restore Part expand/collapse state before wiring subscriptions so
-                // the initial restore doesn't trigger spurious saves.
                 foreach (var vm in _nodes.Where(v => v.Node.Kind == NodeKind.Part))
                     vm.IsExpanded = !collapsedPartPaths.Contains(vm.Node.RelativePath);
 
@@ -777,7 +791,7 @@ public class WorkspaceViewModel : ViewModelBase
                         _partSubscriptions.Add(
                             vm.WhenAnyValue(x => x.IsExpanded)
                                 .Skip(1)
-                                .Subscribe(expanded =>
+                                .Subscribe(__ =>
                                 {
                                     UpdateVisibility();
                                     var root = _model?.WorkspaceRoot;
@@ -804,6 +818,137 @@ public class WorkspaceViewModel : ViewModelBase
         {
             _notificationService.ShowError($"Failed to load chapter registry: {ex.Message}");
         }
+    }
+
+    private async Task<IReadOnlyList<ChapterNode>> ProjectSidebarNodesAsync(
+        ManuscriptModel model,
+        IReadOnlyList<ChapterNode> activeNodes,
+        IReadOnlyList<string> activePaths)
+    {
+        var manifest = await _exclusionManifestService.LoadAsync(model.ManuscriptRoot).ConfigureAwait(false);
+        if (!manifest.IsSuccess && !string.Equals(model.WorkspaceRoot, model.ManuscriptRoot, StringComparison.OrdinalIgnoreCase))
+            manifest = await _exclusionManifestService.LoadAsync(model.WorkspaceRoot).ConfigureAwait(false);
+
+        if (!manifest.IsSuccess)
+            throw new InvalidOperationException(manifest.Error);
+
+        if (manifest.Value!.ExcludedPaths.Length == 0)
+            return activeNodes;
+
+        var discovered = await _orphanFileDiscoveryService
+            .DiscoverAsync(model.ManuscriptRoot, activePaths)
+            .ConfigureAwait(false);
+
+        var discoveredByPath = discovered.ToDictionary(info => info.RelativePath, StringComparer.OrdinalIgnoreCase);
+        var projectedExcluded = manifest.Value.ExcludedPaths
+            .Where(path => discoveredByPath.ContainsKey(path))
+            .Select(path => BuildExcludedProjectionNode(path, discoveredByPath[path]))
+            .ToList();
+
+        if (projectedExcluded.Count == 0)
+            return activeNodes;
+
+        return MergeProjectedSidebarNodes(activeNodes, projectedExcluded);
+    }
+
+    private static ChapterNode BuildExcludedProjectionNode(string relativePath, OrphanFileInfo orphan)
+    {
+        return new ChapterNode(
+            Key: relativePath,
+            RelativePath: relativePath,
+            Title: orphan.Title,
+            Kind: NodeKind.Chapter,
+            IsMissing: false,
+            Index: 0)
+        {
+            IsExcluded = true
+        };
+    }
+
+    private static IReadOnlyList<ChapterNode> MergeProjectedSidebarNodes(
+        IReadOnlyList<ChapterNode> activeNodes,
+        IReadOnlyList<ChapterNode> projectedExcluded)
+    {
+        var activeInOrder = activeNodes.OrderBy(node => node.Index).ToList();
+        var merged = new List<ChapterNode>(activeInOrder.Count + projectedExcluded.Count);
+
+        var partFolders = activeInOrder
+            .Where(node => node.Kind == NodeKind.Part)
+            .Select(node => Path.GetDirectoryName(node.RelativePath.Replace('/', Path.DirectorySeparatorChar))?.Replace('\\', '/'))
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var groupedExcluded = projectedExcluded
+            .GroupBy(node => DetectPartFolder(node.RelativePath) ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(node => node.RelativePath, StringComparer.OrdinalIgnoreCase).ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var lastIndexByPartFolder = activeInOrder
+            .Select((node, index) => new { node, index })
+            .Where(x => !string.IsNullOrWhiteSpace(DetectPartFolder(x.node.RelativePath)))
+            .GroupBy(x => DetectPartFolder(x.node.RelativePath)!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Max(x => x.index), StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < activeInOrder.Count; index++)
+        {
+            var node = activeInOrder[index];
+            merged.Add(node);
+
+            var folder = DetectPartFolder(node.RelativePath);
+            if (string.IsNullOrWhiteSpace(folder))
+                continue;
+
+            // Sidebar ordering rule for S02: keep Book.txt entries in their exact order,
+            // then append that part folder's excluded projections immediately after the
+            // last active entry in the same part section. Excluded files for folders with
+            // no current Part divider are appended after all active Book.txt entries.
+            if (partFolders.Contains(folder)
+                && lastIndexByPartFolder.TryGetValue(folder, out var lastIndex)
+                && lastIndex == index
+                && groupedExcluded.Remove(folder, out var groupedNodes))
+            {
+                merged.AddRange(groupedNodes);
+            }
+        }
+
+        foreach (var remaining in groupedExcluded
+                     .Where(group => !string.IsNullOrWhiteSpace(group.Key) && !partFolders.Contains(group.Key))
+                     .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            merged.AddRange(remaining.Value);
+        }
+
+        if (groupedExcluded.TryGetValue(string.Empty, out var rootLevelExcluded))
+            merged.AddRange(rootLevelExcluded);
+
+        return merged
+            .Select((node, index) => node with { Index = index })
+            .ToList()
+            .AsReadOnly();
+    }
+
+    private static string TryGetRegistryUuid(
+        IReadOnlyDictionary<string, ChapterRegistryEntry> registry,
+        string relativePath)
+    {
+        foreach (var (uuid, entry) in registry)
+        {
+            if (string.Equals(entry.CurrentPath, relativePath, StringComparison.OrdinalIgnoreCase))
+                return uuid;
+        }
+
+        return string.Empty;
+    }
+
+    private static string? DetectPartFolder(string relativePath)
+    {
+        var normalized = relativePath.Replace('\\', '/');
+        var slashIndex = normalized.IndexOf('/');
+        return slashIndex <= 0 ? null : normalized[..slashIndex];
     }
 
     // ── Word count totals ──────────────────────────────────────────────────────
@@ -834,7 +979,7 @@ public class WorkspaceViewModel : ViewModelBase
                 accumulated = 0;
                 partStatuses = new Dictionary<ChapterStatus, int>();
             }
-            else if (vm.Node.Kind == NodeKind.Chapter)
+            else if (vm.Node.Kind == NodeKind.Chapter && !vm.Node.IsExcluded)
             {
                 total += vm.WordCount;
                 accumulated += vm.WordCount;
@@ -963,7 +1108,7 @@ public class WorkspaceViewModel : ViewModelBase
         return false;
     }
 
-    public int GetBookEntryCount() => _nodes.Count;
+    public int GetBookEntryCount() => _nodes.Count(vm => !vm.Node.IsExcluded);
 
     public async Task<string?> PickManuscriptFileAsync()
     {

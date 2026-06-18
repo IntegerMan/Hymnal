@@ -1,11 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Collections;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Reactive.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Hymnal.Core.Common;
 using Hymnal.Core.Infrastructure;
@@ -40,14 +38,15 @@ public sealed class WorkspaceSidebarExclusionTests
             Assert.True(excluded.IsSuccess, excluded.Error);
 
             await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 4);
 
             Assert.Equal(
                 new[]
                 {
                     "part-one/part.md",
                     "part-one/chapter-01.md",
-                    "part-one/chapter-02.md",
-                    "part-one/chapter-03.md"
+                    "part-one/chapter-03.md",
+                    "part-one/chapter-02.md"
                 },
                 context.Workspace.Nodes.Select(node => node.Node.RelativePath));
 
@@ -80,10 +79,12 @@ public sealed class WorkspaceSidebarExclusionTests
             var excluded = await firstContext.ExclusionManifestService.ExcludeAsync(workspace.Root, "chapter-two.md");
             Assert.True(excluded.IsSuccess, excluded.Error);
             await firstContext.OpenWorkspaceAsync();
+            await WaitForNodesAsync(firstContext.Workspace, 2);
             Assert.Contains(firstContext.Workspace.Nodes, node => node.Node.RelativePath == "chapter-two.md" && node.Node.IsExcluded);
 
             var secondContext = new TestContext(workspace.Root);
             await secondContext.OpenWorkspaceAsync();
+            await WaitForNodesAsync(secondContext.Workspace, 2);
 
             var reloadedExcluded = Assert.Single(secondContext.Workspace.Nodes, node => node.Node.RelativePath == "chapter-two.md");
             Assert.True(reloadedExcluded.Node.IsExcluded);
@@ -110,6 +111,7 @@ public sealed class WorkspaceSidebarExclusionTests
             var excluded = await context.ExclusionManifestService.ExcludeAsync(workspace.Root, "chapter-two.md");
             Assert.True(excluded.IsSuccess, excluded.Error);
             await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 3);
 
             var excludedNode = Assert.Single(context.Workspace.Nodes, node => node.Node.RelativePath == "chapter-two.md");
             Assert.True(excludedNode.Node.IsExcluded);
@@ -117,6 +119,7 @@ public sealed class WorkspaceSidebarExclusionTests
             await ExecuteCommandAsync(context.Workspace.IncludeExistingFileCommand.Execute(
                 new IncludeExistingChapterRequest("chapter-two.md", Index: 1)));
             await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 3);
 
             Assert.Equal(new[] { "chapter-one.md", "chapter-two.md", "chapter-three.md" }, ReadBookTxtLines(workspace.BookTxtPath));
             Assert.Empty(await context.LoadExcludedPathsAsync());
@@ -143,9 +146,11 @@ public sealed class WorkspaceSidebarExclusionTests
         {
             var context = new TestContext(workspace.Root);
             await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 3);
 
             await ExecuteCommandAsync(context.Workspace.RemoveFromBookCommand.Execute("chapter-two.md"));
             await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 3);
 
             Assert.Equal(new[] { "chapter-one.md", "chapter-three.md" }, ReadBookTxtLines(workspace.BookTxtPath));
             Assert.Equal(new[] { "chapter-two.md" }, await context.LoadExcludedPathsAsync());
@@ -173,6 +178,7 @@ public sealed class WorkspaceSidebarExclusionTests
             var excluded = await context.ExclusionManifestService.ExcludeAsync(workspace.Root, "chapter-two.md");
             Assert.True(excluded.IsSuccess, excluded.Error);
             await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 2);
             var before = context.Workspace.Nodes.Select(node => (node.Node.RelativePath, node.Node.IsExcluded)).ToArray();
 
             await ExecuteCommandAsync(context.Workspace.IncludeExistingFileCommand.Execute(
@@ -201,6 +207,7 @@ public sealed class WorkspaceSidebarExclusionTests
         {
             var context = new TestContext(workspace.Root, new FailingExcludeStructureService("simulated Book.txt write or validation failure"));
             await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 2);
             var before = context.Workspace.Nodes.Select(node => (node.Node.RelativePath, node.Node.IsExcluded)).ToArray();
 
             await ExecuteCommandAsync(context.Workspace.RemoveFromBookCommand.Execute("chapter-two.md"));
@@ -302,6 +309,7 @@ public sealed class WorkspaceSidebarExclusionTests
         public StubFilePickerService FilePickerService { get; } = new();
         public ExclusionManifestService ExclusionManifestService { get; }
         public ManuscriptService ManuscriptService { get; }
+        public OrphanFileDiscoveryService OrphanFileDiscoveryService { get; } = new();
         public WorkspaceViewModel Workspace { get; }
 
         public TestContext(string workspaceRoot, IBookTxtStructureService? structureService = null)
@@ -328,35 +336,45 @@ public sealed class WorkspaceSidebarExclusionTests
                 PhaseDataService,
                 TargetsService,
                 WordCountService,
-                history);
+                history,
+                ExclusionManifestService,
+                OrphanFileDiscoveryService);
         }
 
         public async Task OpenWorkspaceAsync()
         {
             var result = await ManuscriptService.LoadWorkspaceAsync(FolderPickerService.WorkspaceRoot);
             Assert.True(result.IsSuccess, result.Error);
-            SeedWorkspace(result.Value!);
-            await Task.CompletedTask;
+
+            var model = result.Value!;
+            var activeNodes = model.Nodes.Items.OrderBy(node => node.Index).ToList();
+            var activePaths = activeNodes.Select(node => node.RelativePath).ToList();
+            var projectionMethod = typeof(WorkspaceViewModel).GetMethod("ProjectSidebarNodesAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Unable to locate WorkspaceViewModel sidebar projection method.");
+            var projectionTask = (Task<IReadOnlyList<ChapterNode>>)projectionMethod.Invoke(Workspace, new object[] { model, activeNodes, activePaths })!;
+            var projectedNodes = await projectionTask;
+
+            SeedWorkspace(model, projectedNodes);
         }
 
-        private void SeedWorkspace(ManuscriptModel model)
+        private void SeedWorkspace(ManuscriptModel model, IReadOnlyList<ChapterNode> nodes)
         {
             SetPrivateField(Workspace, "_model", model);
             SetPrivateProperty(Workspace, nameof(WorkspaceViewModel.HasWorkspace), true);
             SetPrivateProperty(Workspace, nameof(WorkspaceViewModel.WorkspaceName), Path.GetFileName(model.WorkspaceRoot));
 
-            var nodes = GetPrivateList<ChapterViewModel>(Workspace, "_nodes");
+            var workspaceNodes = GetPrivateList<ChapterViewModel>(Workspace, "_nodes");
             var visibleNodes = GetPrivateList<ChapterViewModel>(Workspace, "_visibleNodes");
             var lookup = GetPrivateDictionary<string, ChapterViewModel>(Workspace, "_nodesByPath");
 
-            foreach (var node in nodes.OfType<IDisposable>())
+            foreach (var node in workspaceNodes.OfType<IDisposable>())
                 node.Dispose();
 
-            nodes.Clear();
+            workspaceNodes.Clear();
             visibleNodes.Clear();
             lookup.Clear();
 
-            foreach (var node in model.Nodes.Items.OrderBy(node => node.Index))
+            foreach (var node in nodes.OrderBy(node => node.Index))
             {
                 var vm = new ChapterViewModel(
                     node,
@@ -367,7 +385,7 @@ public sealed class WorkspaceSidebarExclusionTests
                     SettingsStore,
                     NotificationService,
                     model.WorkspaceRoot);
-                nodes.Add(vm);
+                workspaceNodes.Add(vm);
                 visibleNodes.Add(vm);
                 lookup[node.RelativePath] = vm;
             }

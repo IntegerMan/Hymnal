@@ -17,6 +17,13 @@ public sealed class ManuscriptService : IDisposable
         _notificationService = notificationService;
     }
 
+    public ManuscriptService(
+        INotificationService notificationService,
+        IExclusionManifestService exclusionManifestService)
+        : this(notificationService)
+    {
+    }
+
     public async Task<Result<ManuscriptModel>> LoadWorkspaceAsync(string folderPath)
     {
         // PRD FR-2: check {workspace}/Book.txt first, then {workspace}/manuscript/Book.txt
@@ -31,10 +38,10 @@ public sealed class ManuscriptService : IDisposable
         var manuscriptRoot = Path.GetDirectoryName(bookTxtPath)!;
 
         var lines = await File.ReadAllLinesAsync(bookTxtPath).ConfigureAwait(false);
-        var nodes = await BookTxtParser.ParseAsync(manuscriptRoot, lines).ConfigureAwait(false);
+        var parsedNodes = await BookTxtParser.ParseAsync(manuscriptRoot, lines).ConfigureAwait(false);
 
         var model = new ManuscriptModel();
-        model.Load(nodes);
+        model.Load(parsedNodes);
         model.SetRoots(folderPath, manuscriptRoot);
 
         _syncContext = SynchronizationContext.Current;

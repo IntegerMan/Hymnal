@@ -58,6 +58,10 @@ public partial class App : Application
         // M005/S01 services — persistent exclusion manifest
         services.AddSingleton<IExclusionManifestService, ExclusionManifestService>();
 
+        // S01 services — plan corkboard structural editing
+        services.AddSingleton<IBookTxtStructureService, BookTxtStructureService>();
+        services.AddSingleton<IOrphanFileDiscoveryService, OrphanFileDiscoveryService>();
+
         // M004/S02 services — supplemental docs sidebar tree
         services.AddSingleton<ISupplementalDocsService, SupplementalDocsService>();
 
@@ -93,7 +97,9 @@ public partial class App : Application
                 sp.GetRequiredService<PhaseDataService>(),
                 sp.GetRequiredService<TargetsService>(),
                 sp.GetRequiredService<WordCountService>(),
-                sp.GetRequiredService<WordCountHistoryService>()));
+                sp.GetRequiredService<WordCountHistoryService>(),
+                sp.GetRequiredService<IExclusionManifestService>(),
+                sp.GetRequiredService<IOrphanFileDiscoveryService>()));
 
         services.AddSingleton<NotesViewModel>(sp =>
             new NotesViewModel(
@@ -118,10 +124,6 @@ public partial class App : Application
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<PhaseDataService>(),
                 sp.GetRequiredService<INotificationService>()));
-
-        // S01 services — plan corkboard structural editing
-        services.AddSingleton<IBookTxtStructureService, BookTxtStructureService>();
-        services.AddSingleton<IOrphanFileDiscoveryService, OrphanFileDiscoveryService>();
 
         services.AddSingleton<CorkboardViewModel>(sp =>
             new CorkboardViewModel(
