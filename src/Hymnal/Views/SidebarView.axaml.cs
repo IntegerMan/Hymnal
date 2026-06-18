@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
@@ -154,7 +155,7 @@ public partial class SidebarView : UserControl
         if (!point.Properties.IsLeftButtonPressed)
             return;
 
-        if (!CanUseAsSidebarDragEndpoint(chapter))
+        if (!CanDragFromSidebar(chapter.Node))
             return;
 
         _dragSource = chapter;
@@ -207,11 +208,14 @@ public partial class SidebarView : UserControl
             return;
         }
 
+        var visibleNodes = GetVisibleSidebarNodes();
+        var dropBefore = ShouldDropBefore(target.Node.RelativePath);
         if (string.IsNullOrWhiteSpace(_dragSourcePath) ||
-            !CanUseAsSidebarDropPair(_dragSource, target) ||
-            string.Equals(_dragSourcePath, target.Node.RelativePath, StringComparison.OrdinalIgnoreCase))
+            _dragSource is null ||
+            !CanDropOnSidebar(_dragSource.Node, target.Node, visibleNodes, dropBefore))
         {
             e.DragEffects = DragDropEffects.None;
+            ClearDropIndicator();
             return;
         }
 
@@ -223,7 +227,6 @@ public partial class SidebarView : UserControl
 
         ClearDropIndicator();
 
-        var dropBefore = ShouldDropBefore(target.Node.RelativePath);
         SetInsertionLine(panel, dropBefore);
         _lastDropIndicator = panel;
     }
@@ -244,9 +247,11 @@ public partial class SidebarView : UserControl
             return;
 
         var draggedPath = _dragSourcePath;
+        var visibleNodeModels = GetVisibleSidebarNodes();
+        var dropBefore = ShouldDropBefore(target.Node.RelativePath);
         if (string.IsNullOrWhiteSpace(draggedPath) ||
-            !CanUseAsSidebarDropPair(_dragSource, target) ||
-            string.Equals(draggedPath, target.Node.RelativePath, StringComparison.OrdinalIgnoreCase))
+            _dragSource is null ||
+            !CanDropOnSidebar(_dragSource.Node, target.Node, visibleNodeModels, dropBefore))
             return;
 
         var visibleNodes = vm.VisibleNodes.Select(n => n.Node.RelativePath).ToList();
@@ -394,15 +399,119 @@ public partial class SidebarView : UserControl
         return sourceIndex > targetIndex;
     }
 
-    private static bool CanUseAsSidebarDragEndpoint(ChapterViewModel? node) =>
-        node is { Node.IsExcluded: false, Node.IsMissing: false };
-
-    private static bool CanUseAsSidebarDropPair(ChapterViewModel? source, ChapterViewModel? target)
+    private IReadOnlyList<ChapterNode> GetVisibleSidebarNodes()
     {
-        if (!CanUseAsSidebarDragEndpoint(source) || !CanUseAsSidebarDragEndpoint(target))
+        return DataContext is WorkspaceViewModel vm
+            ? vm.VisibleNodes.Select(node => node.Node).ToList()
+            : Array.Empty<ChapterNode>();
+    }
+
+    public static bool CanDragFromSidebar(ChapterNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        return !node.IsExcluded
+            && !node.IsMissing
+            && !string.IsNullOrWhiteSpace(node.RelativePath)
+            && (node.Kind == NodeKind.Chapter || node.Kind == NodeKind.Part);
+    }
+
+    public static bool CanDropOnSidebar(
+        ChapterNode source,
+        ChapterNode target,
+        IReadOnlyList<ChapterNode>? visibleNodes = null,
+        bool? dropBefore = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+
+        if (!CanDragFromSidebar(source) || !CanDragFromSidebar(target))
             return false;
 
-        return source!.Node.Kind == target!.Node.Kind;
+        if (string.Equals(source.RelativePath, target.RelativePath, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (source.Kind == NodeKind.Part)
+            return CanDropPartOnSidebarPart(target, visibleNodes, dropBefore);
+
+        if (source.Kind == NodeKind.Chapter)
+            return CanDropChapterOnSidebarChapter(source, target, visibleNodes);
+
+        return false;
+    }
+
+    private static bool CanDropPartOnSidebarPart(
+        ChapterNode target,
+        IReadOnlyList<ChapterNode>? visibleNodes,
+        bool? dropBefore)
+    {
+        if (target.Kind != NodeKind.Part)
+            return false;
+
+        if (dropBefore != false || visibleNodes is null || visibleNodes.Count == 0)
+            return true;
+
+        var targetIndex = FindSidebarNodeIndex(visibleNodes, target.RelativePath);
+        if (targetIndex < 0)
+            return false;
+
+        return FindNextPartIndex(visibleNodes, targetIndex + 1) >= 0;
+    }
+
+    private static bool CanDropChapterOnSidebarChapter(
+        ChapterNode source,
+        ChapterNode target,
+        IReadOnlyList<ChapterNode>? visibleNodes)
+    {
+        if (target.Kind != NodeKind.Chapter)
+            return false;
+
+        if (visibleNodes is null || visibleNodes.Count == 0)
+            return true;
+
+        var sourceIndex = FindSidebarNodeIndex(visibleNodes, source.RelativePath);
+        var targetIndex = FindSidebarNodeIndex(visibleNodes, target.RelativePath);
+        if (sourceIndex < 0 || targetIndex < 0)
+            return false;
+
+        var sourcePart = FindContainingPartPath(visibleNodes, sourceIndex);
+        var targetPart = FindContainingPartPath(visibleNodes, targetIndex);
+        return string.Equals(sourcePart, targetPart, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int FindSidebarNodeIndex(IReadOnlyList<ChapterNode> nodes, string relativePath)
+    {
+        for (var i = 0; i < nodes.Count; i++)
+        {
+            if (string.Equals(nodes[i].RelativePath, relativePath, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static int FindNextPartIndex(IReadOnlyList<ChapterNode> nodes, int startIndex)
+    {
+        for (var i = startIndex; i < nodes.Count; i++)
+        {
+            if (!nodes[i].IsExcluded && !nodes[i].IsMissing && nodes[i].Kind == NodeKind.Part)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static string? FindContainingPartPath(IReadOnlyList<ChapterNode> nodes, int nodeIndex)
+    {
+        string? currentPart = null;
+        for (var i = 0; i <= nodeIndex && i < nodes.Count; i++)
+        {
+            var node = nodes[i];
+            if (!node.IsExcluded && !node.IsMissing && node.Kind == NodeKind.Part)
+                currentPart = node.RelativePath;
+        }
+
+        return currentPart;
     }
 
     private void ClearDropIndicator()

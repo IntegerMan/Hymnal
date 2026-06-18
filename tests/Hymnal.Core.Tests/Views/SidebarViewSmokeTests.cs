@@ -56,6 +56,85 @@ public sealed class SidebarViewSmokeTests
         Assert.Equal(expected, SidebarView.CanRenameFromSidebar(node));
     }
 
+    [Theory]
+    [InlineData(NodeKind.Chapter, false, false, true)]
+    [InlineData(NodeKind.Part, false, false, true)]
+    [InlineData(NodeKind.Chapter, true, false, false)]
+    [InlineData(NodeKind.Part, true, false, false)]
+    [InlineData(NodeKind.Chapter, false, true, false)]
+    [InlineData(NodeKind.Part, false, true, false)]
+    public void CanDragFromSidebar_AllowsOnlyIncludedPresentChaptersAndParts(
+        NodeKind kind,
+        bool isMissing,
+        bool isExcluded,
+        bool expected)
+    {
+        var node = Node("chapters/example.md", kind, isMissing: isMissing, isExcluded: isExcluded);
+
+        Assert.Equal(expected, SidebarView.CanDragFromSidebar(node));
+    }
+
+    [Fact]
+    public void CanDragFromSidebar_RejectsBlankPaths()
+    {
+        var node = Node("", NodeKind.Chapter);
+
+        Assert.False(SidebarView.CanDragFromSidebar(node));
+    }
+
+    [Fact]
+    public void CanDropOnSidebar_AllowsChapterWithinCurrentPartOnly()
+    {
+        var partOne = Node("part-one/part.md", NodeKind.Part);
+        var chapterOne = Node("part-one/chapter-one.md", NodeKind.Chapter);
+        var chapterTwo = Node("part-one/chapter-two.md", NodeKind.Chapter);
+        var partTwo = Node("part-two/part.md", NodeKind.Part);
+        var chapterThree = Node("part-two/chapter-three.md", NodeKind.Chapter);
+        var visibleNodes = new[] { partOne, chapterOne, chapterTwo, partTwo, chapterThree };
+
+        Assert.True(SidebarView.CanDropOnSidebar(chapterOne, chapterTwo, visibleNodes));
+        Assert.False(SidebarView.CanDropOnSidebar(chapterOne, chapterThree, visibleNodes));
+        Assert.False(SidebarView.CanDropOnSidebar(chapterOne, partOne, visibleNodes));
+    }
+
+    [Fact]
+    public void CanDropOnSidebar_AllowsPartOnPartButNotChapterTargets()
+    {
+        var partOne = Node("part-one/part.md", NodeKind.Part);
+        var chapterOne = Node("part-one/chapter-one.md", NodeKind.Chapter);
+        var partTwo = Node("part-two/part.md", NodeKind.Part);
+        var partThree = Node("part-three/part.md", NodeKind.Part);
+        var visibleNodes = new[] { partOne, chapterOne, partTwo, partThree };
+
+        Assert.True(SidebarView.CanDropOnSidebar(partOne, partTwo, visibleNodes, dropBefore: true));
+        Assert.False(SidebarView.CanDropOnSidebar(partOne, chapterOne, visibleNodes, dropBefore: false));
+    }
+
+    [Fact]
+    public void CanDropOnSidebar_RejectsPartDropAfterLastPartBecauseViewModelRejectsIt()
+    {
+        var partOne = Node("part-one/part.md", NodeKind.Part);
+        var chapterOne = Node("part-one/chapter-one.md", NodeKind.Chapter);
+        var partTwo = Node("part-two/part.md", NodeKind.Part);
+        var chapterTwo = Node("part-two/chapter-two.md", NodeKind.Chapter);
+        var visibleNodes = new[] { partOne, chapterOne, partTwo, chapterTwo };
+
+        Assert.False(SidebarView.CanDropOnSidebar(partOne, partTwo, visibleNodes, dropBefore: false));
+        Assert.True(SidebarView.CanDropOnSidebar(partTwo, partOne, visibleNodes, dropBefore: true));
+    }
+
+    [Fact]
+    public void CanDropOnSidebar_RejectsSelfDropAndInactiveRows()
+    {
+        var source = Node("part-one/chapter-one.md", NodeKind.Chapter);
+        var excludedTarget = Node("part-one/excluded.md", NodeKind.Chapter, isExcluded: true);
+        var missingTarget = Node("part-one/missing.md", NodeKind.Chapter, isMissing: true);
+
+        Assert.False(SidebarView.CanDropOnSidebar(source, source, new[] { source }));
+        Assert.False(SidebarView.CanDropOnSidebar(source, excludedTarget, new[] { source, excludedTarget }));
+        Assert.False(SidebarView.CanDropOnSidebar(source, missingTarget, new[] { source, missingTarget }));
+    }
+
     [Fact]
     public void NodeKindAndMissingToForegroundConverter_TreatsExcludedChaptersDistinctly()
     {
@@ -82,6 +161,22 @@ public sealed class SidebarViewSmokeTests
         Assert.NotEqual(included.Color, excluded.Color);
         Assert.NotEqual(excluded.Color, missing.Color);
     }
+
+    private static ChapterNode Node(
+        string relativePath,
+        NodeKind kind,
+        bool isMissing = false,
+        bool isExcluded = false) =>
+        new(
+            Key: string.IsNullOrWhiteSpace(relativePath) ? "node-key" : relativePath,
+            RelativePath: relativePath,
+            Title: "Example",
+            Kind: kind,
+            IsMissing: isMissing,
+            Index: 0)
+        {
+            IsExcluded = isExcluded
+        };
 
     private static string GetSidebarViewPath() => Path.GetFullPath(
         Path.Combine(
