@@ -36,8 +36,12 @@ public class CorkboardProjectionTests
         NodeKind kind = NodeKind.Chapter,
         string path = "ch01.md",
         bool missing = false,
+        bool excluded = false,
         int index = 0) =>
-        new ChapterNode(path, path, title, kind, missing, index);
+        new ChapterNode(path, path, title, kind, missing, index)
+        {
+            IsExcluded = excluded
+        };
 
     private static PhaseData MakePhase(
         ChapterStatus status = ChapterStatus.Drafting,
@@ -52,6 +56,7 @@ public class CorkboardProjectionTests
         string path = "ch01.md",
         string uuid = "uuid-1",
         bool missing = false,
+        bool excluded = false,
         NodeKind kind = NodeKind.Chapter)
     {
         var metadataStore = new FakeMetadataStore();
@@ -61,7 +66,7 @@ public class CorkboardProjectionTests
         var notificationService = Substitute.For<INotificationService>();
 
         return new ChapterViewModel(
-            MakeNode(title: title, kind: kind, path: path, missing: missing),
+            MakeNode(title: title, kind: kind, path: path, missing: missing, excluded: excluded),
             uuid,
             phaseData,
             phaseDataService,
@@ -224,6 +229,72 @@ public class CorkboardProjectionTests
         Assert.Equal("2 chapters", divider.ChapterCountDisplay);
         Assert.True(divider.IsFirstPart);
         Assert.Equal("part-01.md", Assert.IsType<ChapterCardItemViewModel>(items[1]).OwningPartPath);
+    }
+
+    [Fact]
+    public void Project_ExcludedWorkspaceNode_ProjectsExcludedCardImmediatelyWithoutWaitingForOrphanDiscovery()
+    {
+        var part = CreateChapterViewModel(
+            phaseData: null,
+            title: "Part One",
+            path: "part-one/part.md",
+            uuid: "part-1",
+            kind: NodeKind.Part);
+        var included = CreateChapterViewModel(
+            phaseData: MakePhase(),
+            title: "Chapter One",
+            path: "part-one/chapter-one.md",
+            uuid: "ch-1");
+        var excluded = CreateChapterViewModel(
+            phaseData: MakePhase(),
+            title: "Chapter Two",
+            path: "part-one/chapter-two.md",
+            uuid: "ch-2",
+            excluded: true);
+
+        var items = CorkboardItemViewModel.Project(
+            new[] { part, included, excluded },
+            new Dictionary<string, bool>(),
+            Array.Empty<OrphanFileInfo>(),
+            showExcludedFiles: true);
+
+        Assert.Collection(
+            items,
+            item => Assert.IsType<PartDividerItemViewModel>(item),
+            item => Assert.IsType<ChapterCardItemViewModel>(item),
+            item =>
+            {
+                var excludedCard = Assert.IsType<ExcludedChapterCardItemViewModel>(item);
+                Assert.Equal("part-one/chapter-two.md", excludedCard.RelativePath);
+                Assert.Equal("Chapter Two", excludedCard.Title);
+                Assert.Equal("part-one/part.md", excludedCard.OwningPartPath);
+            });
+    }
+
+    [Fact]
+    public void Project_ExcludedWorkspaceNode_DeduplicatesMatchingOrphanEntry()
+    {
+        var part = CreateChapterViewModel(
+            phaseData: null,
+            title: "Part One",
+            path: "part-one/part.md",
+            uuid: "part-1",
+            kind: NodeKind.Part);
+        var excluded = CreateChapterViewModel(
+            phaseData: MakePhase(),
+            title: "Chapter Two",
+            path: "part-one/chapter-two.md",
+            uuid: "ch-2",
+            excluded: true);
+
+        var items = CorkboardItemViewModel.Project(
+            new[] { part, excluded },
+            new Dictionary<string, bool>(),
+            new[] { new OrphanFileInfo("part-one/chapter-two.md", "Chapter Two", "part-one") },
+            showExcludedFiles: true);
+
+        Assert.Equal(2, items.Count);
+        Assert.Single(items.OfType<ExcludedChapterCardItemViewModel>());
     }
 
     [Fact]

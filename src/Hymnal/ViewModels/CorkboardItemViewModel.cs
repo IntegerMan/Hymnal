@@ -104,6 +104,8 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
         var orphansByFolder = GroupOrphansByFolder(orphanFiles);
 
+        var excludedWorkspacePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 
 
         for (var i = 0; i < chapters.Count; i++)
@@ -120,7 +122,7 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
                 if (currentPart != null)
 
-                    AppendExcludedCards(items, currentPart, orphansByFolder, showExcludedFiles);
+                    AppendExcludedCards(items, currentPart, orphansByFolder, excludedWorkspacePaths, showExcludedFiles);
 
 
 
@@ -162,7 +164,23 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
                 if (chapter.Node.IsExcluded)
 
+                {
+
+                    excludedWorkspacePaths.Add(chapter.Node.RelativePath);
+
+
+
+                    if (showExcludedFiles)
+
+                        items.Add(new ExcludedChapterCardItemViewModel(ToExcludedOrphan(chapter), currentPart));
+
+
+
                     continue;
+
+                }
+
+
 
                 items.Add(new ChapterCardItemViewModel(new CardViewModel(chapter), currentPart));
 
@@ -174,7 +192,7 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
         if (currentPart != null)
 
-            AppendExcludedCards(items, currentPart, orphansByFolder, showExcludedFiles);
+            AppendExcludedCards(items, currentPart, orphansByFolder, excludedWorkspacePaths, showExcludedFiles);
 
 
 
@@ -184,7 +202,17 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
             foreach (var orphan in rootOrphans)
 
+            {
+
+                if (excludedWorkspacePaths.Contains(orphan.RelativePath))
+
+                    continue;
+
+
+
                 items.Add(new ExcludedChapterCardItemViewModel(orphan, null));
+
+            }
 
         }
 
@@ -242,6 +270,8 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
         IReadOnlyDictionary<string, List<OrphanFileInfo>> orphansByFolder,
 
+        ISet<string> excludedWorkspacePaths,
+
         bool showExcludedFiles)
 
     {
@@ -262,7 +292,49 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
         foreach (var orphan in orphans)
 
+        {
+
+            if (excludedWorkspacePaths.Contains(orphan.RelativePath))
+
+                continue;
+
+
+
             items.Add(new ExcludedChapterCardItemViewModel(orphan, part));
+
+        }
+
+    }
+
+
+
+    private static OrphanFileInfo ToExcludedOrphan(ChapterViewModel chapter)
+
+        => new(
+
+            chapter.Node.RelativePath,
+
+            chapter.Node.Title,
+
+            DetectPartFolder(chapter.Node.RelativePath));
+
+
+
+    private static string? DetectPartFolder(string relativePath)
+
+    {
+
+        var normalized = relativePath.Replace('\\', '/');
+
+        var slashIndex = normalized.IndexOf('/');
+
+        if (slashIndex <= 0)
+
+            return null;
+
+
+
+        return normalized[..slashIndex];
 
     }
 
