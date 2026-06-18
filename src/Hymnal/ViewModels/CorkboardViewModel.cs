@@ -296,28 +296,48 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     private void InsertInlineCreateAtIndex(InlineCreateItemViewModel item, int bookTxtInsertIndex)
     {
         var nodes = _workspace.Nodes.ToList();
-        var insertAtItemsIndex = _items.Count;
+        var insertAtItemsIndex = ResolveInlineCreateItemsIndex(nodes, bookTxtInsertIndex);
+        _items.Insert(insertAtItemsIndex, item);
+    }
+
+    private int ResolveInlineCreateItemsIndex(IReadOnlyList<ChapterViewModel> nodes, int bookTxtInsertIndex)
+    {
+        if (_items.Count == 0)
+            return 0;
+
+        if (bookTxtInsertIndex <= 0)
+            return 0;
+
+        if (nodes.Count == 0)
+            return _items.Count;
+
+        var priorNodeIndex = Math.Min(bookTxtInsertIndex - 1, nodes.Count - 1);
+        var priorNode = nodes[priorNodeIndex].Node;
+
+        if (priorNode.Kind == NodeKind.Part)
+        {
+            for (var i = 0; i < _items.Count; i++)
+            {
+                if (_items[i].Kind == CorkboardItemKind.PartDivider
+                    && string.Equals(_items[i].RelativePath, priorNode.RelativePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i + 1;
+                }
+            }
+
+            return _items.Count;
+        }
 
         for (var i = _items.Count - 1; i >= 0; i--)
         {
-            var itemPath = _items[i].RelativePath;
-            if (string.IsNullOrWhiteSpace(itemPath))
+            if (_items[i].Kind is not CorkboardItemKind.ChapterCard and not CorkboardItemKind.ExcludedChapterCard)
                 continue;
 
-            var nodeIndex = nodes.FindIndex(n =>
-                string.Equals(n.Node.RelativePath, itemPath, StringComparison.OrdinalIgnoreCase));
-
-            if (nodeIndex >= 0 && nodeIndex < bookTxtInsertIndex)
-            {
-                insertAtItemsIndex = i + 1;
-                break;
-            }
+            if (string.Equals(_items[i].RelativePath, priorNode.RelativePath, StringComparison.OrdinalIgnoreCase))
+                return i + 1;
         }
 
-        if (insertAtItemsIndex > _items.Count)
-            insertAtItemsIndex = _items.Count;
-
-        _items.Insert(insertAtItemsIndex, item);
+        return _items.Count;
     }
 
     /// <summary>Removes the active inline create card without creating a chapter.</summary>

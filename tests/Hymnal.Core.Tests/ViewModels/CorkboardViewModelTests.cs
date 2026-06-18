@@ -786,6 +786,176 @@ public sealed class CorkboardViewModelTests
     }
 
     [Fact]
+    public void BeginInlineCreate_BetweenChapterCards_InsertsPlaceholderAtRequestedVisualPosition()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-one/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+        var part = GetPartDivider(board, "part-one/part.md");
+
+        board.BeginInlineCreate(board.GetInsertIndexAfterChapter("part-one/chapter-one.md"), part);
+
+        var inlineCreate = Assert.IsType<InlineCreateItemViewModel>(board.Items[2]);
+        Assert.Equal(2, inlineCreate.BookTxtInsertIndex);
+        Assert.Equal("part-one/part.md", inlineCreate.PartPath);
+        Assert.Equal(
+            new[]
+            {
+                CorkboardItemKind.PartDivider,
+                CorkboardItemKind.ChapterCard,
+                CorkboardItemKind.InlineCreate,
+                CorkboardItemKind.ChapterCard
+            },
+            board.Items.Select(item => item.Kind));
+    }
+
+    [Fact]
+    public void BeginInlineCreate_BeforeFirstPart_InsertsPlaceholderAtBoardStart()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"));
+
+        using var board = context.CreateCorkboard();
+
+        board.BeginInlineCreate(board.GetBookChapterInsertIndex(), part: null);
+
+        var inlineCreate = Assert.IsType<InlineCreateItemViewModel>(board.Items[0]);
+        Assert.Equal(0, inlineCreate.BookTxtInsertIndex);
+        Assert.Null(inlineCreate.PartPath);
+        Assert.Equal(CorkboardItemKind.PartDivider, board.Items[1].Kind);
+    }
+
+    [Fact]
+    public void BeginInlineCreate_AfterPartIntoEmptyPart_InsertsImmediatelyAfterDivider()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part));
+
+        using var board = context.CreateCorkboard();
+        var part = GetPartDivider(board, "part-one/part.md");
+
+        board.BeginInlineCreate(board.GetInsertIndexAfterPart(part.RelativePath), part);
+
+        var inlineCreate = Assert.IsType<InlineCreateItemViewModel>(board.Items[1]);
+        Assert.Equal(part.RelativePath, inlineCreate.PartPath);
+        Assert.Equal(CorkboardItemKind.EmptyPartHint, board.Items[2].Kind);
+    }
+
+    [Fact]
+    public void BeginInlineCreate_AfterLastChapterInPart_DoesNotCrossIntoNextPart()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+        var part = GetPartDivider(board, "part-one/part.md");
+
+        board.BeginInlineCreate(board.GetInsertIndexAfterPart(part.RelativePath), part);
+
+        var inlineCreate = Assert.IsType<InlineCreateItemViewModel>(board.Items[2]);
+        Assert.Equal(part.RelativePath, inlineCreate.PartPath);
+        Assert.Equal("part-two/part.md", board.Items[3].RelativePath);
+    }
+
+    [Fact]
+    public void GetInsertIndexAfterChapter_UsesAllBookTxtEntries()
+    {
+        var context = CreateContext();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+
+        Assert.Equal(2, board.GetInsertIndexAfterChapter("part-one/chapter-one.md"));
+        Assert.Equal(4, board.GetInsertIndexAfterChapter("part-two/chapter-two.md"));
+    }
+
+    [Fact]
+    public async Task CommitInlineCreateAsync_BetweenChapterCards_CallsCreateNewChapterAndReloads()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-one/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+        var part = GetPartDivider(board, "part-one/part.md");
+        board.BeginInlineCreate(board.GetInsertIndexAfterChapter("part-one/chapter-one.md"), part);
+
+        await board.CommitInlineCreateAsync("Interlude");
+
+        var create = Assert.Single(context.StructureService.CreateCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/interlude.md", "# Interlude\n\n", 2), create);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Null(board.LastStructuralError);
+        Assert.DoesNotContain(board.Items, item => item.Kind == CorkboardItemKind.InlineCreate);
+    }
+
+    [Fact]
+    public async Task CommitInlineCreateAsync_NestedPart_PreservesPartFolderPrefix()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/act-one/part.md", "Act One", NodeKind.Part));
+
+        using var board = context.CreateCorkboard();
+        var part = GetPartDivider(board, "part-two/act-one/part.md");
+        board.BeginInlineCreate(board.GetInsertIndexAfterPart(part.RelativePath), part);
+
+        await board.CommitInlineCreateAsync("Scene 1");
+
+        var create = Assert.Single(context.StructureService.CreateCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-two/act-one/scene-1.md", "# Scene 1\n\n", 2), create);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Null(board.LastStructuralError);
+    }
+
+    [Fact]
+    public async Task CommitInlineCreateAsync_DuplicatePathFailure_SurfacesCreateChapterErrorWithProposedPath()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.StructureService.CreateResult = Result<Unit>.Fail("Chapter file 'part-two/act-one/scene-1.md' already exists.");
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/act-one/part.md", "Act One", NodeKind.Part));
+
+        using var board = context.CreateCorkboard();
+        var part = GetPartDivider(board, "part-two/act-one/part.md");
+        board.BeginInlineCreate(board.GetInsertIndexAfterPart(part.RelativePath), part);
+
+        await board.CommitInlineCreateAsync("Scene 1");
+
+        var create = Assert.Single(context.StructureService.CreateCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-two/act-one/scene-1.md", "# Scene 1\n\n", 2), create);
+        Assert.Equal(0, context.Workspace.ReloadCount);
+        Assert.Empty(context.MetadataStore.Writes);
+        Assert.Equal("Create chapter", board.LastStructuralError?.Operation);
+        Assert.Equal("part-two/act-one/scene-1.md", board.LastStructuralError?.Path);
+        Assert.Equal(context.Workspace.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+        Assert.Contains("already exists", board.LastStructuralError?.Message ?? string.Empty);
+        Assert.Contains("already exists", Assert.Single(context.NotificationService.Errors));
+    }
+
+    [Fact]
     public void GetBookChapterInsertIndex_WithParts_ReturnsIndexOfFirstPart()
     {
         var context = CreateContext();
@@ -856,6 +1026,9 @@ public sealed class CorkboardViewModelTests
 
     private static ChapterCardItemViewModel GetChapterCard(CorkboardViewModel board, string relativePath)
         => Assert.IsType<ChapterCardItemViewModel>(board.Items.First(item => item.RelativePath == relativePath));
+
+    private static PartDividerItemViewModel GetPartDivider(CorkboardViewModel board, string relativePath)
+        => Assert.IsType<PartDividerItemViewModel>(board.Items.First(item => item.RelativePath == relativePath && item.Kind == CorkboardItemKind.PartDivider));
 
     private static IList GetWorkspaceNodeCollection(WorkspaceViewModel workspace)
     {
