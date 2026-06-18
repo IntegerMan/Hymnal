@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reactive.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Hymnal.Core.Common;
 using Hymnal.Core.Infrastructure;
@@ -110,6 +111,17 @@ public sealed class CorkboardViewModelIntegrationTests
                 "part-one/chapter-one.md",
                 TargetPartPath: "part-one/part.md",
                 AfterRelativePath: "part-one/chapter-three.md")));
+
+        await WaitUntilAsync(
+            () => context.Workspace.Nodes.Select(node => node.Node.RelativePath).SequenceEqual(
+                new[]
+                {
+                    "part-one/part.md",
+                    "part-one/chapter-two.md",
+                    "part-one/chapter-three.md",
+                    "part-one/chapter-one.md"
+                }),
+            $"Workspace nodes did not reorder after same-Part drop. Actual: {string.Join(", ", context.Workspace.Nodes.Select(node => node.Node.RelativePath))}.");
 
         await WaitForBoardProjectionAsync(board,
             "part-one/part.md",
@@ -247,14 +259,19 @@ public sealed class CorkboardViewModelIntegrationTests
             $"Board projection did not match expected order. Expected: {string.Join(", ", expectedPaths)}. Actual: {string.Join(", ", GetProjectedPaths(board))}.");
     }
 
-    private static async Task WaitUntilAsync(Func<bool> predicate, string failureMessage)
+    private static async Task WaitUntilAsync(Func<bool> predicate, string failureMessage, Func<Task>? settleAsync = null)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
         while (DateTime.UtcNow < deadline && !predicate())
         {
             ReactiveUiTestBootstrap.RunOnUiThread(() => { });
+            if (settleAsync != null)
+                await settleAsync();
             await Task.Delay(25);
         }
+
+        if (settleAsync != null)
+            await settleAsync();
 
         if (!predicate())
             Assert.Fail(failureMessage);
@@ -300,6 +317,10 @@ public sealed class CorkboardViewModelIntegrationTests
 
     private sealed class TestContext : IDisposable
     {
+        private static readonly FieldInfo HydrationTaskField = typeof(WorkspaceViewModel)
+            .GetField("_hydrationTask", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Workspace hydration task field was not found.");
+
         public RecordingNotificationService NotificationService { get; } = new();
         public MetadataStore MetadataStore { get; } = new();
         public InMemoryAppSettingsStore SettingsStore { get; } = new();
@@ -364,6 +385,38 @@ public sealed class CorkboardViewModelIntegrationTests
                 $"Workspace did not load expected node count {expectedNodeCount}. Actual count: {Workspace.Nodes.Count}.");
         }
 
+        public async Task AwaitWorkspaceHydrationAsync()
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+
+            while (true)
+            {
+                var hydrationTask = HydrationTaskField.GetValue(Workspace) as Task;
+                if (hydrationTask == null)
+                {
+                    ReactiveUiTestBootstrap.RunOnUiThread(() => { });
+                    return;
+                }
+
+                while (!hydrationTask.IsCompleted)
+                {
+                    if (DateTime.UtcNow >= deadline)
+                    {
+                        throw new TimeoutException(
+                            $"Workspace hydration did not settle. Status={hydrationTask.Status}; nodes={Workspace.Nodes.Count}; hasWorkspace={Workspace.HasWorkspace}.");
+                    }
+
+                    ReactiveUiTestBootstrap.RunOnUiThread(() => { });
+                    await Task.Delay(10);
+                }
+
+                ReactiveUiTestBootstrap.RunOnUiThread(() => { });
+
+                if (ReferenceEquals(hydrationTask, HydrationTaskField.GetValue(Workspace)))
+                    return;
+            }
+        }
+
         public async Task<ChapterViewModel> WaitForNodeAsync(string relativePath, bool requireUuid = false)
         {
             await WaitUntilAsync(
@@ -384,7 +437,7 @@ public sealed class CorkboardViewModelIntegrationTests
 
         public void Dispose()
         {
-            Workspace.Dispose();
+            Editor.Dispose();
             ManuscriptService.Dispose();
 
             try
