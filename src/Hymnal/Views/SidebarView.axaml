@@ -177,6 +177,9 @@
                                               IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
                                               Command="{Binding OpenTargetFlyoutCommand}" />
                                     <Separator IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}" />
+                                    <MenuItem Header="Include in book"
+                                              IsVisible="{Binding Node.IsExcluded}"
+                                              Click="IncludeInBook_Click" />
                                     <MenuItem Header="Exclude from book"
                                               IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
                                               Click="ExcludeFromBook_Click" />

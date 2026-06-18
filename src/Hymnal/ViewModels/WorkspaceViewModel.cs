@@ -122,7 +122,9 @@ public class WorkspaceViewModel : ViewModelBase
     public ReactiveCommand<CreateChapterRequest, System.Reactive.Unit> CreateChapterCommand { get; }
     public ReactiveCommand<CreatePartRequest, System.Reactive.Unit> CreatePartCommand { get; }
     public ReactiveCommand<IncludeExistingChapterRequest, System.Reactive.Unit> IncludeExistingFileCommand { get; }
+    public ReactiveCommand<string, System.Reactive.Unit> IncludeExcludedChapterCommand { get; }
     public ReactiveCommand<string, System.Reactive.Unit> RemoveFromBookCommand { get; }
+    public ReactiveCommand<string, System.Reactive.Unit> RemoveMissingEntryCommand { get; }
     public ReactiveCommand<ReorderCardRequest, System.Reactive.Unit> ReorderChapterCommand { get; }
 
     private ChapterViewModel? _targetFlyoutChapter;
@@ -211,7 +213,11 @@ public class WorkspaceViewModel : ViewModelBase
             this.WhenAnyValue(x => x.HasWorkspace));
         IncludeExistingFileCommand = ReactiveCommand.CreateFromTask<IncludeExistingChapterRequest>(IncludeExistingFileAsync,
             this.WhenAnyValue(x => x.HasWorkspace));
+        IncludeExcludedChapterCommand = ReactiveCommand.CreateFromTask<string>(IncludeExcludedChapterAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
         RemoveFromBookCommand = ReactiveCommand.CreateFromTask<string>(RemoveFromBookAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
+        RemoveMissingEntryCommand = ReactiveCommand.CreateFromTask<string>(RemoveMissingEntryAsync,
             this.WhenAnyValue(x => x.HasWorkspace));
         ReorderChapterCommand = ReactiveCommand.CreateFromTask<ReorderCardRequest>(ReorderChapterAsync,
             this.WhenAnyValue(x => x.HasWorkspace));
@@ -226,7 +232,13 @@ public class WorkspaceViewModel : ViewModelBase
             IncludeExistingFileCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
         Disposables.Add(
+            IncludeExcludedChapterCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
             RemoveFromBookCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            RemoveMissingEntryCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
         Disposables.Add(
             ReorderChapterCommand.ThrownExceptions
@@ -331,6 +343,18 @@ public class WorkspaceViewModel : ViewModelBase
     private async Task TrySwitchChapterAsync(ChapterViewModel viewModel)
     {
         var node = viewModel.Node;
+        var previousNode = _editor.ActiveNode != null
+            && _nodesByPath.TryGetValue(_editor.ActiveNode.RelativePath, out var prev)
+            ? prev
+            : null;
+
+        if (node.IsExcluded)
+        {
+            _isSwitching = true;
+            SelectedNode = previousNode;
+            _isSwitching = false;
+            return;
+        }
 
         // Missing chapter: show warning overlay instead of deselecting.
         if (node.IsMissing)
@@ -343,11 +367,6 @@ public class WorkspaceViewModel : ViewModelBase
             _editor.OpenMissingChapter(node);
             return;
         }
-
-        var previousNode = _editor.ActiveNode != null
-            && _nodesByPath.TryGetValue(_editor.ActiveNode.RelativePath, out var prev)
-            ? prev
-            : null;
 
         if (_editor.IsDirty)
         {
@@ -1180,6 +1199,17 @@ public class WorkspaceViewModel : ViewModelBase
         await ExecuteStructuralOperationAsync("Include file", request.ChapterPath, action).ConfigureAwait(false);
     }
 
+    private async Task IncludeExcludedChapterAsync(string chapterPath)
+    {
+        if (!TryBuildIncludeExistingRequest(chapterPath, out var request, out var error))
+        {
+            _notificationService.ShowError(error ?? $"Include file for '{chapterPath}' in '{BookTxtPath}': unable to resolve insertion target.");
+            return;
+        }
+
+        await IncludeExistingFileAsync(request!).ConfigureAwait(false);
+    }
+
     private async Task RemoveFromBookAsync(string chapterPath)
     {
         if (_model == null) return;
@@ -1193,6 +1223,60 @@ public class WorkspaceViewModel : ViewModelBase
             return;
         }
         await ReloadWorkspaceAsync(_model.WorkspaceRoot, _model.BookTxtPath, reselectBook: false).ConfigureAwait(false);
+    }
+
+    private async Task RemoveMissingEntryAsync(string chapterPath)
+    {
+        await ExecuteStructuralOperationAsync(
+            "Remove chapter",
+            chapterPath,
+            () => _structureService.RemoveEntryAsync(BookTxtPath, chapterPath)).ConfigureAwait(false);
+    }
+
+    private bool TryBuildIncludeExistingRequest(
+        string chapterPath,
+        out IncludeExistingChapterRequest? request,
+        out string? error)
+    {
+        request = null;
+        error = null;
+
+        if (!_nodesByPath.TryGetValue(chapterPath, out var chapter))
+        {
+            error = $"Include file for '{chapterPath}' in '{BookTxtPath}': chapter was not found in the sidebar.";
+            return false;
+        }
+
+        if (chapter.Node.Kind != NodeKind.Chapter)
+        {
+            error = $"Include file for '{chapterPath}' in '{BookTxtPath}': only chapters can be included.";
+            return false;
+        }
+
+        if (chapter.Node.IsMissing)
+        {
+            error = $"Include file for '{chapterPath}' in '{BookTxtPath}': missing files cannot be included.";
+            return false;
+        }
+
+        if (!chapter.Node.IsExcluded)
+        {
+            error = $"Include file for '{chapterPath}' in '{BookTxtPath}': chapter is already included.";
+            return false;
+        }
+
+        var index = 0;
+        foreach (var node in _nodes)
+        {
+            if (string.Equals(node.Node.RelativePath, chapterPath, StringComparison.OrdinalIgnoreCase))
+                break;
+
+            if (!node.Node.IsExcluded)
+                index++;
+        }
+
+        request = new IncludeExistingChapterRequest(chapterPath, Index: index);
+        return true;
     }
 
     private async Task ReorderChapterAsync(ReorderCardRequest request)

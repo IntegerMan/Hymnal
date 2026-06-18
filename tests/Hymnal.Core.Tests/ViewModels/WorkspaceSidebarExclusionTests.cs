@@ -97,7 +97,7 @@ public sealed class WorkspaceSidebarExclusionTests
     }
 
     [Fact]
-    public async Task IncludeExistingFileCommand_IncludesExcludedNodeAndUpdatesBookTxtAndManifest()
+    public async Task IncludeExcludedChapterCommand_IncludesExcludedNodeAndUpdatesBookTxtAndManifestWithoutDuplicateReloadNodes()
     {
         var workspace = CreateWorkspace(
             ("Book.txt", "chapter-one.md\nchapter-three.md"),
@@ -116,14 +116,19 @@ public sealed class WorkspaceSidebarExclusionTests
             var excludedNode = Assert.Single(context.Workspace.Nodes, node => node.Node.RelativePath == "chapter-two.md");
             Assert.True(excludedNode.Node.IsExcluded);
 
-            await ExecuteCommandAsync(context.Workspace.IncludeExistingFileCommand.Execute(
-                new IncludeExistingChapterRequest("chapter-two.md", Index: 1)));
+            await ExecuteCommandAsync(context.Workspace.IncludeExcludedChapterCommand.Execute("chapter-two.md"));
             await context.OpenWorkspaceAsync();
             await WaitForNodesAsync(context.Workspace, 3);
 
-            Assert.Equal(new[] { "chapter-one.md", "chapter-two.md", "chapter-three.md" }, ReadBookTxtLines(workspace.BookTxtPath));
+            var reload = await context.Workspace.ReloadCurrentWorkspaceAsync();
+            Assert.True(reload.IsSuccess, reload.Error);
+            await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 3);
+
+            Assert.Equal(new[] { "chapter-one.md", "chapter-three.md", "chapter-two.md" }, ReadBookTxtLines(workspace.BookTxtPath));
             Assert.Empty(await context.LoadExcludedPathsAsync());
-            Assert.Equal(new[] { "chapter-one.md", "chapter-two.md", "chapter-three.md" }, context.Workspace.Nodes.Select(node => node.Node.RelativePath));
+            Assert.Equal(new[] { "chapter-one.md", "chapter-three.md", "chapter-two.md" }, context.Workspace.Nodes.Select(node => node.Node.RelativePath));
+            Assert.Equal(1, context.Workspace.Nodes.Count(node => node.Node.RelativePath == "chapter-two.md"));
             Assert.False(context.Workspace.Nodes.Single(node => node.Node.RelativePath == "chapter-two.md").Node.IsExcluded);
             Assert.Empty(context.NotificationService.Errors);
         }
@@ -165,7 +170,40 @@ public sealed class WorkspaceSidebarExclusionTests
     }
 
     [Fact]
-    public async Task IncludeExistingFileCommand_WhenStructureFails_NotifiesAndLeavesExcludedSidebarStateIntact()
+    public async Task RemoveMissingEntryCommand_RemovesMissingBookTxtEntryWithoutCreatingManifestExclusion()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "chapter-one.md\nchapter-missing.md\nchapter-three.md"),
+            ("chapter-one.md", "# Chapter One"),
+            ("chapter-three.md", "# Chapter Three"));
+
+        try
+        {
+            var context = new TestContext(workspace.Root);
+            await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 3);
+
+            var missingNode = Assert.Single(context.Workspace.Nodes, node => node.Node.RelativePath == "chapter-missing.md");
+            Assert.True(missingNode.Node.IsMissing);
+            Assert.False(missingNode.Node.IsExcluded);
+
+            await ExecuteCommandAsync(context.Workspace.RemoveMissingEntryCommand.Execute("chapter-missing.md"));
+            await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 2);
+
+            Assert.Equal(new[] { "chapter-one.md", "chapter-three.md" }, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.Empty(await context.LoadExcludedPathsAsync());
+            Assert.DoesNotContain(context.Workspace.Nodes, node => node.Node.RelativePath == "chapter-missing.md");
+            Assert.Empty(context.NotificationService.Errors);
+        }
+        finally
+        {
+            DeleteWorkspace(workspace.Root);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExcludedChapterCommand_WhenStructureFails_NotifiesAndLeavesExcludedSidebarStateIntact()
     {
         var workspace = CreateWorkspace(
             ("Book.txt", "chapter-one.md"),
@@ -181,8 +219,7 @@ public sealed class WorkspaceSidebarExclusionTests
             await WaitForNodesAsync(context.Workspace, 2);
             var before = context.Workspace.Nodes.Select(node => (node.Node.RelativePath, node.Node.IsExcluded)).ToArray();
 
-            await ExecuteCommandAsync(context.Workspace.IncludeExistingFileCommand.Execute(
-                new IncludeExistingChapterRequest("chapter-two.md", Index: 1)));
+            await ExecuteCommandAsync(context.Workspace.IncludeExcludedChapterCommand.Execute("chapter-two.md"));
 
             Assert.Equal(before, context.Workspace.Nodes.Select(node => (node.Node.RelativePath, node.Node.IsExcluded)).ToArray());
             var error = Assert.Single(context.NotificationService.Errors);
@@ -223,6 +260,40 @@ public sealed class WorkspaceSidebarExclusionTests
         }
     }
 
+    [Fact]
+    public async Task TrySwitchChapterAsync_WhenNodeIsExcluded_DoesNotOpenExcludedFileAndRestoresPreviousSelection()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "chapter-one.md"),
+            ("chapter-one.md", "# Chapter One"),
+            ("chapter-two.md", "# Chapter Two"));
+
+        try
+        {
+            var context = new TestContext(workspace.Root);
+            var excluded = await context.ExclusionManifestService.ExcludeAsync(workspace.Root, "chapter-two.md");
+            Assert.True(excluded.IsSuccess, excluded.Error);
+            await context.OpenWorkspaceAsync();
+            await WaitForNodesAsync(context.Workspace, 2);
+
+            var includedNode = Assert.Single(context.Workspace.Nodes, node => node.Node.RelativePath == "chapter-one.md");
+            var excludedNode = Assert.Single(context.Workspace.Nodes, node => node.Node.RelativePath == "chapter-two.md");
+
+            await context.Editor.OpenChapterAsync(includedNode.Node, Path.Combine(workspace.Root, includedNode.Node.RelativePath));
+            context.Workspace.SelectedNode = includedNode;
+
+            await InvokeTrySwitchChapterAsync(context.Workspace, excludedNode);
+
+            Assert.Same(includedNode, context.Workspace.SelectedNode);
+            Assert.Same(includedNode.Node, context.Editor.ActiveNode);
+            Assert.Equal(Path.Combine(workspace.Root, "chapter-one.md"), context.Editor.ActiveFilePath);
+        }
+        finally
+        {
+            DeleteWorkspace(workspace.Root);
+        }
+    }
+
     private static (string Root, string BookTxtPath) CreateWorkspace(params (string Path, string Content)[] files)
     {
         var root = Path.Combine(Path.GetTempPath(), $"hymnal-sidebar-exclusions-{Guid.NewGuid():N}");
@@ -250,6 +321,16 @@ public sealed class WorkspaceSidebarExclusionTests
     {
         if (Directory.Exists(root))
             Directory.Delete(root, recursive: true);
+    }
+
+    private static async Task InvokeTrySwitchChapterAsync(WorkspaceViewModel workspace, ChapterViewModel chapter)
+    {
+        var method = typeof(WorkspaceViewModel).GetMethod("TrySwitchChapterAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("TrySwitchChapterAsync was not found.");
+
+        var task = (Task)(method.Invoke(workspace, new object[] { chapter })
+            ?? throw new InvalidOperationException("TrySwitchChapterAsync returned null."));
+        await task;
     }
 
     private static async Task ExecuteCommandAsync(IObservable<System.Reactive.Unit> execution)
@@ -310,6 +391,7 @@ public sealed class WorkspaceSidebarExclusionTests
         public ExclusionManifestService ExclusionManifestService { get; }
         public ManuscriptService ManuscriptService { get; }
         public OrphanFileDiscoveryService OrphanFileDiscoveryService { get; } = new();
+        public EditorViewModel Editor { get; }
         public WorkspaceViewModel Workspace { get; }
 
         public TestContext(string workspaceRoot, IBookTxtStructureService? structureService = null)
@@ -319,7 +401,7 @@ public sealed class WorkspaceSidebarExclusionTests
             var effectiveStructureService = structureService ?? new BookTxtStructureService(MetadataStore, ExclusionManifestService);
             PhaseDataService = new PhaseDataService(MetadataStore);
             TargetsService = new TargetsService(MetadataStore);
-            var editor = new EditorViewModel(MetadataStore, NotificationService, WordCountService);
+            Editor = new EditorViewModel(MetadataStore, NotificationService, WordCountService);
             var registry = new ChapterRegistryService(MetadataStore);
             var history = new WordCountHistoryService(MetadataStore);
             ManuscriptService = new ManuscriptService(NotificationService, ExclusionManifestService);
@@ -331,7 +413,7 @@ public sealed class WorkspaceSidebarExclusionTests
                 SettingsStore,
                 FolderPickerService,
                 NotificationService,
-                editor,
+                Editor,
                 registry,
                 PhaseDataService,
                 TargetsService,

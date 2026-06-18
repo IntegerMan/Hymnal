@@ -24,20 +24,35 @@ public partial class SidebarView : UserControl
         InitializeComponent();
     }
 
-    private void RemoveFromBook_Click(object? sender, RoutedEventArgs e)
+    private async void RemoveFromBook_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not WorkspaceViewModel vm) return;
         if (sender is MenuItem { DataContext: ChapterViewModel chapter })
-            vm.RemoveFromBookCommand.Execute(chapter.Node.RelativePath)
-                .Subscribe(Observer.Create<Unit>(_ => { }));
+            await ExecuteCommandAsync(vm.RemoveMissingEntryCommand.Execute(chapter.Node.RelativePath));
     }
 
-    private void ExcludeFromBook_Click(object? sender, RoutedEventArgs e)
+    private async void ExcludeFromBook_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not WorkspaceViewModel vm) return;
         if (sender is MenuItem { DataContext: ChapterViewModel chapter })
-            vm.RemoveFromBookCommand.Execute(chapter.Node.RelativePath)
-                .Subscribe(Observer.Create<Unit>(_ => { }));
+        {
+            if (chapter.Node.IsExcluded || chapter.Node.IsMissing || chapter.Node.Kind != Hymnal.Core.Models.NodeKind.Chapter)
+                return;
+
+            await ExecuteCommandAsync(vm.RemoveFromBookCommand.Execute(chapter.Node.RelativePath));
+        }
+    }
+
+    private async void IncludeInBook_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not WorkspaceViewModel vm) return;
+        if (sender is MenuItem { DataContext: ChapterViewModel chapter })
+        {
+            if (!chapter.Node.IsExcluded || chapter.Node.IsMissing || chapter.Node.Kind != Hymnal.Core.Models.NodeKind.Chapter)
+                return;
+
+            await ExecuteCommandAsync(vm.IncludeExcludedChapterCommand.Execute(chapter.Node.RelativePath));
+        }
     }
 
     // ── Drag-and-drop ─────────────────────────────────────────────────────────
