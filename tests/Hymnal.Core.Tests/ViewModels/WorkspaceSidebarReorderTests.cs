@@ -127,6 +127,52 @@ public sealed class WorkspaceSidebarReorderTests
     }
 
     [Fact]
+    public async Task ReorderChapterCommand_CoreFailureShowsErrorAndLeavesVisibleOrderUnchanged()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-one/chapter-two.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-two.md", "# Chapter Two"));
+
+        try
+        {
+            var structure = new RecordingStructureService
+            {
+                ReorderFailure = "Book.txt validation rejected simulated reorder."
+            };
+            var context = new TestContext(workspace.Root, structure);
+            await context.OpenWorkspaceAsync();
+            await WaitForVisibleOrderAsync(context.Workspace,
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md");
+
+            await InvokePrivateTaskOnUiThreadWithPumpingAsync(
+                context.Workspace,
+                "ReorderChapterAsync",
+                new ReorderCardRequest("part-one/chapter-one.md", AfterRelativePath: "part-one/chapter-two.md"));
+
+            var call = Assert.Single(structure.ReorderCalls);
+            Assert.Equal("part-one/chapter-one.md", call.Path);
+            Assert.Equal(2, call.NewIndex);
+            Assert.True(call.WatcherWasSuppressed);
+            var error = Assert.Single(context.NotificationService.Errors);
+            Assert.Contains("Failed to reorder sidebar entry 'part-one/chapter-one.md'", error);
+            Assert.Contains("Book.txt validation rejected simulated reorder", error);
+            Assert.Equal(new[] { "part-one/part.md", "part-one/chapter-one.md", "part-one/chapter-two.md" }, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.Equal(
+                new[] { "part-one/part.md", "part-one/chapter-one.md", "part-one/chapter-two.md" },
+                context.Workspace.VisibleNodes.Select(node => node.Node.RelativePath));
+            Assert.Equal(context.Workspace.VisibleNodes.Count, context.Workspace.VisibleNodes.Select(node => node.Node.RelativePath).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        }
+        finally
+        {
+            DeleteWorkspace(workspace.Root);
+        }
+    }
+
+    [Fact]
     public async Task ReorderChapterCommand_RejectsExcludedSourceBeforeCallingCore()
     {
         var workspace = CreateWorkspace(
@@ -573,6 +619,8 @@ public sealed class WorkspaceSidebarReorderTests
 
         public List<ReorderCall> ReorderCalls { get; } = new();
 
+        public string? ReorderFailure { get; init; }
+
         public void Configure(IBookTxtStructureService inner, ManuscriptService manuscriptService)
         {
             _inner = inner;
@@ -585,6 +633,9 @@ public sealed class WorkspaceSidebarReorderTests
         public async Task<Result<Unit>> ReorderEntryAsync(string bookTxtPath, string chapterPath, int newIndex)
         {
             ReorderCalls.Add(new ReorderCall(bookTxtPath, chapterPath, newIndex, ReadSuppressCount() > 0));
+            if (!string.IsNullOrWhiteSpace(ReorderFailure))
+                return Result<Unit>.Fail(ReorderFailure);
+
             return await Inner.ReorderEntryAsync(bookTxtPath, chapterPath, newIndex);
         }
 
