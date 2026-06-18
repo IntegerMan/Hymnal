@@ -28,6 +28,12 @@ public sealed record ReorderCardRequest(
     string? AfterRelativePath = null,
     string? BeforeRelativePath = null);
 
+public sealed record CorkboardDropRequest(
+    string RelativePath,
+    string? TargetPartPath = null,
+    string? AfterRelativePath = null,
+    string? BeforeRelativePath = null);
+
 public sealed record RenameCardRequest(string ExistingPath, string ReplacementPath);
 
 public sealed record RenameChapterRequest(string ExistingPath, string NewTitle);
@@ -96,6 +102,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenSelectedCardCommand { get; }
     public ReactiveCommand<CorkboardItemViewModel?, System.Reactive.Unit> OpenCardCommand { get; }
     public ReactiveCommand<ReorderCardRequest, System.Reactive.Unit> ReorderCardCommand { get; }
+    public ReactiveCommand<CorkboardDropRequest, System.Reactive.Unit> DropCardCommand { get; }
     public ReactiveCommand<RenameCardRequest, System.Reactive.Unit> RenameCardCommand { get; }
     public ReactiveCommand<CreateChapterRequest, System.Reactive.Unit> CreateChapterCommand { get; }
     public ReactiveCommand<CreatePartRequest, System.Reactive.Unit> CreatePartCommand { get; }
@@ -165,6 +172,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.SelectedCard).Select(card => card != null));
         OpenCardCommand = ReactiveCommand.CreateFromTask<CorkboardItemViewModel?>(OpenCardAsync);
         ReorderCardCommand = ReactiveCommand.CreateFromTask<ReorderCardRequest>(ReorderCardAsync);
+        DropCardCommand = ReactiveCommand.CreateFromTask<CorkboardDropRequest>(DropCardAsync);
         RenameCardCommand = ReactiveCommand.CreateFromTask<RenameCardRequest>(RenameCardAsync);
         CreateChapterCommand = ReactiveCommand.CreateFromTask<CreateChapterRequest>(CreateChapterAsync);
         CreatePartCommand = ReactiveCommand.CreateFromTask<CreatePartRequest>(CreatePartAsync);
@@ -178,6 +186,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         Disposables.Add(OpenSelectedCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(OpenCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(ReorderCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
+        Disposables.Add(DropCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(RenameCardCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(CreateChapterCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
         Disposables.Add(CreatePartCommand.ThrownExceptions.Subscribe(ReportUnexpectedError));
@@ -554,6 +563,15 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         {
             ReportStructuralFailure("Reorder card", request.RelativePath, ex.Message);
         }
+    }
+
+    private Task DropCardAsync(CorkboardDropRequest request)
+    {
+        ReportStructuralFailure(
+            "Drop card",
+            request.RelativePath,
+            "Corkboard drop mapping is not implemented yet.");
+        return Task.CompletedTask;
     }
 
     private async Task RenameCardAsync(RenameCardRequest request)

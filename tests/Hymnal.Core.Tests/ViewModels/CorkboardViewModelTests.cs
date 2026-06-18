@@ -228,6 +228,129 @@ public sealed class CorkboardViewModelTests
     }
 
     [Fact]
+    public async Task DropCardCommand_SamePartAfterSibling_ReordersAtAllNodeBookTxtIndex()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-one/chapter-two.md", "Chapter Two"),
+            CreateChapter(context, "part-one/chapter-three.md", "Chapter Three"));
+
+        using var board = context.CreateCorkboard();
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest(
+                "part-one/chapter-one.md",
+                TargetPartPath: "part-one/part.md",
+                AfterRelativePath: "part-one/chapter-three.md")));
+
+        Assert.Equal(1, context.StructureService.ReorderCalls.Count);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", 3), context.StructureService.ReorderCalls[0]);
+        Assert.Empty(context.StructureService.MoveCalls);
+        Assert.Null(board.LastStructuralError);
+    }
+
+    [Fact]
+    public async Task DropCardCommand_CrossPartAfterSibling_MovesFileToTargetPartFolder()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest(
+                "part-one/chapter-one.md",
+                TargetPartPath: "part-two/part.md",
+                AfterRelativePath: "part-two/chapter-two.md")));
+
+        Assert.Empty(context.StructureService.ReorderCalls);
+        var move = Assert.Single(context.StructureService.MoveCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", "part-two/chapter-one.md", 3), move);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Null(board.LastStructuralError);
+    }
+
+    [Fact]
+    public async Task DropCardCommand_IntoEmptyPart_MovesToSlotImmediatelyAfterPartDivider()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part));
+
+        using var board = context.CreateCorkboard();
+        Assert.Contains(board.Items, item => item.Kind == CorkboardItemKind.EmptyPartHint && item.RelativePath == "part-two/part.md");
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest(
+                "part-one/chapter-one.md",
+                TargetPartPath: "part-two/part.md")));
+
+        Assert.Empty(context.StructureService.ReorderCalls);
+        var move = Assert.Single(context.StructureService.MoveCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", "part-two/chapter-one.md", 3), move);
+        Assert.Null(board.LastStructuralError);
+    }
+
+    [Fact]
+    public async Task DropCardCommand_InvalidMissingExcludedAndSelfDrops_DoNotCallCoreAndSurfaceStructuralError()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.OrphanDiscovery.Orphans = new[]
+        {
+            new OrphanFileInfo("part-one/excluded.md", "Excluded", "part-one")
+        };
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-one/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+        Assert.True(
+            SpinWait.SpinUntil(
+                () => board.Items.Any(item => item.Kind == CorkboardItemKind.ExcludedChapterCard && item.RelativePath == "part-one/excluded.md"),
+                TimeSpan.FromSeconds(2)),
+            "Excluded card was not projected before invalid-drop contract assertions.");
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest("missing.md", TargetPartPath: "part-one/part.md")));
+        Assert.Equal("Drop card", board.LastStructuralError?.Operation);
+        Assert.Equal("missing.md", board.LastStructuralError?.Path);
+        Assert.Contains("not on the current board", board.LastStructuralError?.Message ?? string.Empty);
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest("part-one/excluded.md", TargetPartPath: "part-one/part.md")));
+        Assert.Equal("Drop card", board.LastStructuralError?.Operation);
+        Assert.Equal("part-one/excluded.md", board.LastStructuralError?.Path);
+        Assert.Contains("excluded", (board.LastStructuralError?.Message ?? string.Empty).ToLowerInvariant());
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest(
+                "part-one/chapter-one.md",
+                TargetPartPath: "part-one/part.md",
+                AfterRelativePath: "part-one/chapter-one.md")));
+        Assert.Equal("Drop card", board.LastStructuralError?.Operation);
+        Assert.Equal("part-one/chapter-one.md", board.LastStructuralError?.Path);
+        Assert.Contains("itself", (board.LastStructuralError?.Message ?? string.Empty).ToLowerInvariant());
+
+        Assert.Empty(context.StructureService.ReorderCalls);
+        Assert.Empty(context.StructureService.MoveCalls);
+        Assert.Equal(3, context.NotificationService.Errors.Count);
+        Assert.All(context.NotificationService.Errors, error => Assert.Contains(context.Workspace.BookTxtPath, error));
+    }
+
+    [Fact]
     public async Task StructuralFailure_LeavesSelectionIntactAndSurfacesError()
     {
         var context = CreateContext();
@@ -482,6 +605,7 @@ public sealed class CorkboardViewModelTests
         public WordCountHistoryService HistoryService { get; }
         public ManuscriptService ManuscriptService { get; }
         public FakeBookTxtStructureService StructureService { get; } = new();
+        public FakeOrphanFileDiscoveryService OrphanDiscovery { get; } = new();
         public SpyWorkspaceViewModel Workspace { get; }
         public string WorkspaceRoot { get; } = Path.Combine("C:", "Dev", "Hymnal", "tests", "workspace");
         public string ManuscriptRoot { get; } = Path.Combine("C:", "Dev", "Hymnal", "tests", "workspace", "manuscript");
@@ -512,7 +636,7 @@ public sealed class CorkboardViewModelTests
         public CorkboardViewModel CreateCorkboard() => new(
             Workspace,
             StructureService,
-            new OrphanFileDiscoveryService(),
+            OrphanDiscovery,
             SettingsStore,
             NotificationService,
             ManuscriptService);
@@ -615,9 +739,20 @@ public sealed class CorkboardViewModelTests
             => Task.FromResult<string?>(null);
     }
 
+    private sealed class FakeOrphanFileDiscoveryService : IOrphanFileDiscoveryService
+    {
+        public IReadOnlyList<OrphanFileInfo> Orphans { get; set; } = Array.Empty<OrphanFileInfo>();
+
+        public Task<IReadOnlyList<OrphanFileInfo>> DiscoverAsync(
+            string manuscriptRoot,
+            IReadOnlyList<string> bookTxtEntries)
+            => Task.FromResult(Orphans);
+    }
+
     private sealed class FakeBookTxtStructureService : IBookTxtStructureService
     {
         public List<(string BookTxtPath, string ChapterPath, int NewIndex)> ReorderCalls { get; } = new();
+        public List<(string BookTxtPath, string ExistingPath, string ReplacementPath, int NewIndex)> MoveCalls { get; } = new();
         public List<(string BookTxtPath, string ExistingPath, string ReplacementPath)> RenameCalls { get; } = new();
         public List<(string BookTxtPath, string ChapterPath, string Content, int Index)> CreateCalls { get; } = new();
         public List<(string BookTxtPath, string ChapterPath, int Index)> IncludeIndexCalls { get; } = new();
@@ -626,6 +761,7 @@ public sealed class CorkboardViewModelTests
         public List<(string BookTxtPath, string ChapterPath)> DeleteCalls { get; } = new();
 
         public Result<Unit> ReorderResult { get; set; } = Result<Unit>.Ok(Unit.Default);
+        public Result<Unit> MoveResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> RenameResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> CreateResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> IncludeIndexResult { get; set; } = Result<Unit>.Ok(Unit.Default);
@@ -640,6 +776,12 @@ public sealed class CorkboardViewModelTests
         {
             ReorderCalls.Add((bookTxtPath, chapterPath, newIndex));
             return Task.FromResult(ReorderResult);
+        }
+
+        public Task<Result<Unit>> MoveEntryAsync(string bookTxtPath, string existingPath, string replacementPath, int newIndex)
+        {
+            MoveCalls.Add((bookTxtPath, existingPath, replacementPath, newIndex));
+            return Task.FromResult(MoveResult);
         }
 
         public Task<Result<Unit>> RenameEntryAsync(string bookTxtPath, string existingPath, string replacementPath)
