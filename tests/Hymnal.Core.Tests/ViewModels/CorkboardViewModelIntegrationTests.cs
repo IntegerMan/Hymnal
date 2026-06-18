@@ -51,7 +51,6 @@ public sealed class CorkboardViewModelIntegrationTests
                 TargetPartPath: "part-two/part.md",
                 AfterRelativePath: "part-two/chapter-two.md")));
 
-        await context.AwaitWorkspaceHydrationAsync();
         await context.WaitForNodeAsync("part-two/chapter-one.md", requireUuid: true);
         await WaitForBoardProjectionAsync(board,
             "part-one/part.md",
@@ -185,7 +184,6 @@ public sealed class CorkboardViewModelIntegrationTests
                 TargetPartPath: "part-two/part.md",
                 AfterRelativePath: "part-two/chapter-two.md")));
 
-        await context.AwaitWorkspaceHydrationAsync();
         await context.WaitForNodeAsync("part-two/chapter-one.md", requireUuid: true);
         await WaitForBoardProjectionAsync(board,
             "part-one/part.md",
@@ -384,10 +382,6 @@ public sealed class CorkboardViewModelIntegrationTests
 
     private sealed class TestContext : IDisposable
     {
-        private static readonly FieldInfo HydrationTaskField = typeof(WorkspaceViewModel)
-            .GetField("_hydrationTask", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("Workspace hydration task field was not found.");
-
         public RecordingNotificationService NotificationService { get; } = new();
         public MetadataStore MetadataStore { get; } = new();
         public InMemoryAppSettingsStore SettingsStore { get; } = new();
@@ -400,7 +394,7 @@ public sealed class CorkboardViewModelIntegrationTests
         public ManuscriptService ManuscriptService { get; }
         public OrphanFileDiscoveryService OrphanFileDiscoveryService { get; } = new();
         public EditorViewModel Editor { get; }
-        public WorkspaceViewModel Workspace { get; }
+        public TestWorkspaceViewModel Workspace { get; }
         public ChapterRegistryService RegistryService { get; }
 
         public string WorkspaceRoot { get; }
@@ -422,7 +416,7 @@ public sealed class CorkboardViewModelIntegrationTests
             ManuscriptService = new ManuscriptService(NotificationService, ExclusionManifestService);
             var structure = new BookTxtStructureService(MetadataStore, ExclusionManifestService, RegistryService);
 
-            Workspace = new WorkspaceViewModel(
+            Workspace = new TestWorkspaceViewModel(
                 ManuscriptService,
                 structure,
                 FilePickerService,
@@ -436,7 +430,8 @@ public sealed class CorkboardViewModelIntegrationTests
                 WordCountService,
                 history,
                 ExclusionManifestService,
-                OrphanFileDiscoveryService);
+                OrphanFileDiscoveryService,
+                ReloadWorkspaceFromDiskAsync);
         }
 
         public CorkboardViewModel CreateBoard() => new(
@@ -449,43 +444,39 @@ public sealed class CorkboardViewModelIntegrationTests
 
         public async Task OpenWorkspaceAsync(int expectedNodeCount)
         {
-            await ExecuteCommandAsync(Workspace.OpenWorkspaceCommand.Execute());
-            await AwaitWorkspaceHydrationAsync();
+            var result = await ReloadWorkspaceFromDiskAsync();
+            Assert.True(result.IsSuccess, result.Error);
+
             await WaitUntilAsync(
                 () => Workspace.HasWorkspace && Workspace.Nodes.Count == expectedNodeCount,
                 $"Workspace did not load expected node count {expectedNodeCount}. Actual count: {Workspace.Nodes.Count}.");
         }
 
-        public async Task AwaitWorkspaceHydrationAsync()
+        private async Task<Result<Unit>> ReloadWorkspaceFromDiskAsync()
         {
-            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+            var result = await ManuscriptService.LoadWorkspaceAsync(WorkspaceRoot);
+            if (!result.IsSuccess)
+                return Result<Unit>.Fail(result.Error!);
 
-            while (true)
-            {
-                var hydrationTask = HydrationTaskField.GetValue(Workspace) as Task;
-                if (hydrationTask == null)
-                {
-                    ReactiveUiTestBootstrap.RunOnUiThread(() => { });
-                    return;
-                }
+            var model = result.Value!;
+            var activeNodes = model.Nodes.Items.OrderBy(node => node.Index).ToList();
+            var activePaths = activeNodes.Select(node => node.RelativePath).ToList();
+            var projectionMethod = typeof(WorkspaceViewModel).GetMethod("ProjectSidebarNodesAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Unable to locate WorkspaceViewModel sidebar projection method.");
+            var projectionTask = (Task<IReadOnlyList<ChapterNode>>)projectionMethod.Invoke(Workspace, new object[] { model, activeNodes, activePaths })!;
+            var projectedNodes = await projectionTask;
 
-                while (!hydrationTask.IsCompleted)
-                {
-                    if (DateTime.UtcNow >= deadline)
-                    {
-                        throw new TimeoutException(
-                            $"Workspace hydration did not settle. Status={hydrationTask.Status}; nodes={Workspace.Nodes.Count}; hasWorkspace={Workspace.HasWorkspace}.");
-                    }
+            var registry = await RegistryService.LoadAsync(model.WorkspaceRoot);
+            registry = RegistryService.ReconcileOrphans(registry, activePaths);
+            foreach (var node in activeNodes)
+                RegistryService.AssignUuid(registry, node.RelativePath, node.Title);
+            await RegistryService.SaveAsync(model.WorkspaceRoot, registry);
 
-                    ReactiveUiTestBootstrap.RunOnUiThread(() => { });
-                    await Task.Delay(10);
-                }
-
-                ReactiveUiTestBootstrap.RunOnUiThread(() => { });
-
-                if (ReferenceEquals(hydrationTask, HydrationTaskField.GetValue(Workspace)))
-                    return;
-            }
+            var phases = await PhaseDataService.LoadAsync(model.WorkspaceRoot);
+            var targets = await TargetsService.LoadAsync(model.WorkspaceRoot);
+            SeedWorkspace(model, projectedNodes, registry, phases, targets);
+            Editor.HasWorkspace = true;
+            return Result<Unit>.Ok(Unit.Default);
         }
 
         public async Task<ChapterViewModel> WaitForNodeAsync(string relativePath, bool requireUuid = false)
@@ -498,12 +489,126 @@ public sealed class CorkboardViewModelIntegrationTests
             return node!;
         }
 
+        private void SeedWorkspace(
+            ManuscriptModel model,
+            IReadOnlyList<ChapterNode> nodes,
+            IReadOnlyDictionary<string, ChapterRegistryEntry> registry,
+            IReadOnlyDictionary<string, PhaseData> phases,
+            Dictionary<string, WordCountTarget> targets)
+        {
+            SetPrivateField(Workspace, "_model", model);
+            SetPrivateProperty(Workspace, nameof(WorkspaceViewModel.HasWorkspace), true);
+            SetPrivateProperty(Workspace, nameof(WorkspaceViewModel.WorkspaceName), Path.GetFileName(model.WorkspaceRoot));
+
+            var workspaceNodes = GetPrivateList<ChapterViewModel>(Workspace, "_nodes");
+            var visibleNodes = GetPrivateList<ChapterViewModel>(Workspace, "_visibleNodes");
+            var lookup = GetPrivateDictionary<string, ChapterViewModel>(Workspace, "_nodesByPath");
+
+            foreach (var node in workspaceNodes.OfType<IDisposable>())
+                node.Dispose();
+
+            workspaceNodes.Clear();
+            visibleNodes.Clear();
+            lookup.Clear();
+
+            foreach (var node in nodes.OrderBy(node => node.Index))
+            {
+                var uuid = registry.Values.FirstOrDefault(entry => string.Equals(entry.CurrentPath, node.RelativePath, StringComparison.OrdinalIgnoreCase))?.Uuid ?? string.Empty;
+                phases.TryGetValue(uuid, out var phaseData);
+                var target = string.IsNullOrWhiteSpace(uuid) ? null : TargetsService.GetTarget(targets, uuid);
+                var vm = new ChapterViewModel(
+                    node,
+                    uuid,
+                    phaseData,
+                    PhaseDataService,
+                    TargetsService,
+                    SettingsStore,
+                    NotificationService,
+                    model.WorkspaceRoot,
+                    target);
+                workspaceNodes.Add(vm);
+                visibleNodes.Add(vm);
+                lookup[node.RelativePath] = vm;
+            }
+        }
+
         private bool TryGetNode(string relativePath, bool requireUuid, out ChapterViewModel? node)
         {
             node = Workspace.Nodes.FirstOrDefault(candidate =>
                 string.Equals(candidate.Node.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
 
             return node != null && (!requireUuid || !string.IsNullOrWhiteSpace(node.Uuid));
+        }
+
+        private static void SetPrivateField<T>(WorkspaceViewModel workspace, string fieldName, T value)
+        {
+            var field = typeof(WorkspaceViewModel).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"Unable to locate WorkspaceViewModel field '{fieldName}'.");
+            field.SetValue(workspace, value);
+        }
+
+        private static void SetPrivateProperty<T>(WorkspaceViewModel workspace, string propertyName, T value)
+        {
+            var property = typeof(WorkspaceViewModel).GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"Unable to locate WorkspaceViewModel property '{propertyName}'.");
+            property.SetValue(workspace, value);
+        }
+
+        private static IList<T> GetPrivateList<T>(WorkspaceViewModel workspace, string fieldName)
+        {
+            var field = typeof(WorkspaceViewModel).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"Unable to locate WorkspaceViewModel field '{fieldName}'.");
+            return (IList<T>)field.GetValue(workspace)!;
+        }
+
+        private static IDictionary<TKey, TValue> GetPrivateDictionary<TKey, TValue>(WorkspaceViewModel workspace, string fieldName)
+            where TKey : notnull
+        {
+            var field = typeof(WorkspaceViewModel).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"Unable to locate WorkspaceViewModel field '{fieldName}'.");
+            return (IDictionary<TKey, TValue>)field.GetValue(workspace)!;
+        }
+
+        public sealed class TestWorkspaceViewModel : WorkspaceViewModel
+        {
+            private readonly Func<Task<Result<Unit>>> _reloadWorkspaceFromDiskAsync;
+
+            public TestWorkspaceViewModel(
+                ManuscriptService manuscriptService,
+                IBookTxtStructureService structureService,
+                IFilePickerService filePicker,
+                IAppSettingsStore settingsStore,
+                IFolderPickerService folderPicker,
+                INotificationService notificationService,
+                EditorViewModel editor,
+                ChapterRegistryService registryService,
+                PhaseDataService phaseDataService,
+                TargetsService targetsService,
+                WordCountService wordCountService,
+                WordCountHistoryService historyService,
+                IExclusionManifestService exclusionManifestService,
+                IOrphanFileDiscoveryService orphanFileDiscoveryService,
+                Func<Task<Result<Unit>>> reloadWorkspaceFromDiskAsync)
+                : base(
+                    manuscriptService,
+                    structureService,
+                    filePicker,
+                    settingsStore,
+                    folderPicker,
+                    notificationService,
+                    editor,
+                    registryService,
+                    phaseDataService,
+                    targetsService,
+                    wordCountService,
+                    historyService,
+                    exclusionManifestService,
+                    orphanFileDiscoveryService)
+            {
+                _reloadWorkspaceFromDiskAsync = reloadWorkspaceFromDiskAsync;
+            }
+
+            public override Task<Result<Unit>> ReloadCurrentWorkspaceAsync() => _reloadWorkspaceFromDiskAsync();
         }
 
         public void Dispose()

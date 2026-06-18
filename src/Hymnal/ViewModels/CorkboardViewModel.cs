@@ -69,6 +69,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     private readonly Dictionary<string, bool> _partExpandedState = new(StringComparer.OrdinalIgnoreCase);
     private bool _isViewActive = true;
     private bool _needsRebuild;
+    private string? _pendingSelectionPath;
     private InlineCreateItemViewModel? _activeInlineCreate;
 
     public ReadOnlyObservableCollection<CorkboardItemViewModel> Items { get; }
@@ -446,7 +447,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var selectedPath = SelectedCard?.RelativePath;
+        var selectedPath = _pendingSelectionPath ?? SelectedCard?.RelativePath;
 
         // Dispose projected items but preserve the transient inline create item so its
         // TitleText (user's in-progress typing) survives the rebuild.
@@ -797,6 +798,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
     {
         if (string.IsNullOrWhiteSpace(relativePath))
         {
+            _pendingSelectionPath = null;
             SetSelectedCard(null);
             return;
         }
@@ -806,6 +808,13 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
             .Select(item => item.Card)
             .FirstOrDefault(card => string.Equals(card.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
 
+        if (match == null)
+        {
+            _pendingSelectionPath = relativePath;
+            return;
+        }
+
+        _pendingSelectionPath = null;
         SetSelectedCard(match);
     }
 
