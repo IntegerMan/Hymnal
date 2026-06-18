@@ -26,6 +26,82 @@ public partial class CorkboardView : UserControl
         InitializeComponent();
     }
 
+    public static bool CanDragFromCorkboard(CorkboardItemViewModel? item)
+    {
+        return item is ChapterCardItemViewModel chapter
+            && chapter.IsVisibleOnBoard
+            && !chapter.IsMissing
+            && !string.IsNullOrWhiteSpace(chapter.RelativePath);
+    }
+
+    public static bool CanDropOnCorkboardCard(CorkboardItemViewModel? source, ChapterCardItemViewModel? target)
+    {
+        return source is ChapterCardItemViewModel sourceCard
+            && target is not null
+            && CanDragFromCorkboard(sourceCard)
+            && CanDragFromCorkboard(target)
+            && !string.Equals(sourceCard.RelativePath, target.RelativePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool CanDropIntoCorkboardPart(CorkboardItemViewModel? source, PartDividerItemViewModel? targetPart)
+    {
+        return source is ChapterCardItemViewModel sourceCard
+            && targetPart is not null
+            && CanDragFromCorkboard(sourceCard)
+            && !string.IsNullOrWhiteSpace(targetPart.RelativePath);
+    }
+
+    public static bool CanDropIntoCorkboardEmptyPart(CorkboardItemViewModel? source, EmptyPartHintItemViewModel? emptyPart)
+    {
+        return source is ChapterCardItemViewModel sourceCard
+            && emptyPart is not null
+            && emptyPart.IsVisibleOnBoard
+            && CanDragFromCorkboard(sourceCard)
+            && !string.IsNullOrWhiteSpace(emptyPart.RelativePath);
+    }
+
+    public static CorkboardDropRequest? CreateCardDropRequest(
+        ChapterCardItemViewModel? source,
+        ChapterCardItemViewModel? target,
+        bool dropBefore)
+    {
+        if (!CanDropOnCorkboardCard(source, target))
+            return null;
+
+        return dropBefore
+            ? new CorkboardDropRequest(
+                source!.RelativePath,
+                TargetPartPath: NormalizePartPath(target!.OwningPartPath),
+                BeforeRelativePath: target.RelativePath)
+            : new CorkboardDropRequest(
+                source!.RelativePath,
+                TargetPartPath: NormalizePartPath(target!.OwningPartPath),
+                AfterRelativePath: target.RelativePath);
+    }
+
+    public static CorkboardDropRequest? CreatePartDropRequest(
+        ChapterCardItemViewModel? source,
+        PartDividerItemViewModel? targetPart)
+    {
+        if (!CanDropIntoCorkboardPart(source, targetPart))
+            return null;
+
+        return new CorkboardDropRequest(source!.RelativePath, TargetPartPath: targetPart!.RelativePath);
+    }
+
+    public static CorkboardDropRequest? CreateEmptyPartDropRequest(
+        ChapterCardItemViewModel? source,
+        EmptyPartHintItemViewModel? emptyPart)
+    {
+        if (!CanDropIntoCorkboardEmptyPart(source, emptyPart))
+            return null;
+
+        return new CorkboardDropRequest(source!.RelativePath, TargetPartPath: emptyPart!.RelativePath);
+    }
+
+    private static string? NormalizePartPath(string? partPath)
+        => string.IsNullOrWhiteSpace(partPath) ? null : partPath;
+
     private async void Root_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter)
@@ -54,6 +130,9 @@ public partial class CorkboardView : UserControl
         }
 
         if (!point.Properties.IsLeftButtonPressed)
+            return;
+
+        if (!CanDragFromCorkboard(card))
             return;
 
         _dragSource = card;
@@ -112,6 +191,34 @@ public partial class CorkboardView : UserControl
             RoutingStrategies.Direct | RoutingStrategies.Bubble, true);
     }
 
+    private void PartHeader_Loaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control control)
+            return;
+
+        if (DragDrop.GetAllowDrop(control))
+            return;
+
+        DragDrop.SetAllowDrop(control, true);
+        DragDrop.AddDragOverHandler(control, PartHeader_DragOver);
+        DragDrop.AddDragLeaveHandler(control, PartHeader_DragLeave);
+        DragDrop.AddDropHandler(control, PartHeader_Drop);
+    }
+
+    private void EmptyPartHint_Loaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control control)
+            return;
+
+        if (DragDrop.GetAllowDrop(control))
+            return;
+
+        DragDrop.SetAllowDrop(control, true);
+        DragDrop.AddDragOverHandler(control, EmptyPartHint_DragOver);
+        DragDrop.AddDragLeaveHandler(control, EmptyPartHint_DragLeave);
+        DragDrop.AddDropHandler(control, EmptyPartHint_Drop);
+    }
+
     private async void Card_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (sender is not Control control || control.DataContext is not ChapterCardItemViewModel card)
@@ -157,10 +264,10 @@ public partial class CorkboardView : UserControl
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_dragSourcePath) ||
-            string.Equals(_dragSourcePath, target.RelativePath, StringComparison.OrdinalIgnoreCase))
+        if (_dragSource is null || string.IsNullOrWhiteSpace(_dragSourcePath) || !CanDropOnCorkboardCard(_dragSource, target))
         {
             e.DragEffects = DragDropEffects.None;
+            ClearDropIndicator();
             return;
         }
 
@@ -181,6 +288,90 @@ public partial class CorkboardView : UserControl
     private void Card_DragLeave(object? sender, DragEventArgs e)
     {
         ClearDropIndicator();
+    }
+
+    private void PartHeader_DragOver(object? sender, DragEventArgs e)
+    {
+        ClearDropIndicator();
+
+        if (sender is not Control control || control.DataContext is not PartDividerItemViewModel targetPart)
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        if (!CanDropIntoCorkboardPart(_dragSource, targetPart))
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        e.DragEffects = DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private void PartHeader_DragLeave(object? sender, DragEventArgs e)
+    {
+        ClearDropIndicator();
+    }
+
+    private async void PartHeader_Drop(object? sender, DragEventArgs e)
+    {
+        ClearDropIndicator();
+
+        if (DataContext is not CorkboardViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not PartDividerItemViewModel targetPart)
+            return;
+
+        var request = CreatePartDropRequest(_dragSource, targetPart);
+        if (request is null)
+            return;
+
+        await ExecuteCommandAsync(vm.DropCardCommand.Execute(request));
+    }
+
+    private void EmptyPartHint_DragOver(object? sender, DragEventArgs e)
+    {
+        ClearDropIndicator();
+
+        if (sender is not Control control || control.DataContext is not EmptyPartHintItemViewModel emptyPart)
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        if (!CanDropIntoCorkboardEmptyPart(_dragSource, emptyPart))
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        e.DragEffects = DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private void EmptyPartHint_DragLeave(object? sender, DragEventArgs e)
+    {
+        ClearDropIndicator();
+    }
+
+    private async void EmptyPartHint_Drop(object? sender, DragEventArgs e)
+    {
+        ClearDropIndicator();
+
+        if (DataContext is not CorkboardViewModel vm)
+            return;
+
+        if (sender is not Control control || control.DataContext is not EmptyPartHintItemViewModel emptyPart)
+            return;
+
+        var request = CreateEmptyPartDropRequest(_dragSource, emptyPart);
+        if (request is null)
+            return;
+
+        await ExecuteCommandAsync(vm.DropCardCommand.Execute(request));
     }
 
     private void ClearDropIndicator()
@@ -231,28 +422,11 @@ public partial class CorkboardView : UserControl
         if (sender is not Control control || control.DataContext is not ChapterCardItemViewModel target)
             return;
 
-        var draggedPath = _dragSourcePath;
-        if (string.IsNullOrWhiteSpace(draggedPath) ||
-            string.Equals(draggedPath, target.RelativePath, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        var chapterCards = vm.Items
-            .OfType<ChapterCardItemViewModel>()
-            .Select(item => item.RelativePath)
-            .ToList();
-
-        var sourceIndex = chapterCards.FindIndex(path => string.Equals(path, draggedPath, StringComparison.OrdinalIgnoreCase));
-        var targetIndex = chapterCards.FindIndex(path => string.Equals(path, target.RelativePath, StringComparison.OrdinalIgnoreCase));
-        if (sourceIndex < 0 || targetIndex < 0)
+        var request = CreateCardDropRequest(_dragSource, target, ShouldDropBefore(target.RelativePath));
+        if (request is null)
             return;
 
-        var request = sourceIndex < targetIndex
-            ? new ReorderCardRequest(draggedPath, AfterRelativePath: target.RelativePath)
-            : new ReorderCardRequest(draggedPath, BeforeRelativePath: target.RelativePath);
-
-        await ExecuteCommandAsync(vm.ReorderCardCommand.Execute(request));
+        await ExecuteCommandAsync(vm.DropCardCommand.Execute(request));
     }
 
     private async void RenameCard_Click(object? sender, RoutedEventArgs e)

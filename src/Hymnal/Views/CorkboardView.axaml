@@ -343,6 +343,7 @@
                     Classes.card-size-list-part="{Binding DataContext.CardDisplaySize, ElementName=Root, Converter={StaticResource CardDisplaySizeEqualsConverter}, ConverterParameter=List}"
                     Width="{Binding Bounds.Width, ElementName=Root}"
                     Focusable="False"
+                    Loaded="PartHeader_Loaded"
                     Command="{Binding DataContext.TogglePartExpandedCommand, ElementName=Root}"
                     CommandParameter="{Binding}"
                     ToolTip.Tip="Click to show or hide chapters in this part">
@@ -389,7 +390,8 @@
         <DataTemplate DataType="vm:EmptyPartHintItemViewModel">
             <Border Classes="cork-hint"
                     Width="{Binding Bounds.Width, ElementName=Root}"
-                    IsVisible="{Binding IsVisibleOnBoard}">
+                    IsVisible="{Binding IsVisibleOnBoard}"
+                    Loaded="EmptyPartHint_Loaded">
                 <TextBlock Text="{Binding HintText}"
                            FontSize="11"
                            FontStyle="Italic"
