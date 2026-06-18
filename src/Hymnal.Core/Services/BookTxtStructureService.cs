@@ -58,6 +58,10 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
         if (sourceIndex < 0)
             return Result<Unit>.Fail($"Entry '{normalized.Value.RelativePath}' was not found in '{doc.BookTxtPath}'.");
 
+        var sourcePartValidation = ValidatePartDivider(doc.ManuscriptRoot, normalized.Value.RelativePath);
+        if (sourcePartValidation.IsSuccess)
+            return await ReorderPartBlockAsync(doc, normalized.Value.RelativePath, sourceIndex, newIndex).ConfigureAwait(false);
+
         if (newIndex < 0 || newIndex >= doc.Entries.Count)
             return Result<Unit>.Fail($"Requested reorder index {newIndex} is out of range for '{doc.BookTxtPath}'.");
 
@@ -74,6 +78,66 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
 
         var write = await WriteBookTxtAsync(doc.BookTxtPath, lines).ConfigureAwait(false);
         return write.IsSuccess ? Result<Unit>.Ok(Unit.Default) : Result<Unit>.Fail(write.Error!);
+    }
+
+    private async Task<Result<Unit>> ReorderPartBlockAsync(BookDocument doc, string sourcePartPath, int sourceIndex, int newIndex)
+    {
+        if (newIndex < 0 || newIndex >= doc.Entries.Count)
+        {
+            return Result<Unit>.Fail(
+                $"Part reorder operation failed for '{sourcePartPath}' to index {newIndex} during Book.txt validation: requested reorder index {newIndex} is out of range for '{doc.BookTxtPath}'.");
+        }
+
+        var blockEndIndex = FindPartBlockEndEntryIndex(doc, sourceIndex);
+        if (newIndex >= sourceIndex && newIndex < blockEndIndex)
+            return Result<Unit>.Ok(Unit.Default);
+
+        var targetPartValidation = ValidatePartDivider(doc.ManuscriptRoot, doc.Entries[newIndex]);
+        if (!targetPartValidation.IsSuccess)
+        {
+            return Result<Unit>.Fail(
+                $"Part reorder operation failed for '{sourcePartPath}' to index {newIndex} during Book.txt validation: requested reorder index {newIndex} targets non-Part entry '{doc.Entries[newIndex]}'.");
+        }
+
+        var lines = doc.RawLines.ToList();
+        var sourceRawStart = doc.EntryLineIndexes[sourceIndex];
+        var sourceRawEnd = blockEndIndex < doc.EntryLineIndexes.Count
+            ? doc.EntryLineIndexes[blockEndIndex]
+            : doc.RawLines.Count;
+        var movingLines = lines.GetRange(sourceRawStart, sourceRawEnd - sourceRawStart);
+        lines.RemoveRange(sourceRawStart, sourceRawEnd - sourceRawStart);
+
+        var targetEntryIndexAfterRemoval = CountEntriesBeforeIndexOutsideRange(doc, newIndex, sourceIndex, blockEndIndex);
+        var insertionIndex = FindRawInsertionIndex(lines, targetEntryIndexAfterRemoval);
+        lines.InsertRange(insertionIndex, movingLines);
+
+        var write = await WriteBookTxtAsync(doc.BookTxtPath, lines).ConfigureAwait(false);
+        return write.IsSuccess
+            ? Result<Unit>.Ok(Unit.Default)
+            : Result<Unit>.Fail($"Part reorder operation failed for '{sourcePartPath}' to index {newIndex} during Book.txt write: {write.Error}");
+    }
+
+    private static int FindPartBlockEndEntryIndex(BookDocument doc, int sourceIndex)
+    {
+        for (var i = sourceIndex + 1; i < doc.Entries.Count; i++)
+        {
+            if (ValidatePartDivider(doc.ManuscriptRoot, doc.Entries[i]).IsSuccess)
+                return i;
+        }
+
+        return doc.Entries.Count;
+    }
+
+    private static int CountEntriesBeforeIndexOutsideRange(BookDocument doc, int targetIndex, int removedStartIndex, int removedEndIndex)
+    {
+        var count = 0;
+        for (var i = 0; i < targetIndex; i++)
+        {
+            if (i < removedStartIndex || i >= removedEndIndex)
+                count++;
+        }
+
+        return count;
     }
 
     public async Task<Result<Unit>> RenameEntryAsync(string bookTxtPath, string existingPath, string replacementPath)

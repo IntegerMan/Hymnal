@@ -162,6 +162,172 @@ public class BookTxtStructureServiceTests
     }
 
     [Fact]
+    public async Task ReorderEntryAsync_MovesPartBlockBeforeAnotherPartBlock()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-two/part.md\npart-two/chapter-two.md\npart-three/part.md\npart-three/chapter-three.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/part.md", "{class: part}\n# Part Two"),
+            ("part-two/chapter-two.md", "# Chapter Two"),
+            ("part-three/part.md", "{class: part}\n# Part Three"),
+            ("part-three/chapter-three.md", "# Chapter Three"));
+
+        try
+        {
+            var service = CreateService();
+
+            var result = await service.ReorderEntryAsync(workspace.BookTxtPath, "part-three/part.md", 2);
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Equal(new[]
+            {
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-three/part.md",
+                "part-three/chapter-three.md",
+                "part-two/part.md",
+                "part-two/chapter-two.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReorderEntryAsync_MovesPartBlockAfterAnotherPartBlockAndPreservesBlankLines()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\n\npart-one/chapter-one.md\n\npart-two/part.md\npart-two/chapter-two.md\n\npart-three/part.md\npart-three/chapter-three.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/part.md", "{class: part}\n# Part Two"),
+            ("part-two/chapter-two.md", "# Chapter Two"),
+            ("part-three/part.md", "{class: part}\n# Part Three"),
+            ("part-three/chapter-three.md", "# Chapter Three"));
+
+        try
+        {
+            var service = CreateService();
+
+            var result = await service.ReorderEntryAsync(workspace.BookTxtPath, "part-one/part.md", 4);
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Equal(new[]
+            {
+                "part-two/part.md",
+                "part-two/chapter-two.md",
+                string.Empty,
+                "part-one/part.md",
+                string.Empty,
+                "part-one/chapter-one.md",
+                string.Empty,
+                "part-three/part.md",
+                "part-three/chapter-three.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReorderEntryAsync_PartBlockRejectsChapterTargetWithoutWriting()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-two/part.md\npart-two/chapter-two.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/part.md", "{class: part}\n# Part Two"),
+            ("part-two/chapter-two.md", "# Chapter Two"));
+
+        try
+        {
+            var originalBookTxt = ReadBookTxt(workspace.BookTxtPath);
+            var service = CreateService();
+
+            var result = await service.ReorderEntryAsync(workspace.BookTxtPath, "part-two/part.md", 1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("Part reorder operation failed for 'part-two/part.md'", result.Error);
+            Assert.Contains("Book.txt validation", result.Error);
+            Assert.Contains("requested reorder index 1 targets non-Part entry 'part-one/chapter-one.md'", result.Error);
+            Assert.Equal(originalBookTxt, ReadBookTxt(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReorderEntryAsync_PartBlockRejectsOutOfRangeIndexWithoutWriting()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var originalBookTxt = ReadBookTxt(workspace.BookTxtPath);
+            var service = CreateService();
+
+            var result = await service.ReorderEntryAsync(workspace.BookTxtPath, "part-one/part.md", 2);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("Part reorder operation failed for 'part-one/part.md'", result.Error);
+            Assert.Contains("requested reorder index 2 is out of range", result.Error);
+            Assert.Equal(originalBookTxt, ReadBookTxt(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReorderEntryAsync_PartBlockPreservesAllEntriesWithoutDuplicatesAfterReload()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-one/chapter-two.md\npart-two/part.md\npart-two/chapter-three.md\npart-three/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-two.md", "# Chapter Two"),
+            ("part-two/part.md", "{class: part}\n# Part Two"),
+            ("part-two/chapter-three.md", "# Chapter Three"),
+            ("part-three/part.md", "{class: part}\n# Part Three"));
+
+        try
+        {
+            var service = CreateService();
+
+            var result = await service.ReorderEntryAsync(workspace.BookTxtPath, "part-one/part.md", 5);
+            var reload = await service.ReadNormalizedEntriesAsync(workspace.BookTxtPath);
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.True(reload.IsSuccess, reload.Error);
+            Assert.Equal(new[]
+            {
+                "part-two/part.md",
+                "part-two/chapter-three.md",
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md",
+                "part-three/part.md"
+            }, reload.Value);
+            Assert.Equal(reload.Value!.Count, reload.Value.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task AddExistingEntryAsync_InsertsExistingFileAtIndex()
     {
         var workspace = CreateWorkspace(
