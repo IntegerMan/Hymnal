@@ -154,8 +154,7 @@ public partial class SidebarView : UserControl
         if (!point.Properties.IsLeftButtonPressed)
             return;
 
-        // Only chapters are draggable, not parts
-        if (chapter.Node.Kind != Hymnal.Core.Models.NodeKind.Chapter)
+        if (!CanUseAsSidebarDragEndpoint(chapter))
             return;
 
         _dragSource = chapter;
@@ -209,6 +208,7 @@ public partial class SidebarView : UserControl
         }
 
         if (string.IsNullOrWhiteSpace(_dragSourcePath) ||
+            !CanUseAsSidebarDropPair(_dragSource, target) ||
             string.Equals(_dragSourcePath, target.Node.RelativePath, StringComparison.OrdinalIgnoreCase))
         {
             e.DragEffects = DragDropEffects.None;
@@ -245,6 +245,7 @@ public partial class SidebarView : UserControl
 
         var draggedPath = _dragSourcePath;
         if (string.IsNullOrWhiteSpace(draggedPath) ||
+            !CanUseAsSidebarDropPair(_dragSource, target) ||
             string.Equals(draggedPath, target.Node.RelativePath, StringComparison.OrdinalIgnoreCase))
             return;
 
@@ -391,6 +392,17 @@ public partial class SidebarView : UserControl
         var sourceIndex = paths.FindIndex(p => string.Equals(p, _dragSourcePath, StringComparison.OrdinalIgnoreCase));
         var targetIndex = paths.FindIndex(p => string.Equals(p, targetRelativePath, StringComparison.OrdinalIgnoreCase));
         return sourceIndex > targetIndex;
+    }
+
+    private static bool CanUseAsSidebarDragEndpoint(ChapterViewModel? node) =>
+        node is { Node.IsExcluded: false, Node.IsMissing: false };
+
+    private static bool CanUseAsSidebarDropPair(ChapterViewModel? source, ChapterViewModel? target)
+    {
+        if (!CanUseAsSidebarDragEndpoint(source) || !CanUseAsSidebarDragEndpoint(target))
+            return false;
+
+        return source!.Node.Kind == target!.Node.Kind;
     }
 
     private void ClearDropIndicator()

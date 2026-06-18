@@ -1494,9 +1494,9 @@ public class WorkspaceViewModel : ViewModelBase
     {
         if (_model == null) return;
 
-        if (!TryResolveChapterReorderIndex(request, out var newIndex, out var error))
+        if (!TryResolveSidebarReorderIndex(request, out var newIndex, out var error))
         {
-            _notificationService.ShowError($"Reorder failed: {error}");
+            _notificationService.ShowError($"Reorder failed for '{request.RelativePath}' in '{BookTxtPath}': {error}");
             return;
         }
 
@@ -1509,75 +1509,188 @@ public class WorkspaceViewModel : ViewModelBase
 
             if (!result.IsSuccess)
             {
-                _notificationService.ShowError($"Failed to reorder chapter: {result.Error}");
+                _notificationService.ShowError($"Failed to reorder sidebar entry '{request.RelativePath}' in '{BookTxtPath}' to index {newIndex}: {result.Error}");
                 return;
             }
 
-            var reorderResult = await ReorderNodesAsync().ConfigureAwait(false);
-            if (!reorderResult.IsSuccess)
-                _notificationService.ShowError($"Failed to sync chapter order: {reorderResult.Error}");
+            var reloadResult = await ReloadCurrentWorkspaceAsync().ConfigureAwait(false);
+            if (!reloadResult.IsSuccess)
+                _notificationService.ShowError($"Failed to sync sidebar order after reordering '{request.RelativePath}' in '{BookTxtPath}': {reloadResult.Error}");
         }
         catch (Exception ex)
         {
-            _notificationService.ShowError($"Reorder chapter failed: {ex.Message}");
+            _notificationService.ShowError($"Reorder sidebar entry '{request.RelativePath}' in '{BookTxtPath}' failed: {ex.Message}");
         }
     }
 
-    private bool TryResolveChapterReorderIndex(ReorderCardRequest request, out int newIndex, out string? error)
+    private bool TryResolveSidebarReorderIndex(ReorderCardRequest request, out int newIndex, out string? error)
     {
-        var nodes = _nodes.ToList();
+        newIndex = 0;
+        error = null;
 
-        var sourceIndex = nodes.FindIndex(n =>
-            string.Equals(n.Node.RelativePath, request.RelativePath, StringComparison.OrdinalIgnoreCase));
+        var activeNodes = _nodes
+            .Where(node => !node.Node.IsExcluded && !node.Node.IsMissing)
+            .ToList();
+
+        var sourceIndex = activeNodes.FindIndex(node =>
+            string.Equals(node.Node.RelativePath, request.RelativePath, StringComparison.OrdinalIgnoreCase));
 
         if (sourceIndex < 0)
         {
-            newIndex = 0;
-            error = $"Chapter '{request.RelativePath}' not found.";
+            if (_nodesByPath.TryGetValue(request.RelativePath, out var projectedSource))
+            {
+                if (projectedSource.Node.IsExcluded)
+                    error = $"Source '{request.RelativePath}' is excluded and cannot be reordered.";
+                else if (projectedSource.Node.IsMissing)
+                    error = $"Source '{request.RelativePath}' is missing and cannot be reordered.";
+                else
+                    error = $"Source '{request.RelativePath}' is not an active Book.txt entry.";
+            }
+            else
+            {
+                error = $"Source '{request.RelativePath}' was not found in the sidebar.";
+            }
+
             return false;
         }
 
+        var source = activeNodes[sourceIndex];
+        var targetResolution = ResolveSidebarReorderTarget(request, activeNodes, sourceIndex);
+        if (!targetResolution.IsSuccess)
+        {
+            error = targetResolution.Error;
+            return false;
+        }
+
+        var targetIndex = targetResolution.Value!.TargetIndex;
+        var target = activeNodes[targetIndex];
+
+        if (target.Node.IsExcluded || target.Node.IsMissing)
+        {
+            error = $"Target '{target.Node.RelativePath}' is not an active Book.txt entry.";
+            return false;
+        }
+
+        if (source.Node.Kind == NodeKind.Part)
+        {
+            if (target.Node.Kind != NodeKind.Part)
+            {
+                error = $"Part '{source.Node.RelativePath}' can only be dropped on another Part divider, not chapter '{target.Node.RelativePath}'.";
+                return false;
+            }
+
+            if (targetResolution.Value.DropAfter)
+            {
+                var nextPartIndex = FindNextPartIndex(activeNodes, targetIndex + 1);
+                if (nextPartIndex < 0)
+                {
+                    error = $"Part '{source.Node.RelativePath}' cannot be dropped after last Part '{target.Node.RelativePath}' because Book.txt part block moves require a following Part target.";
+                    return false;
+                }
+
+                newIndex = nextPartIndex;
+            }
+            else
+            {
+                newIndex = targetIndex;
+            }
+
+            return true;
+        }
+
+        if (target.Node.Kind != NodeKind.Chapter)
+        {
+            error = $"Chapter '{source.Node.RelativePath}' can only be dropped on another chapter in the same Part section, not Part '{target.Node.RelativePath}'.";
+            return false;
+        }
+
+        var sourcePart = FindContainingPartPath(activeNodes, sourceIndex);
+        var targetPart = FindContainingPartPath(activeNodes, targetIndex);
+        if (!string.Equals(sourcePart, targetPart, StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"Chapter '{source.Node.RelativePath}' cannot be moved across Part sections from '{DisplayPartSection(sourcePart)}' to '{DisplayPartSection(targetPart)}'. Move chapters between Parts from the corkboard.";
+            return false;
+        }
+
+        newIndex = targetResolution.Value.DropAfter
+            ? (sourceIndex > targetIndex ? targetIndex + 1 : targetIndex)
+            : (sourceIndex < targetIndex ? targetIndex - 1 : targetIndex);
+        return true;
+    }
+
+    private static Result<SidebarReorderTarget> ResolveSidebarReorderTarget(
+        ReorderCardRequest request,
+        IReadOnlyList<ChapterViewModel> activeNodes,
+        int sourceIndex)
+    {
         if (request.NewIndex.HasValue)
         {
-            newIndex = request.NewIndex.Value;
-            error = null;
-            return true;
+            var targetIndex = request.NewIndex.Value;
+            if (targetIndex < 0 || targetIndex >= activeNodes.Count)
+                return Result<SidebarReorderTarget>.Fail($"Target index {targetIndex} is outside the active Book.txt entry range.");
+
+            return Result<SidebarReorderTarget>.Ok(new SidebarReorderTarget(targetIndex, DropAfter: false));
         }
 
         if (!string.IsNullOrWhiteSpace(request.AfterRelativePath))
         {
-            var afterIndex = nodes.FindIndex(n =>
-                string.Equals(n.Node.RelativePath, request.AfterRelativePath, StringComparison.OrdinalIgnoreCase));
+            var afterIndex = FindActiveNodeIndex(activeNodes, request.AfterRelativePath);
             if (afterIndex < 0)
-            {
-                newIndex = 0;
-                error = $"Target '{request.AfterRelativePath}' not found.";
-                return false;
-            }
-            newIndex = sourceIndex > afterIndex ? afterIndex + 1 : afterIndex;
-            error = null;
-            return true;
+                return Result<SidebarReorderTarget>.Fail($"Target '{request.AfterRelativePath}' was not found as an active Book.txt entry.");
+
+            return Result<SidebarReorderTarget>.Ok(new SidebarReorderTarget(afterIndex, DropAfter: true));
         }
 
         if (!string.IsNullOrWhiteSpace(request.BeforeRelativePath))
         {
-            var beforeIndex = nodes.FindIndex(n =>
-                string.Equals(n.Node.RelativePath, request.BeforeRelativePath, StringComparison.OrdinalIgnoreCase));
+            var beforeIndex = FindActiveNodeIndex(activeNodes, request.BeforeRelativePath);
             if (beforeIndex < 0)
-            {
-                newIndex = 0;
-                error = $"Target '{request.BeforeRelativePath}' not found.";
-                return false;
-            }
-            newIndex = sourceIndex < beforeIndex ? beforeIndex - 1 : beforeIndex;
-            error = null;
-            return true;
+                return Result<SidebarReorderTarget>.Fail($"Target '{request.BeforeRelativePath}' was not found as an active Book.txt entry.");
+
+            return Result<SidebarReorderTarget>.Ok(new SidebarReorderTarget(beforeIndex, DropAfter: false));
         }
 
-        newIndex = 0;
-        error = "Reorder requires either a target index or a neighbor path.";
-        return false;
+        return Result<SidebarReorderTarget>.Fail("Reorder requires either a target index or a neighbor path.");
     }
+
+    private static int FindActiveNodeIndex(IReadOnlyList<ChapterViewModel> activeNodes, string relativePath)
+    {
+        for (var i = 0; i < activeNodes.Count; i++)
+        {
+            if (string.Equals(activeNodes[i].Node.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static int FindNextPartIndex(IReadOnlyList<ChapterViewModel> activeNodes, int startIndex)
+    {
+        for (var i = startIndex; i < activeNodes.Count; i++)
+        {
+            if (activeNodes[i].Node.Kind == NodeKind.Part)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static string? FindContainingPartPath(IReadOnlyList<ChapterViewModel> activeNodes, int nodeIndex)
+    {
+        string? currentPart = null;
+        for (var i = 0; i <= nodeIndex && i < activeNodes.Count; i++)
+        {
+            if (activeNodes[i].Node.Kind == NodeKind.Part)
+                currentPart = activeNodes[i].Node.RelativePath;
+        }
+
+        return currentPart;
+    }
+
+    private static string DisplayPartSection(string? partPath) =>
+        string.IsNullOrWhiteSpace(partPath) ? "the root section" : partPath;
+
+    private sealed record SidebarReorderTarget(int TargetIndex, bool DropAfter);
 
     private async Task ExecuteRenameOperationAsync(
         string operation,
