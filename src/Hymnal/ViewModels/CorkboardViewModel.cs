@@ -380,9 +380,9 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         if (string.IsNullOrWhiteSpace(partPath))
             return null;
 
-        var normalized = partPath.Replace('\\', '/');
-        var slashIndex = normalized.IndexOf('/');
-        return slashIndex > 0 ? normalized[..slashIndex] : null;
+        var normalized = partPath.Replace('\\', '/').Trim('/');
+        var folder = Path.GetDirectoryName(normalized)?.Replace('\\', '/');
+        return string.IsNullOrWhiteSpace(folder) ? null : folder;
     }
 
     private void TogglePartExpanded(PartDividerItemViewModel part)
@@ -611,8 +611,22 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
             if (!result.IsSuccess)
             {
-                ReportStructuralFailure("Drop card", request.RelativePath,
-                    result.Error ?? "Structural action failed.");
+                var failureMessage = result.Error ?? "Structural action failed.";
+
+                if (operation.IsCrossPart && IsCommittedMoveManifestFailure(failureMessage))
+                {
+                    var recoveryReload = await _workspace.ReloadCurrentWorkspaceAsync();
+                    if (recoveryReload.IsSuccess)
+                    {
+                        RestoreSelection(operation.SelectionPath);
+                    }
+                    else
+                    {
+                        failureMessage = $"{failureMessage} Workspace reload after committed move also failed: {recoveryReload.Error ?? "Unknown reload failure."}";
+                    }
+                }
+
+                ReportStructuralFailure("Drop card", request.RelativePath, failureMessage);
                 return;
             }
 
@@ -1053,6 +1067,9 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
             ? fileName
             : $"{targetFolder}/{fileName}";
     }
+
+    private static bool IsCommittedMoveManifestFailure(string message)
+        => message.Contains("manifest save after file move, Book.txt write, and registry update", StringComparison.OrdinalIgnoreCase);
 
     private void ReportStructuralFailure(string operation, string? path, string message)
     {

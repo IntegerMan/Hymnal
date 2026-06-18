@@ -51,6 +51,7 @@ public sealed class CorkboardViewModelIntegrationTests
                 TargetPartPath: "part-two/part.md",
                 AfterRelativePath: "part-two/chapter-two.md")));
 
+        await context.AwaitWorkspaceHydrationAsync();
         await context.WaitForNodeAsync("part-two/chapter-one.md", requireUuid: true);
         await WaitForBoardProjectionAsync(board,
             "part-one/part.md",
@@ -152,6 +153,72 @@ public sealed class CorkboardViewModelIntegrationTests
         Assert.Equal("part-one/chapter-one.md", board.SelectedCard?.RelativePath);
         Assert.Null(board.LastStructuralError);
         Assert.Empty(context.NotificationService.Errors);
+    }
+
+    [Fact]
+    public async Task DropCardCommand_ManifestSaveFailureAfterCommittedMove_ReloadsTruthfulStateAndSurfacesFailure()
+    {
+        using var context = new TestContext(
+            CreateWorkspace(
+                ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-two/part.md\npart-two/chapter-two.md"),
+                ("part-one/part.md", "{class: part}\n# Part One"),
+                ("part-one/chapter-one.md", "# Chapter One\n\nBody words."),
+                ("part-two/part.md", "{class: part}\n# Part Two"),
+                ("part-two/chapter-two.md", "# Chapter Two\n\nBody words.")),
+            exclusionManifestServiceFactory: store => new IncludeFailingManifestService(new ExclusionManifestService(store)));
+
+        await context.OpenWorkspaceAsync(expectedNodeCount: 4);
+        var original = await context.WaitForNodeAsync("part-one/chapter-one.md", requireUuid: true);
+
+        using var board = context.CreateBoard();
+        await WaitForBoardProjectionAsync(board,
+            "part-one/part.md",
+            "part-one/chapter-one.md",
+            "part-two/part.md",
+            "part-two/chapter-two.md");
+
+        var source = GetChapterCard(board, "part-one/chapter-one.md");
+        await ExecuteCommandAsync(board.SelectCardCommand.Execute(source));
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest(
+                "part-one/chapter-one.md",
+                TargetPartPath: "part-two/part.md",
+                AfterRelativePath: "part-two/chapter-two.md")));
+
+        await context.AwaitWorkspaceHydrationAsync();
+        await context.WaitForNodeAsync("part-two/chapter-one.md", requireUuid: true);
+        await WaitForBoardProjectionAsync(board,
+            "part-one/part.md",
+            "part-two/part.md",
+            "part-two/chapter-two.md",
+            "part-two/chapter-one.md");
+
+        Assert.Equal(
+            new[]
+            {
+                "part-one/part.md",
+                "part-two/part.md",
+                "part-two/chapter-two.md",
+                "part-two/chapter-one.md"
+            },
+            ReadBookTxtLines(context.BookTxtPath));
+
+        Assert.False(File.Exists(AbsolutePath(context.WorkspaceRoot, "part-one/chapter-one.md")));
+        Assert.True(File.Exists(AbsolutePath(context.WorkspaceRoot, "part-two/chapter-one.md")));
+        Assert.Equal("Drop card", board.LastStructuralError?.Operation);
+        Assert.Equal("part-one/chapter-one.md", board.LastStructuralError?.Path);
+        Assert.Equal(context.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+        Assert.Contains("manifest save after file move, Book.txt write, and registry update", board.LastStructuralError?.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+        var moved = Assert.Single(context.Workspace.Nodes, node => node.Node.RelativePath == "part-two/chapter-one.md");
+        Assert.Equal(original.Uuid, moved.Uuid);
+
+        var registry = await context.RegistryService.LoadAsync(context.WorkspaceRoot);
+        Assert.Equal("part-two/chapter-one.md", registry[original.Uuid].CurrentPath);
+
+        var error = Assert.Single(context.NotificationService.Errors);
+        Assert.Contains(context.BookTxtPath, error);
+        Assert.Contains("manifest save", error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -329,7 +396,7 @@ public sealed class CorkboardViewModelIntegrationTests
         public WordCountService WordCountService { get; } = new();
         public StubFolderPickerService FolderPickerService { get; }
         public StubFilePickerService FilePickerService { get; } = new();
-        public ExclusionManifestService ExclusionManifestService { get; }
+        public IExclusionManifestService ExclusionManifestService { get; }
         public ManuscriptService ManuscriptService { get; }
         public OrphanFileDiscoveryService OrphanFileDiscoveryService { get; } = new();
         public EditorViewModel Editor { get; }
@@ -339,11 +406,14 @@ public sealed class CorkboardViewModelIntegrationTests
         public string WorkspaceRoot { get; }
         public string BookTxtPath => Path.Combine(WorkspaceRoot, "Book.txt");
 
-        public TestContext(string workspaceRoot)
+        public TestContext(
+            string workspaceRoot,
+            Func<IMetadataStore, IExclusionManifestService>? exclusionManifestServiceFactory = null)
         {
             WorkspaceRoot = workspaceRoot;
             FolderPickerService = new StubFolderPickerService(workspaceRoot);
-            ExclusionManifestService = new ExclusionManifestService(MetadataStore);
+            ExclusionManifestService = exclusionManifestServiceFactory?.Invoke(MetadataStore)
+                ?? new ExclusionManifestService(MetadataStore);
             PhaseDataService = new PhaseDataService(MetadataStore);
             TargetsService = new TargetsService(MetadataStore);
             Editor = new EditorViewModel(MetadataStore, NotificationService, WordCountService);
@@ -380,6 +450,7 @@ public sealed class CorkboardViewModelIntegrationTests
         public async Task OpenWorkspaceAsync(int expectedNodeCount)
         {
             await ExecuteCommandAsync(Workspace.OpenWorkspaceCommand.Execute());
+            await AwaitWorkspaceHydrationAsync();
             await WaitUntilAsync(
                 () => Workspace.HasWorkspace && Workspace.Nodes.Count == expectedNodeCount,
                 $"Workspace did not load expected node count {expectedNodeCount}. Actual count: {Workspace.Nodes.Count}.");
@@ -450,6 +521,24 @@ public sealed class CorkboardViewModelIntegrationTests
                 // Best effort cleanup only.
             }
         }
+    }
+
+    private sealed class IncludeFailingManifestService : IExclusionManifestService
+    {
+        private readonly IExclusionManifestService _inner;
+
+        public IncludeFailingManifestService(IExclusionManifestService inner) => _inner = inner;
+
+        public Task<Result<ExclusionManifest>> LoadAsync(string workspaceRoot) => _inner.LoadAsync(workspaceRoot);
+
+        public Task<Result<ExclusionManifest>> SaveAsync(string workspaceRoot, ExclusionManifest manifest)
+            => _inner.SaveAsync(workspaceRoot, manifest);
+
+        public Task<Result<ExclusionManifest>> ExcludeAsync(string workspaceRoot, string relativePath)
+            => _inner.ExcludeAsync(workspaceRoot, relativePath);
+
+        public Task<Result<ExclusionManifest>> IncludeAsync(string workspaceRoot, string relativePath)
+            => Task.FromResult(Result<ExclusionManifest>.Fail("simulated manifest save failure"));
     }
 
     private sealed class RecordingNotificationService : INotificationService

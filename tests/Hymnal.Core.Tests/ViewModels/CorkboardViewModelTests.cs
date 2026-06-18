@@ -281,6 +281,33 @@ public sealed class CorkboardViewModelTests
     }
 
     [Fact]
+    public async Task DropCardCommand_CrossPartIntoNestedPart_UsesFullTargetFolderPath()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/act-one/part.md", "Act One", NodeKind.Part),
+            CreateChapter(context, "part-two/act-one/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest(
+                "part-one/chapter-one.md",
+                TargetPartPath: "part-two/act-one/part.md",
+                AfterRelativePath: "part-two/act-one/chapter-two.md")));
+
+        Assert.Empty(context.StructureService.ReorderCalls);
+        var move = Assert.Single(context.StructureService.MoveCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", "part-two/act-one/chapter-one.md", 4), move);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Null(board.LastStructuralError);
+    }
+
+    [Fact]
     public async Task DropCardCommand_IntoEmptyPart_MovesToSlotImmediatelyAfterPartDivider()
     {
         var context = CreateContext();

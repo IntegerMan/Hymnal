@@ -866,6 +866,52 @@ public class BookTxtStructureServiceTests
     }
 
     [Fact]
+    public async Task PathMove_MoveEntryAsync_ManifestSaveFailureLeavesCommittedMoveOnDisk()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-two/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/part.md", "{class: part}\n# Part Two"));
+
+        try
+        {
+            await SaveRegistryAsync(workspace.Root, new ChapterRegistryEntry
+            {
+                Uuid = "chapter-uuid-1",
+                CurrentPath = "part-one/chapter-one.md",
+                Orphaned = false,
+                Title = "Chapter One"
+            });
+            var service = CreateService(exclusionManifestService: new FailingManifestService());
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/chapter-one.md",
+                2);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("manifest save after file move, Book.txt write, and registry update", result.Error);
+            Assert.False(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-two/chapter-one.md")));
+            Assert.Equal(new[]
+            {
+                "part-one/part.md",
+                "part-two/part.md",
+                "part-two/chapter-one.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+
+            var registry = await LoadRegistryAsync(workspace.Root);
+            Assert.Equal("part-two/chapter-one.md", registry["chapter-uuid-1"].CurrentPath);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task PathMove_MoveEntryAsync_TargetConflictFailsWithoutWrites()
     {
         var workspace = CreateWorkspace(
