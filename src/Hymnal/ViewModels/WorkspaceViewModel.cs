@@ -126,6 +126,8 @@ public class WorkspaceViewModel : ViewModelBase
     public ReactiveCommand<string, System.Reactive.Unit> RemoveFromBookCommand { get; }
     public ReactiveCommand<string, System.Reactive.Unit> RemoveMissingEntryCommand { get; }
     public ReactiveCommand<ReorderCardRequest, System.Reactive.Unit> ReorderChapterCommand { get; }
+    public ReactiveCommand<RenameChapterRequest, System.Reactive.Unit> RenameChapterCommand { get; }
+    public ReactiveCommand<RenamePartRequest, System.Reactive.Unit> RenamePartCommand { get; }
 
     private ChapterViewModel? _targetFlyoutChapter;
     private IDisposable? _targetFlyoutSubscription;
@@ -221,6 +223,10 @@ public class WorkspaceViewModel : ViewModelBase
             this.WhenAnyValue(x => x.HasWorkspace));
         ReorderChapterCommand = ReactiveCommand.CreateFromTask<ReorderCardRequest>(ReorderChapterAsync,
             this.WhenAnyValue(x => x.HasWorkspace));
+        RenameChapterCommand = ReactiveCommand.CreateFromTask<RenameChapterRequest>(RenameChapterAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
+        RenamePartCommand = ReactiveCommand.CreateFromTask<RenamePartRequest>(RenamePartAsync,
+            this.WhenAnyValue(x => x.HasWorkspace));
 
         Disposables.Add(
             CreateChapterCommand.ThrownExceptions
@@ -242,6 +248,12 @@ public class WorkspaceViewModel : ViewModelBase
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
         Disposables.Add(
             ReorderChapterCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            RenameChapterCommand.ThrownExceptions
+                .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
+        Disposables.Add(
+            RenamePartCommand.ThrownExceptions
                 .Subscribe(Observer.Create<Exception>(ex => _notificationService.ShowError(ex.Message))));
 
         Disposables.Add(
@@ -1233,6 +1245,205 @@ public class WorkspaceViewModel : ViewModelBase
             () => _structureService.RemoveEntryAsync(BookTxtPath, chapterPath)).ConfigureAwait(false);
     }
 
+    private async Task RenameChapterAsync(RenameChapterRequest request)
+    {
+        if (!TryBuildChapterRenameTarget(request, out var replacementPath, out var error))
+        {
+            _notificationService.ShowError(error!);
+            return;
+        }
+
+        await ExecuteRenameOperationAsync(
+            "Rename chapter",
+            request.ExistingPath,
+            replacementPath!,
+            () => _structureService.RenameEntryAsync(BookTxtPath, request.ExistingPath, replacementPath!))
+            .ConfigureAwait(false);
+    }
+
+    private async Task RenamePartAsync(RenamePartRequest request)
+    {
+        if (!TryBuildPartRenameTarget(request, out var replacementPath, out var error))
+        {
+            _notificationService.ShowError(error!);
+            return;
+        }
+
+        await ExecuteRenameOperationAsync(
+            "Rename part",
+            request.ExistingPath,
+            replacementPath!,
+            () => _structureService.RenameEntryAsync(BookTxtPath, request.ExistingPath, replacementPath!))
+            .ConfigureAwait(false);
+    }
+
+    private bool TryBuildChapterRenameTarget(
+        RenameChapterRequest request,
+        out string? replacementPath,
+        out string? error)
+    {
+        replacementPath = null;
+        error = null;
+
+        if (!TryResolveRenameSource("Rename chapter", request.ExistingPath, NodeKind.Chapter, out var node, out error))
+            return false;
+
+        if (!TryBuildSafePathSegment(request.NewTitle, "chapter title", out var segment, out error))
+        {
+            error = $"Rename chapter for '{request.ExistingPath}' in '{BookTxtPath}': {error}";
+            return false;
+        }
+
+        var extension = Path.GetExtension(node!.RelativePath);
+        if (string.IsNullOrWhiteSpace(extension))
+            extension = ".md";
+
+        var directory = Path.GetDirectoryName(node.RelativePath.Replace('/', Path.DirectorySeparatorChar))?.Replace('\\', '/');
+        var fileName = segment + extension;
+        replacementPath = string.IsNullOrWhiteSpace(directory) ? fileName : $"{directory}/{fileName}";
+        return true;
+    }
+
+    private bool TryBuildPartRenameTarget(
+        RenamePartRequest request,
+        out string? replacementPath,
+        out string? error)
+    {
+        replacementPath = null;
+        error = null;
+
+        if (!TryResolveRenameSource("Rename part", request.ExistingPath, NodeKind.Part, out var node, out error))
+            return false;
+
+        if (!TryBuildSafePathSegment(request.NewTitle, "part title", out var segment, out error))
+        {
+            error = $"Rename part for '{request.ExistingPath}' in '{BookTxtPath}': {error}";
+            return false;
+        }
+
+        var fileName = Path.GetFileName(node!.RelativePath);
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            error = $"Rename part for '{request.ExistingPath}' in '{BookTxtPath}': Part path has no file name.";
+            return false;
+        }
+
+        // Sidebar Part renames intentionally rename only the containing Part folder.
+        // The Part markdown filename is preserved because BookTxtStructureService treats
+        // the folder as the rename unit and rejects Part file-name changes.
+        var parent = Path.GetDirectoryName(node.RelativePath.Replace('/', Path.DirectorySeparatorChar))?.Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(parent))
+        {
+            error = $"Rename part for '{request.ExistingPath}' in '{BookTxtPath}': Part entries must be inside a folder.";
+            return false;
+        }
+
+        var grandParent = Path.GetDirectoryName(parent.Replace('/', Path.DirectorySeparatorChar))?.Replace('\\', '/');
+        var replacementFolder = string.IsNullOrWhiteSpace(grandParent) ? segment : $"{grandParent}/{segment}";
+        replacementPath = $"{replacementFolder}/{fileName}";
+        return true;
+    }
+
+    private bool TryResolveRenameSource(
+        string operation,
+        string existingPath,
+        NodeKind expectedKind,
+        out ChapterNode? node,
+        out string? error)
+    {
+        node = null;
+
+        if (!HasWorkspace || string.IsNullOrWhiteSpace(BookTxtPath))
+        {
+            error = "No workspace is open.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(existingPath))
+        {
+            error = $"{operation} in '{BookTxtPath}': source path is required.";
+            return false;
+        }
+
+        if (!_nodesByPath.TryGetValue(existingPath, out var vm))
+        {
+            error = $"{operation} for '{existingPath}' in '{BookTxtPath}': source node was not found in the sidebar.";
+            return false;
+        }
+
+        node = vm.Node;
+        if (node.Kind != expectedKind)
+        {
+            error = $"{operation} for '{existingPath}' in '{BookTxtPath}': source node is a {node.Kind}, not a {expectedKind}.";
+            return false;
+        }
+
+        if (node.IsExcluded)
+        {
+            error = $"{operation} for '{existingPath}' in '{BookTxtPath}': excluded nodes cannot be renamed from the sidebar.";
+            return false;
+        }
+
+        if (node.IsMissing)
+        {
+            error = $"{operation} for '{existingPath}' in '{BookTxtPath}': missing nodes cannot be renamed.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryBuildSafePathSegment(string title, string fieldName, out string segment, out string? error)
+    {
+        segment = string.Empty;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            error = $"{fieldName} is required.";
+            return false;
+        }
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var builder = new System.Text.StringBuilder(title.Length);
+        var previousWasSeparator = false;
+
+        foreach (var ch in title.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                builder.Append(ch);
+                previousWasSeparator = false;
+            }
+            else if (char.IsWhiteSpace(ch) || ch == '-' || ch == '_' || invalid.Contains(ch))
+            {
+                if (!previousWasSeparator && builder.Length > 0)
+                {
+                    builder.Append('-');
+                    previousWasSeparator = true;
+                }
+            }
+            else
+            {
+                if (!previousWasSeparator && builder.Length > 0)
+                {
+                    builder.Append('-');
+                    previousWasSeparator = true;
+                }
+            }
+        }
+
+        segment = builder.ToString().Trim('-');
+        if (string.IsNullOrWhiteSpace(segment))
+        {
+            error = $"{fieldName} must contain at least one letter or number.";
+            return false;
+        }
+
+        return true;
+    }
+
     private bool TryBuildIncludeExistingRequest(
         string chapterPath,
         out IncludeExistingChapterRequest? request,
@@ -1366,6 +1577,67 @@ public class WorkspaceViewModel : ViewModelBase
         newIndex = 0;
         error = "Reorder requires either a target index or a neighbor path.";
         return false;
+    }
+
+    private async Task ExecuteRenameOperationAsync(
+        string operation,
+        string sourcePath,
+        string replacementPath,
+        Func<Task<Result<Unit>>> action)
+    {
+        if (!HasWorkspace || string.IsNullOrWhiteSpace(BookTxtPath) || _model == null)
+        {
+            _notificationService.ShowError("No workspace is open.");
+            return;
+        }
+
+        try
+        {
+            using var _ = _manuscriptService.SuppressFileWatcher();
+
+            var result = await action().ConfigureAwait(false);
+            if (!result.IsSuccess)
+            {
+                _notificationService.ShowError(
+                    $"{operation} for '{sourcePath}' to '{replacementPath}' in '{BookTxtPath}': {result.Error}");
+                return;
+            }
+
+            var reloadResult = await ReloadCurrentWorkspaceAsync().ConfigureAwait(false);
+            if (!reloadResult.IsSuccess)
+            {
+                _notificationService.ShowError(
+                    $"Failed to reload workspace after {operation.ToLowerInvariant()} for '{sourcePath}' to '{replacementPath}' in '{BookTxtPath}': {reloadResult.Error}");
+                return;
+            }
+
+            var hydrationTask = _hydrationTask;
+            if (hydrationTask == null)
+            {
+                SelectReplacementNodeIfPresent(replacementPath);
+            }
+            else
+            {
+                hydrationTask.ContinueWith(task =>
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => SelectReplacementNodeIfPresent(replacementPath)),
+                    TaskScheduler.Default);
+            }
+        }
+        catch (Exception ex)
+        {
+            _notificationService.ShowError(
+                $"{operation} for '{sourcePath}' to '{replacementPath}' in '{BookTxtPath}' failed: {ex.Message}");
+        }
+    }
+
+    private void SelectReplacementNodeIfPresent(string replacementPath)
+    {
+        if (_nodesByPath.TryGetValue(replacementPath, out var replacementNode))
+        {
+            _isSwitching = true;
+            SelectedNode = replacementNode;
+            _isSwitching = false;
+        }
     }
 
     private async Task ExecuteStructuralOperationAsync(

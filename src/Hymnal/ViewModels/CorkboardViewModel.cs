@@ -30,6 +30,10 @@ public sealed record ReorderCardRequest(
 
 public sealed record RenameCardRequest(string ExistingPath, string ReplacementPath);
 
+public sealed record RenameChapterRequest(string ExistingPath, string NewTitle);
+
+public sealed record RenamePartRequest(string ExistingPath, string NewTitle);
+
 public sealed record CreateChapterRequest(string ChapterPath, string Content, int Index);
 
 public sealed record CreatePartRequest(string PartPath, string Title, int Index);
