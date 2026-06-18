@@ -85,30 +85,228 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
         var doc = document.Value!;
         var sourcePath = NormalizeStructurePath(doc.ManuscriptRoot, existingPath, nameof(existingPath));
         if (!sourcePath.IsSuccess)
-            return Result<Unit>.Fail(sourcePath.Error!);
+            return Result<Unit>.Fail($"Rename operation failed for '{existingPath}' to '{replacementPath}' during path validation: {sourcePath.Error}");
 
         var replacement = NormalizeStructurePath(doc.ManuscriptRoot, replacementPath, nameof(replacementPath));
         if (!replacement.IsSuccess)
-            return Result<Unit>.Fail(replacement.Error!);
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.Value!.RelativePath}' to '{replacementPath}' during path validation: {replacement.Error}");
 
-        if (string.Equals(sourcePath.Value!.RelativePath, replacement.Value!.RelativePath, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(sourcePath.Value!.RelativePath, replacement.Value!.RelativePath, StringComparison.Ordinal))
             return Result<Unit>.Ok(Unit.Default);
+
+        if (string.Equals(sourcePath.Value.RelativePath, replacement.Value.RelativePath, StringComparison.OrdinalIgnoreCase))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during path validation: case-only path renames are not supported.");
 
         var sourceIndex = FindEntryIndex(doc.Entries, sourcePath.Value.RelativePath);
         if (sourceIndex < 0)
-            return Result<Unit>.Fail($"Entry '{sourcePath.Value.RelativePath}' was not found in '{doc.BookTxtPath}'.");
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during Book.txt validation: source entry was not found in '{doc.BookTxtPath}'.");
 
-        if (FindEntryIndex(doc.Entries, replacement.Value.RelativePath) >= 0)
-            return Result<Unit>.Fail($"Entry '{replacement.Value.RelativePath}' already exists in '{doc.BookTxtPath}'.");
+        if (!File.Exists(sourcePath.Value.AbsolutePath))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during file move validation: source file '{sourcePath.Value.AbsolutePath}' does not exist.");
 
-        if (!File.Exists(replacement.Value.AbsolutePath))
-            return Result<Unit>.Fail($"Replacement file '{replacement.Value.AbsolutePath}' does not exist.");
+        var partValidation = ValidatePartDivider(doc.ManuscriptRoot, sourcePath.Value.RelativePath);
+        return partValidation.IsSuccess
+            ? await RenamePartFolderAsync(doc, sourceIndex, sourcePath.Value, replacement.Value).ConfigureAwait(false)
+            : await RenameChapterFileAsync(doc, sourceIndex, sourcePath.Value, replacement.Value).ConfigureAwait(false);
+    }
 
-        var lines = doc.RawLines.ToList();
-        lines[doc.EntryLineIndexes[sourceIndex]] = replacement.Value.RelativePath;
+    private async Task<Result<Unit>> RenameChapterFileAsync(
+        BookDocument doc,
+        int sourceIndex,
+        (string RelativePath, string AbsolutePath) sourcePath,
+        (string RelativePath, string AbsolutePath) replacementPath)
+    {
+        if (FindEntryIndex(doc.Entries, replacementPath.RelativePath) >= 0)
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during conflict validation: target entry already exists in '{doc.BookTxtPath}'.");
 
-        var write = await WriteBookTxtAsync(doc.BookTxtPath, lines).ConfigureAwait(false);
-        return write.IsSuccess ? Result<Unit>.Ok(Unit.Default) : Result<Unit>.Fail(write.Error!);
+        if (File.Exists(replacementPath.AbsolutePath) || Directory.Exists(replacementPath.AbsolutePath))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during conflict validation: target path '{replacementPath.AbsolutePath}' already exists.");
+
+        var registryValidation = await BuildRegistryMoveAsync(
+            doc.ManuscriptRoot,
+            sourcePath.RelativePath,
+            replacementPath.RelativePath).ConfigureAwait(false);
+        if (!registryValidation.IsSuccess)
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during registry validation: {registryValidation.Error}");
+
+        var originalLines = doc.RawLines.ToList();
+        var updatedLines = doc.RawLines.ToList();
+        updatedLines[doc.EntryLineIndexes[sourceIndex]] = replacementPath.RelativePath;
+
+        var originalContent = await ReadTextForRollbackAsync(sourcePath.AbsolutePath, sourcePath.RelativePath, replacementPath.RelativePath).ConfigureAwait(false);
+        if (!originalContent.IsSuccess)
+            return Result<Unit>.Fail(originalContent.Error!);
+
+        var moved = TryMoveFileForRename(sourcePath, replacementPath);
+        if (!moved.IsSuccess)
+            return Result<Unit>.Fail(moved.Error!);
+
+        var headingWrite = await RewriteFirstHeadingAsync(replacementPath.AbsolutePath, DisplayTitleFromChapterPath(replacementPath.RelativePath)).ConfigureAwait(false);
+        if (!headingWrite.IsSuccess)
+            return await RollBackRenameFileAsync(
+                doc.BookTxtPath,
+                sourcePath,
+                replacementPath,
+                restoreBookTxtLines: null,
+                restoreSourceContent: originalContent.Value,
+                failurePhase: "display heading update",
+                failureDetail: headingWrite.Error!).ConfigureAwait(false);
+
+        var bookWrite = await WriteBookTxtAsync(doc.BookTxtPath, updatedLines).ConfigureAwait(false);
+        if (!bookWrite.IsSuccess)
+            return await RollBackRenameFileAsync(
+                doc.BookTxtPath,
+                sourcePath,
+                replacementPath,
+                restoreBookTxtLines: null,
+                restoreSourceContent: originalContent.Value,
+                failurePhase: "Book.txt write",
+                failureDetail: bookWrite.Error!).ConfigureAwait(false);
+
+        try
+        {
+            await _chapterRegistryService.SaveAsync(doc.ManuscriptRoot, registryValidation.Value!).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return await RollBackRenameFileAsync(
+                doc.BookTxtPath,
+                sourcePath,
+                replacementPath,
+                originalLines,
+                originalContent.Value,
+                failurePhase: "registry update",
+                failureDetail: ex.Message).ConfigureAwait(false);
+        }
+
+        var include = await _exclusionManifestService.IncludeAsync(doc.ManuscriptRoot, replacementPath.RelativePath).ConfigureAwait(false);
+        if (!include.IsSuccess)
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during manifest save after file move, Book.txt write, and registry update: {include.Error}");
+
+        return Result<Unit>.Ok(Unit.Default);
+    }
+
+    private async Task<Result<Unit>> RenamePartFolderAsync(
+        BookDocument doc,
+        int sourceIndex,
+        (string RelativePath, string AbsolutePath) sourcePath,
+        (string RelativePath, string AbsolutePath) replacementPath)
+    {
+        var sourceFolderRelative = Path.GetDirectoryName(sourcePath.RelativePath)?.Replace('\\', '/');
+        var replacementFolderRelative = Path.GetDirectoryName(replacementPath.RelativePath)?.Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(sourceFolderRelative) || string.IsNullOrWhiteSpace(replacementFolderRelative))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during path validation: Part renames must keep the Part file inside a containing folder.");
+
+        if (!string.Equals(Path.GetFileName(sourcePath.RelativePath), Path.GetFileName(replacementPath.RelativePath), StringComparison.OrdinalIgnoreCase))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during path validation: Part folder renames must keep the Part file name unchanged.");
+
+        var sourcePrefix = sourceFolderRelative + "/";
+        var replacementPrefix = replacementFolderRelative + "/";
+        var movedEntryIndexes = doc.Entries
+            .Select((entry, index) => (entry, index))
+            .Where(pair => pair.entry.StartsWith(sourcePrefix, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (movedEntryIndexes.Count == 0 || movedEntryIndexes.All(pair => pair.index != sourceIndex))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during Book.txt validation: no entries were found under source folder '{sourceFolderRelative}'.");
+
+        if (doc.Entries.Any(entry => entry.StartsWith(replacementPrefix, StringComparison.OrdinalIgnoreCase)))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during conflict validation: target folder prefix '{replacementFolderRelative}' already exists in '{doc.BookTxtPath}'.");
+
+        var sourceFolderAbsolute = Path.Combine(doc.ManuscriptRoot, sourceFolderRelative.Replace('/', Path.DirectorySeparatorChar));
+        var replacementFolderAbsolute = Path.Combine(doc.ManuscriptRoot, replacementFolderRelative.Replace('/', Path.DirectorySeparatorChar));
+        if (!Directory.Exists(sourceFolderAbsolute))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during file move validation: source folder '{sourceFolderAbsolute}' does not exist.");
+
+        if (File.Exists(replacementFolderAbsolute) || Directory.Exists(replacementFolderAbsolute))
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during conflict validation: target folder '{replacementFolderAbsolute}' already exists.");
+
+        var pathMap = movedEntryIndexes.ToDictionary(
+            pair => pair.entry,
+            pair => replacementPrefix + pair.entry[sourcePrefix.Length..],
+            StringComparer.OrdinalIgnoreCase);
+        pathMap[sourcePath.RelativePath] = replacementPath.RelativePath;
+
+        var registryValidation = await BuildRegistryPrefixRenameAsync(doc.ManuscriptRoot, pathMap).ConfigureAwait(false);
+        if (!registryValidation.IsSuccess)
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during registry validation: {registryValidation.Error}");
+
+        var originalLines = doc.RawLines.ToList();
+        var updatedLines = doc.RawLines.ToList();
+        foreach (var (_, index) in movedEntryIndexes)
+        {
+            var rawIndex = doc.EntryLineIndexes[index];
+            updatedLines[rawIndex] = pathMap[doc.Entries[index]];
+        }
+
+        var originalPartContent = await ReadTextForRollbackAsync(sourcePath.AbsolutePath, sourcePath.RelativePath, replacementPath.RelativePath).ConfigureAwait(false);
+        if (!originalPartContent.IsSuccess)
+            return Result<Unit>.Fail(originalPartContent.Error!);
+
+        try
+        {
+            var parentDirectory = Path.GetDirectoryName(replacementFolderAbsolute);
+            if (!string.IsNullOrWhiteSpace(parentDirectory))
+                Directory.CreateDirectory(parentDirectory);
+
+            Directory.Move(sourceFolderAbsolute, replacementFolderAbsolute);
+        }
+        catch (Exception ex)
+        {
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during file move from '{sourceFolderAbsolute}' to '{replacementFolderAbsolute}': {ex.Message}; rollback not attempted because no mutation was confirmed.");
+        }
+
+        var headingWrite = await RewriteFirstHeadingAsync(replacementPath.AbsolutePath, DisplayTitleFromPartPath(replacementPath.RelativePath)).ConfigureAwait(false);
+        if (!headingWrite.IsSuccess)
+            return await RollBackRenameFolderAsync(
+                doc.BookTxtPath,
+                sourcePath,
+                replacementPath,
+                sourceFolderAbsolute,
+                replacementFolderAbsolute,
+                restoreBookTxtLines: null,
+                restorePartContent: originalPartContent.Value,
+                failurePhase: "display heading update",
+                failureDetail: headingWrite.Error!).ConfigureAwait(false);
+
+        var bookWrite = await WriteBookTxtAsync(doc.BookTxtPath, updatedLines).ConfigureAwait(false);
+        if (!bookWrite.IsSuccess)
+            return await RollBackRenameFolderAsync(
+                doc.BookTxtPath,
+                sourcePath,
+                replacementPath,
+                sourceFolderAbsolute,
+                replacementFolderAbsolute,
+                restoreBookTxtLines: null,
+                restorePartContent: originalPartContent.Value,
+                failurePhase: "Book.txt write",
+                failureDetail: bookWrite.Error!).ConfigureAwait(false);
+
+        try
+        {
+            await _chapterRegistryService.SaveAsync(doc.ManuscriptRoot, registryValidation.Value!).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return await RollBackRenameFolderAsync(
+                doc.BookTxtPath,
+                sourcePath,
+                replacementPath,
+                sourceFolderAbsolute,
+                replacementFolderAbsolute,
+                originalLines,
+                originalPartContent.Value,
+                failurePhase: "registry update",
+                failureDetail: ex.Message).ConfigureAwait(false);
+        }
+
+        foreach (var newPath in pathMap.Values.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var include = await _exclusionManifestService.IncludeAsync(doc.ManuscriptRoot, newPath).ConfigureAwait(false);
+            if (!include.IsSuccess)
+                return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during manifest save after file move, Book.txt write, and registry update: {include.Error}");
+        }
+
+        return Result<Unit>.Ok(Unit.Default);
     }
 
     public async Task<Result<Unit>> MoveEntryAsync(string bookTxtPath, string existingPath, string replacementPath, int newIndex)
@@ -488,6 +686,228 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
 
             return Result<Unit>.Fail($"Failed to delete chapter file '{normalized.Value.AbsolutePath}': {ex.Message}");
         }
+    }
+
+    private async Task<Result<Dictionary<string, ChapterRegistryEntry>>> BuildRegistryPrefixRenameAsync(
+        string manuscriptRoot,
+        IReadOnlyDictionary<string, string> pathMap)
+    {
+        Dictionary<string, ChapterRegistryEntry> registry;
+        try
+        {
+            registry = await _chapterRegistryService.LoadAsync(manuscriptRoot).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return Result<Dictionary<string, ChapterRegistryEntry>>.Fail($"failed to load chapter registry: {ex.Message}");
+        }
+
+        var updated = new Dictionary<string, ChapterRegistryEntry>(registry);
+        foreach (var (sourcePath, replacementPath) in pathMap)
+        {
+            var sourceMatches = registry
+                .Where(pair => string.Equals(pair.Value.CurrentPath, sourcePath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (sourceMatches.Count == 0)
+                return Result<Dictionary<string, ChapterRegistryEntry>>.Fail($"no registry entry exists for source path '{sourcePath}'; refusing to rename because UUID continuity cannot be proven.");
+
+            if (sourceMatches.Count > 1)
+                return Result<Dictionary<string, ChapterRegistryEntry>>.Fail($"multiple registry entries exist for source path '{sourcePath}'; refusing to rename because UUID continuity is ambiguous.");
+
+            var sourceUuid = sourceMatches[0].Key;
+            var targetConflict = registry.Any(pair =>
+                !string.Equals(pair.Key, sourceUuid, StringComparison.Ordinal) &&
+                string.Equals(pair.Value.CurrentPath, replacementPath, StringComparison.OrdinalIgnoreCase));
+            if (targetConflict)
+                return Result<Dictionary<string, ChapterRegistryEntry>>.Fail($"another registry entry already targets replacement path '{replacementPath}'.");
+
+            var entry = sourceMatches[0].Value;
+            updated[sourceUuid] = new ChapterRegistryEntry
+            {
+                Uuid = entry.Uuid,
+                CurrentPath = replacementPath,
+                Orphaned = entry.Orphaned,
+                Title = entry.Title
+            };
+        }
+
+        return Result<Dictionary<string, ChapterRegistryEntry>>.Ok(updated);
+    }
+
+    private async Task<Result<string>> ReadTextForRollbackAsync(
+        string absolutePath,
+        string sourceRelativePath,
+        string replacementRelativePath)
+    {
+        try
+        {
+            return Result<string>.Ok(await File.ReadAllTextAsync(absolutePath).ConfigureAwait(false));
+        }
+        catch (Exception ex)
+        {
+            return Result<string>.Fail($"Rename operation failed for '{sourceRelativePath}' to '{replacementRelativePath}' during file move validation: source content at '{absolutePath}' could not be read for rollback: {ex.Message}");
+        }
+    }
+
+    private Result<Unit> TryMoveFileForRename(
+        (string RelativePath, string AbsolutePath) sourcePath,
+        (string RelativePath, string AbsolutePath) replacementPath)
+    {
+        try
+        {
+            var targetDirectory = Path.GetDirectoryName(replacementPath.AbsolutePath);
+            if (!string.IsNullOrWhiteSpace(targetDirectory))
+                Directory.CreateDirectory(targetDirectory);
+
+            File.Move(sourcePath.AbsolutePath, replacementPath.AbsolutePath);
+            return Result<Unit>.Ok(Unit.Default);
+        }
+        catch (Exception ex)
+        {
+            return Result<Unit>.Fail($"Rename operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during file move from '{sourcePath.AbsolutePath}' to '{replacementPath.AbsolutePath}': {ex.Message}; rollback not attempted because no mutation was confirmed.");
+        }
+    }
+
+    private async Task<Result<Unit>> RewriteFirstHeadingAsync(string absolutePath, string title)
+    {
+        try
+        {
+            var lines = (await File.ReadAllLinesAsync(absolutePath).ConfigureAwait(false)).ToList();
+            var headingIndex = lines.FindIndex(line => line.TrimStart().StartsWith("# ", StringComparison.Ordinal));
+            if (headingIndex >= 0)
+                lines[headingIndex] = "# " + title;
+            else
+                lines.Insert(0, "# " + title);
+
+            await _metadataStore.WriteTextAtomicAsync(absolutePath, string.Join(Environment.NewLine, lines)).ConfigureAwait(false);
+            return Result<Unit>.Ok(Unit.Default);
+        }
+        catch (Exception ex)
+        {
+            return Result<Unit>.Fail($"failed to update first '# ' heading at '{absolutePath}': {ex.Message}");
+        }
+    }
+
+    private async Task<Result<Unit>> RollBackRenameFileAsync(
+        string bookTxtPath,
+        (string RelativePath, string AbsolutePath) sourcePath,
+        (string RelativePath, string AbsolutePath) replacementPath,
+        IReadOnlyList<string>? restoreBookTxtLines,
+        string? restoreSourceContent,
+        string failurePhase,
+        string failureDetail)
+    {
+        var rollbackFailures = new List<string>();
+
+        try
+        {
+            if (File.Exists(replacementPath.AbsolutePath))
+                File.Move(replacementPath.AbsolutePath, sourcePath.AbsolutePath);
+            else
+                rollbackFailures.Add($"target file '{replacementPath.AbsolutePath}' was missing during rollback");
+        }
+        catch (Exception ex)
+        {
+            rollbackFailures.Add($"file rollback from '{replacementPath.AbsolutePath}' to '{sourcePath.AbsolutePath}' failed: {ex.Message}");
+        }
+
+        await RestoreRenameRollbackStateAsync(bookTxtPath, restoreBookTxtLines, sourcePath.AbsolutePath, restoreSourceContent, rollbackFailures).ConfigureAwait(false);
+        return BuildRenameRollbackFailure(sourcePath.RelativePath, replacementPath.RelativePath, failurePhase, failureDetail, rollbackFailures);
+    }
+
+    private async Task<Result<Unit>> RollBackRenameFolderAsync(
+        string bookTxtPath,
+        (string RelativePath, string AbsolutePath) sourcePath,
+        (string RelativePath, string AbsolutePath) replacementPath,
+        string sourceFolderAbsolute,
+        string replacementFolderAbsolute,
+        IReadOnlyList<string>? restoreBookTxtLines,
+        string? restorePartContent,
+        string failurePhase,
+        string failureDetail)
+    {
+        var rollbackFailures = new List<string>();
+
+        try
+        {
+            if (Directory.Exists(replacementFolderAbsolute))
+                Directory.Move(replacementFolderAbsolute, sourceFolderAbsolute);
+            else
+                rollbackFailures.Add($"target folder '{replacementFolderAbsolute}' was missing during rollback");
+        }
+        catch (Exception ex)
+        {
+            rollbackFailures.Add($"folder rollback from '{replacementFolderAbsolute}' to '{sourceFolderAbsolute}' failed: {ex.Message}");
+        }
+
+        await RestoreRenameRollbackStateAsync(bookTxtPath, restoreBookTxtLines, sourcePath.AbsolutePath, restorePartContent, rollbackFailures).ConfigureAwait(false);
+        return BuildRenameRollbackFailure(sourcePath.RelativePath, replacementPath.RelativePath, failurePhase, failureDetail, rollbackFailures);
+    }
+
+    private async Task RestoreRenameRollbackStateAsync(
+        string bookTxtPath,
+        IReadOnlyList<string>? restoreBookTxtLines,
+        string sourceAbsolutePath,
+        string? restoreSourceContent,
+        List<string> rollbackFailures)
+    {
+        if (restoreBookTxtLines is not null)
+        {
+            var restoreBook = await WriteBookTxtAsync(bookTxtPath, restoreBookTxtLines).ConfigureAwait(false);
+            if (!restoreBook.IsSuccess)
+                rollbackFailures.Add($"Book.txt rollback failed: {restoreBook.Error}");
+        }
+
+        if (restoreSourceContent is not null)
+        {
+            try
+            {
+                await _metadataStore.WriteTextAtomicAsync(sourceAbsolutePath, restoreSourceContent).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                rollbackFailures.Add($"source heading rollback at '{sourceAbsolutePath}' failed: {ex.Message}");
+            }
+        }
+    }
+
+    private static Result<Unit> BuildRenameRollbackFailure(
+        string sourceRelativePath,
+        string replacementRelativePath,
+        string failurePhase,
+        string failureDetail,
+        IReadOnlyList<string> rollbackFailures)
+    {
+        if (rollbackFailures.Count > 0)
+        {
+            return Result<Unit>.Fail(
+                $"Rename operation failed for '{sourceRelativePath}' to '{replacementRelativePath}' during {failurePhase}: {failureDetail}; rollback attempted but rollback failed: {string.Join("; ", rollbackFailures)}.");
+        }
+
+        return Result<Unit>.Fail(
+            $"Rename operation failed for '{sourceRelativePath}' to '{replacementRelativePath}' during {failurePhase}: {failureDetail}; rollback attempted and manuscript state was restored.");
+    }
+
+    private static string DisplayTitleFromChapterPath(string relativePath)
+        => TitleCaseToken(Path.GetFileNameWithoutExtension(relativePath));
+
+    private static string DisplayTitleFromPartPath(string relativePath)
+    {
+        var folder = Path.GetDirectoryName(relativePath)?.Replace('\\', '/');
+        return TitleCaseToken(string.IsNullOrWhiteSpace(folder) ? Path.GetFileNameWithoutExtension(relativePath) : Path.GetFileName(folder));
+    }
+
+    private static string TitleCaseToken(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return string.Empty;
+
+        var words = token.Replace('_', '-').Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (words.Length == 0)
+            return token.Trim();
+
+        return string.Join(" ", words.Select(word => char.ToUpperInvariant(word[0]) + (word.Length == 1 ? string.Empty : word[1..].ToLowerInvariant())));
     }
 
     private async Task<Result<Dictionary<string, ChapterRegistryEntry>>> BuildRegistryMoveAsync(

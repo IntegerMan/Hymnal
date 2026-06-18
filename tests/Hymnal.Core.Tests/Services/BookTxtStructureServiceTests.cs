@@ -50,6 +50,42 @@ public class BookTxtStructureServiceTests
     private static async Task<Dictionary<string, ChapterRegistryEntry>> LoadRegistryAsync(string workspaceRoot)
         => await new ChapterRegistryService(new MetadataStore()).LoadAsync(workspaceRoot);
 
+    private static async Task SeedUuidSidecarsAsync(string workspaceRoot, string uuid)
+    {
+        var store = new MetadataStore();
+        await new PhaseDataService(store).SaveAsync(workspaceRoot, new Dictionary<string, PhaseData>
+        {
+            [uuid] = new PhaseData { Status = ChapterStatus.Drafting }
+        });
+        await new TargetsService(store).SaveAsync(workspaceRoot, new Dictionary<string, WordCountTarget>
+        {
+            [uuid] = new WordCountTarget { MinWords = 1000, MaxWords = 1500 }
+        });
+        await new WordCountHistoryService(store).AppendAsync(workspaceRoot, uuid, "2026-06-04", 1234);
+
+        var notesDirectory = Path.Combine(workspaceRoot, ".hymnal-data", "notes");
+        Directory.CreateDirectory(notesDirectory);
+        await File.WriteAllTextAsync(Path.Combine(notesDirectory, uuid + ".md"), "UUID keyed note");
+    }
+
+    private static async Task AssertUuidSidecarsAsync(string workspaceRoot, string uuid)
+    {
+        var store = new MetadataStore();
+        var phases = await new PhaseDataService(store).LoadAsync(workspaceRoot);
+        Assert.Equal(ChapterStatus.Drafting, phases[uuid].Status);
+
+        var targets = await new TargetsService(store).LoadAsync(workspaceRoot);
+        Assert.Equal(1000, targets[uuid].MinWords);
+        Assert.Equal(1500, targets[uuid].MaxWords);
+
+        var history = await new WordCountHistoryService(store).GetAllAsync(workspaceRoot);
+        var historyEntry = Assert.Single(history, entry => entry.Uuid == uuid);
+        Assert.Equal("2026-06-04", historyEntry.Date);
+        Assert.Equal(1234, historyEntry.WordCount);
+
+        Assert.Equal("UUID keyed note", await File.ReadAllTextAsync(Path.Combine(workspaceRoot, ".hymnal-data", "notes", uuid + ".md")));
+    }
+
     private static string AbsolutePath(string workspaceRoot, string relativePath)
         => Path.Combine(workspaceRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
 
@@ -936,13 +972,151 @@ public class BookTxtStructureServiceTests
     }
 
     [Fact]
-    public async Task RenameEntryAsync_ReplacesPathEntry()
+    public async Task RenameEntryAsync_ChapterRename_MovesFileRewritesBookTxtHeadingAndPreservesUuidMetadataAfterReload()
     {
         var workspace = CreateWorkspace(
             ("Book.txt", "part-one/part.md\npart-one/chapter-one.md"),
             ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One\n\nBody"));
+
+        try
+        {
+            const string uuid = "chapter-uuid-rename";
+            await SaveRegistryAsync(workspace.Root, new ChapterRegistryEntry
+            {
+                Uuid = "part-uuid",
+                CurrentPath = "part-one/part.md",
+                Orphaned = false,
+                Title = "Part One"
+            }, new ChapterRegistryEntry
+            {
+                Uuid = uuid,
+                CurrentPath = "part-one/chapter-one.md",
+                Orphaned = false,
+                Title = "Chapter One"
+            });
+            await SeedUuidSidecarsAsync(workspace.Root, uuid);
+            var service = CreateService();
+
+            var result = await service.RenameEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", "part-one/chapter-renamed.md");
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.False(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-renamed.md")));
+            Assert.Equal(new[]
+            {
+                "part-one/part.md",
+                "part-one/chapter-renamed.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.StartsWith("# Chapter Renamed", File.ReadAllText(AbsolutePath(workspace.Root, "part-one/chapter-renamed.md")));
+
+            using var manuscriptService = new ManuscriptService(new FakeNotificationService());
+            var reload = await manuscriptService.LoadWorkspaceAsync(workspace.Root);
+            Assert.True(reload.IsSuccess, reload.Error);
+            var renamedNode = Assert.Single(reload.Value!.Nodes.Items, node => node.RelativePath == "part-one/chapter-renamed.md");
+            Assert.Equal("Chapter Renamed", renamedNode.Title);
+
+            var registry = await LoadRegistryAsync(workspace.Root);
+            Assert.Equal("part-one/chapter-renamed.md", registry[uuid].CurrentPath);
+            await AssertUuidSidecarsAsync(workspace.Root, uuid);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RenameEntryAsync_PartFolderRename_MovesFolderRewritesDescendantsHeadingAndRegistryPaths()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-one/nested/chapter-two.md\npart-two/part.md"),
+            ("part-one/part.md", "{class: part}\n\n# Part One"),
             ("part-one/chapter-one.md", "# Chapter One"),
-            ("part-one/chapter-renamed.md", "# Chapter Renamed"));
+            ("part-one/nested/chapter-two.md", "# Chapter Two"),
+            ("part-two/part.md", "{class: part}\n# Part Two"));
+
+        try
+        {
+            const string partUuid = "part-uuid-rename";
+            const string chapterUuid = "chapter-uuid-inside-part";
+            const string nestedUuid = "nested-chapter-uuid";
+            await SaveRegistryAsync(workspace.Root,
+                new ChapterRegistryEntry { Uuid = partUuid, CurrentPath = "part-one/part.md", Orphaned = false, Title = "Part One" },
+                new ChapterRegistryEntry { Uuid = chapterUuid, CurrentPath = "part-one/chapter-one.md", Orphaned = false, Title = "Chapter One" },
+                new ChapterRegistryEntry { Uuid = nestedUuid, CurrentPath = "part-one/nested/chapter-two.md", Orphaned = false, Title = "Chapter Two" },
+                new ChapterRegistryEntry { Uuid = "part-two-uuid", CurrentPath = "part-two/part.md", Orphaned = false, Title = "Part Two" });
+            await SeedUuidSidecarsAsync(workspace.Root, chapterUuid);
+            var service = CreateService();
+
+            var result = await service.RenameEntryAsync(workspace.BookTxtPath, "part-one/part.md", "renamed-part/part.md");
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.False(Directory.Exists(AbsolutePath(workspace.Root, "part-one")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "renamed-part/part.md")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "renamed-part/chapter-one.md")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "renamed-part/nested/chapter-two.md")));
+            Assert.Equal(new[]
+            {
+                "renamed-part/part.md",
+                "renamed-part/chapter-one.md",
+                "renamed-part/nested/chapter-two.md",
+                "part-two/part.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.Contains("# Renamed Part", File.ReadAllText(AbsolutePath(workspace.Root, "renamed-part/part.md")));
+
+            using var manuscriptService = new ManuscriptService(new FakeNotificationService());
+            var reload = await manuscriptService.LoadWorkspaceAsync(workspace.Root);
+            Assert.True(reload.IsSuccess, reload.Error);
+            Assert.Equal("Renamed Part", reload.Value!.Nodes.Items.Single(node => node.RelativePath == "renamed-part/part.md").Title);
+
+            var registry = await LoadRegistryAsync(workspace.Root);
+            Assert.Equal("renamed-part/part.md", registry[partUuid].CurrentPath);
+            Assert.Equal("renamed-part/chapter-one.md", registry[chapterUuid].CurrentPath);
+            Assert.Equal("renamed-part/nested/chapter-two.md", registry[nestedUuid].CurrentPath);
+            await AssertUuidSidecarsAsync(workspace.Root, chapterUuid);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RenameEntryAsync_TargetConflictRejectsBeforeMutation()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md\npart-one/chapter-renamed.md"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-renamed.md", "# Existing Target"));
+
+        try
+        {
+            var originalBookTxt = ReadBookTxt(workspace.BookTxtPath);
+            await SaveRegistryAsync(workspace.Root,
+                new ChapterRegistryEntry { Uuid = "source-uuid", CurrentPath = "part-one/chapter-one.md" },
+                new ChapterRegistryEntry { Uuid = "target-uuid", CurrentPath = "part-one/chapter-renamed.md" });
+            var service = CreateService();
+
+            var result = await service.RenameEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", "part-one/chapter-renamed.md");
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("conflict validation", result.Error);
+            Assert.Equal(originalBookTxt, ReadBookTxt(workspace.BookTxtPath));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.Equal("# Existing Target", File.ReadAllText(AbsolutePath(workspace.Root, "part-one/chapter-renamed.md")));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RenameEntryAsync_MissingSourceRejectsBeforeMutation()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md"));
 
         try
         {
@@ -950,12 +1124,34 @@ public class BookTxtStructureServiceTests
 
             var result = await service.RenameEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", "part-one/chapter-renamed.md");
 
-            Assert.True(result.IsSuccess, result.Error);
-            Assert.Equal(new[]
-            {
-                "part-one/part.md",
-                "part-one/chapter-renamed.md"
-            }, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.False(result.IsSuccess);
+            Assert.Contains("file move validation", result.Error);
+            Assert.Contains("source file", result.Error);
+            Assert.Equal(new[] { "part-one/chapter-one.md" }, ReadBookTxtLines(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RenameEntryAsync_CaseOnlyRenameRejectsConsistently()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var service = CreateService();
+
+            var result = await service.RenameEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", "part-one/Chapter-One.md");
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("case-only path renames are not supported", result.Error);
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.Equal(new[] { "part-one/chapter-one.md" }, ReadBookTxtLines(workspace.BookTxtPath));
         }
         finally
         {
@@ -1201,6 +1397,21 @@ public class BookTxtStructureServiceTests
         finally
         {
             Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    private sealed class FakeNotificationService : INotificationService
+    {
+        public void ShowError(string message)
+        {
+        }
+
+        public void ShowInfo(string message)
+        {
+        }
+
+        public void ShowSuccess(string message)
+        {
         }
     }
 
