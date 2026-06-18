@@ -422,6 +422,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         if (_workspace.HasWorkspace && !string.IsNullOrWhiteSpace(_workspace.ManuscriptRoot))
         {
             var entries = _workspace.Nodes
+                .Where(node => !node.Node.IsExcluded)
                 .Select(node => node.Node.RelativePath)
                 .ToList();
 
@@ -639,6 +640,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
                     var recoveryReload = await _workspace.ReloadCurrentWorkspaceAsync();
                     if (recoveryReload.IsSuccess)
                     {
+                        RequestRebuild();
                         RestoreSelection(operation.SelectionPath);
                     }
                     else
@@ -660,6 +662,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
                 return;
             }
 
+            RequestRebuild();
             RestoreSelection(operation.SelectionPath);
         }
         catch (Exception ex)
@@ -807,6 +810,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
                 return;
             }
 
+            RequestRebuild();
             RestoreSelection(selectionPathOverride ?? previousSelectionPath);
         }
         catch (Exception ex)

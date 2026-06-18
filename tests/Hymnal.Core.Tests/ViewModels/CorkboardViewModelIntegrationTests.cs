@@ -11,6 +11,7 @@ using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 using Hymnal.Core.Tests.Infrastructure;
+using Hymnal.Views;
 using ReactiveUI;
 using Xunit;
 
@@ -272,6 +273,391 @@ public sealed class CorkboardViewModelIntegrationTests
         Assert.Contains("target file", error, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task RemoveFromBookCommand_ExcludesCardAndReloadedBoardProjectsNonDraggableExcludedCard()
+    {
+        var workspaceRoot = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-one/chapter-two.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-two.md", "# Chapter Two"));
+
+        try
+        {
+            using var context = new TestContext(workspaceRoot, ownsWorkspace: false);
+            await context.OpenWorkspaceAsync(expectedNodeCount: 3);
+
+            using var board = context.CreateBoard();
+            await WaitForBoardProjectionAsync(board,
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md");
+
+            var chapterTwo = GetChapterCard(board, "part-one/chapter-two.md");
+            await ExecuteCommandAsync(board.SelectCardCommand.Execute(chapterTwo));
+            await ExecuteCommandAsync(board.RemoveFromBookCommand.Execute(new RemoveChapterRequest("part-one/chapter-two.md")));
+
+            await WaitUntilAsync(
+                () => context.Workspace.Nodes.Count == 3
+                      && context.Workspace.Nodes.Any(node => node.Node.RelativePath == "part-one/chapter-two.md" && node.Node.IsExcluded),
+                "Workspace did not reproject the excluded chapter after removal.");
+            await WaitForBoardProjectionAsync(board,
+                "part-one/part.md",
+                "part-one/chapter-one.md");
+
+            Assert.Equal(
+                new[]
+                {
+                    "part-one/part.md",
+                    "part-one/chapter-one.md"
+                },
+                ReadBookTxtLines(context.BookTxtPath));
+            Assert.Equal(new[] { "part-one/chapter-two.md" }, await context.LoadExcludedPathsAsync());
+            Assert.DoesNotContain(board.Items, item => item.Kind == CorkboardItemKind.ChapterCard && item.RelativePath == "part-one/chapter-two.md");
+
+            var excluded = await WaitForExcludedCardAsync(board, "part-one/chapter-two.md");
+            Assert.Equal("(excluded)", excluded.ExcludedLabel);
+            Assert.False(CorkboardView.CanDragFromCorkboard(excluded));
+            Assert.Null(board.SelectedCard);
+
+            await ExecuteCommandAsync(board.OpenCardCommand.Execute(excluded));
+            Assert.Null(board.SelectedCard);
+            Assert.Null(board.LastStructuralError);
+            Assert.Empty(context.NotificationService.Errors);
+
+            using var reloadedContext = new TestContext(workspaceRoot, ownsWorkspace: false);
+            await reloadedContext.OpenWorkspaceAsync(expectedNodeCount: 3);
+
+            using var reloadedBoard = reloadedContext.CreateBoard();
+            await WaitForBoardProjectionAsync(reloadedBoard,
+                "part-one/part.md",
+                "part-one/chapter-one.md");
+            await WaitForExcludedCardAsync(reloadedBoard, "part-one/chapter-two.md");
+            Assert.DoesNotContain(reloadedBoard.Items, item => item.Kind == CorkboardItemKind.ChapterCard && item.RelativePath == "part-one/chapter-two.md");
+        }
+        finally
+        {
+            DeleteWorkspace(workspaceRoot);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExistingChapterCommand_ReincludesExcludedCardAtRequestedIndexAndPersistsFreshReload()
+    {
+        var workspaceRoot = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-one/chapter-three.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-two.md", "# Chapter Two"),
+            ("part-one/chapter-three.md", "# Chapter Three"));
+
+        try
+        {
+            using var context = new TestContext(workspaceRoot, ownsWorkspace: false);
+            var excluded = await context.ExclusionManifestService.ExcludeAsync(workspaceRoot, "part-one/chapter-two.md");
+            Assert.True(excluded.IsSuccess, excluded.Error);
+
+            await context.OpenWorkspaceAsync(expectedNodeCount: 4);
+            using var board = context.CreateBoard();
+            await WaitForBoardProjectionAsync(board,
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-three.md");
+            await WaitForExcludedCardAsync(board, "part-one/chapter-two.md");
+
+            await ExecuteCommandAsync(board.IncludeExistingChapterCommand.Execute(
+                new IncludeExistingChapterRequest(
+                    "part-one/chapter-two.md",
+                    board.GetInsertIndexAfterChapter("part-one/chapter-one.md"))));
+
+            await WaitUntilAsync(
+                () => context.Workspace.Nodes.Select(node => node.Node.RelativePath).SequenceEqual(
+                    new[]
+                    {
+                        "part-one/part.md",
+                        "part-one/chapter-one.md",
+                        "part-one/chapter-two.md",
+                        "part-one/chapter-three.md"
+                    }),
+                $"Workspace did not reorder included nodes correctly. Actual: {string.Join(", ", context.Workspace.Nodes.Select(node => node.Node.RelativePath))}.");
+            await WaitForBoardProjectionAsync(board,
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md",
+                "part-one/chapter-three.md");
+
+            Assert.Equal(
+                new[]
+                {
+                    "part-one/part.md",
+                    "part-one/chapter-one.md",
+                    "part-one/chapter-two.md",
+                    "part-one/chapter-three.md"
+                },
+                ReadBookTxtLines(context.BookTxtPath));
+            Assert.Empty(await context.LoadExcludedPathsAsync());
+            Assert.DoesNotContain(board.Items, item => item.Kind == CorkboardItemKind.ExcludedChapterCard && item.RelativePath == "part-one/chapter-two.md");
+            Assert.IsType<ChapterCardItemViewModel>(board.Items.Single(item => item.RelativePath == "part-one/chapter-two.md"));
+            Assert.Null(board.LastStructuralError);
+            Assert.Empty(context.NotificationService.Errors);
+
+            using var reloadedContext = new TestContext(workspaceRoot, ownsWorkspace: false);
+            await reloadedContext.OpenWorkspaceAsync(expectedNodeCount: 4);
+            using var reloadedBoard = reloadedContext.CreateBoard();
+            await WaitForBoardProjectionAsync(reloadedBoard,
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md",
+                "part-one/chapter-three.md");
+            Assert.IsType<ChapterCardItemViewModel>(reloadedBoard.Items.Single(item => item.RelativePath == "part-one/chapter-two.md"));
+        }
+        finally
+        {
+            DeleteWorkspace(workspaceRoot);
+        }
+    }
+
+    [Fact]
+    public async Task CommitInlineCreateAsync_CreatesChapterBetweenCardsAndPreservesSingleUuidAcrossFreshReload()
+    {
+        var workspaceRoot = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-one/chapter-three.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-three.md", "# Chapter Three"));
+
+        try
+        {
+            using var context = new TestContext(workspaceRoot, ownsWorkspace: false);
+            await context.OpenWorkspaceAsync(expectedNodeCount: 3);
+            using var board = context.CreateBoard();
+            await WaitForBoardProjectionAsync(board,
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-three.md");
+
+            var owningPart = GetPartDivider(board, "part-one/part.md");
+            board.BeginInlineCreate(board.GetInsertIndexAfterChapter("part-one/chapter-one.md"), owningPart);
+            await board.CommitInlineCreateAsync("Chapter Two");
+
+            await context.WaitForNodeAsync("part-one/chapter-two.md", requireUuid: true);
+            await WaitForBoardProjectionAsync(board,
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md",
+                "part-one/chapter-three.md");
+
+            Assert.Equal("# Chapter Two\n\n", await File.ReadAllTextAsync(AbsolutePath(workspaceRoot, "part-one/chapter-two.md")));
+            Assert.Equal(
+                new[]
+                {
+                    "part-one/part.md",
+                    "part-one/chapter-one.md",
+                    "part-one/chapter-two.md",
+                    "part-one/chapter-three.md"
+                },
+                ReadBookTxtLines(context.BookTxtPath));
+
+            var registry = await context.RegistryService.LoadAsync(workspaceRoot);
+            var firstUuid = Assert.Single(registry.Values, entry => entry.CurrentPath == "part-one/chapter-two.md").Uuid;
+            Assert.False(string.IsNullOrWhiteSpace(firstUuid));
+            Assert.Null(board.LastStructuralError);
+            Assert.Empty(context.NotificationService.Errors);
+
+            using var reloadedContext = new TestContext(workspaceRoot, ownsWorkspace: false);
+            await reloadedContext.OpenWorkspaceAsync(expectedNodeCount: 4);
+            var reloadedNode = await reloadedContext.WaitForNodeAsync("part-one/chapter-two.md", requireUuid: true);
+            Assert.Equal(firstUuid, reloadedNode.Uuid);
+
+            var reloadedRegistry = await reloadedContext.RegistryService.LoadAsync(workspaceRoot);
+            Assert.Equal(firstUuid, Assert.Single(reloadedRegistry.Values, entry => entry.CurrentPath == "part-one/chapter-two.md").Uuid);
+
+            using var reloadedBoard = reloadedContext.CreateBoard();
+            await WaitForBoardProjectionAsync(reloadedBoard,
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md",
+                "part-one/chapter-three.md");
+        }
+        finally
+        {
+            DeleteWorkspace(workspaceRoot);
+        }
+    }
+
+    [Fact]
+    public async Task CommitInlineCreateAsync_AroundPartDividers_UsesEmptyAndNestedPartFolderSemantics()
+    {
+        var workspaceRoot = CreateWorkspace(
+            ("Book.txt", "intro.md\npart-empty/part.md\npart-two/part.md\npart-two/act-one/part.md\npart-two/act-one/chapter-one.md"),
+            ("intro.md", "# Intro"),
+            ("part-empty/part.md", "{class: part}\n# Part Empty"),
+            ("part-two/part.md", "{class: part}\n# Part Two"),
+            ("part-two/act-one/part.md", "{class: part}\n# Act One"),
+            ("part-two/act-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            using var context = new TestContext(workspaceRoot, ownsWorkspace: false);
+            await context.OpenWorkspaceAsync(expectedNodeCount: 5);
+            using var board = context.CreateBoard();
+            await WaitForBoardProjectionAsync(board,
+                "intro.md",
+                "part-empty/part.md",
+                "part-two/part.md",
+                "part-two/act-one/part.md",
+                "part-two/act-one/chapter-one.md");
+
+            var emptyPart = GetPartDivider(board, "part-empty/part.md");
+            board.BeginInlineCreate(board.GetInsertIndexAfterPart(emptyPart.RelativePath), emptyPart);
+            await board.CommitInlineCreateAsync("Inserted Empty");
+
+            var nestedPart = GetPartDivider(board, "part-two/act-one/part.md");
+            board.BeginInlineCreate(board.GetInsertIndexAfterPart(nestedPart.RelativePath), nestedPart);
+            await board.CommitInlineCreateAsync("Nested Scene");
+
+            await context.WaitForNodeAsync("part-empty/inserted-empty.md", requireUuid: true);
+            await context.WaitForNodeAsync("part-two/act-one/nested-scene.md", requireUuid: true);
+            await WaitForBoardProjectionAsync(board,
+                "intro.md",
+                "part-empty/part.md",
+                "part-empty/inserted-empty.md",
+                "part-two/part.md",
+                "part-two/act-one/part.md",
+                "part-two/act-one/chapter-one.md",
+                "part-two/act-one/nested-scene.md");
+
+            Assert.True(File.Exists(AbsolutePath(workspaceRoot, "part-empty/inserted-empty.md")));
+            Assert.True(File.Exists(AbsolutePath(workspaceRoot, "part-two/act-one/nested-scene.md")));
+            Assert.Equal("# Inserted Empty\n\n", await File.ReadAllTextAsync(AbsolutePath(workspaceRoot, "part-empty/inserted-empty.md")));
+            Assert.Equal("# Nested Scene\n\n", await File.ReadAllTextAsync(AbsolutePath(workspaceRoot, "part-two/act-one/nested-scene.md")));
+            Assert.Equal(
+                new[]
+                {
+                    "intro.md",
+                    "part-empty/part.md",
+                    "part-empty/inserted-empty.md",
+                    "part-two/part.md",
+                    "part-two/act-one/part.md",
+                    "part-two/act-one/chapter-one.md",
+                    "part-two/act-one/nested-scene.md"
+                },
+                ReadBookTxtLines(context.BookTxtPath));
+
+            using var reloadedContext = new TestContext(workspaceRoot, ownsWorkspace: false);
+            await reloadedContext.OpenWorkspaceAsync(expectedNodeCount: 7);
+            using var reloadedBoard = reloadedContext.CreateBoard();
+            await WaitForBoardProjectionAsync(reloadedBoard,
+                "intro.md",
+                "part-empty/part.md",
+                "part-empty/inserted-empty.md",
+                "part-two/part.md",
+                "part-two/act-one/part.md",
+                "part-two/act-one/chapter-one.md",
+                "part-two/act-one/nested-scene.md");
+        }
+        finally
+        {
+            DeleteWorkspace(workspaceRoot);
+        }
+    }
+
+    [Fact]
+    public async Task CommitInlineCreateAsync_DuplicatePathFailure_LeavesBookFilesAndRegistryRecoverable()
+    {
+        var workspaceRoot = CreateWorkspace(
+            ("Book.txt", "part-two/part.md\npart-two/act-one/part.md\npart-two/act-one/scene-1.md"),
+            ("part-two/part.md", "{class: part}\n# Part Two"),
+            ("part-two/act-one/part.md", "{class: part}\n# Act One"),
+            ("part-two/act-one/scene-1.md", "# Scene 1"));
+
+        try
+        {
+            using var context = new TestContext(workspaceRoot, ownsWorkspace: false);
+            await context.OpenWorkspaceAsync(expectedNodeCount: 3);
+            using var board = context.CreateBoard();
+            await WaitForBoardProjectionAsync(board,
+                "part-two/part.md",
+                "part-two/act-one/part.md",
+                "part-two/act-one/scene-1.md");
+
+            var beforeBook = ReadBookTxtLines(context.BookTxtPath);
+            var beforeRegistry = await context.RegistryService.LoadAsync(workspaceRoot);
+            var nestedPart = GetPartDivider(board, "part-two/act-one/part.md");
+
+            board.BeginInlineCreate(board.GetInsertIndexAfterPart(nestedPart.RelativePath), nestedPart);
+            await board.CommitInlineCreateAsync("Scene 1");
+
+            await WaitForBoardProjectionAsync(board,
+                "part-two/part.md",
+                "part-two/act-one/part.md",
+                "part-two/act-one/scene-1.md");
+
+            Assert.Equal(beforeBook, ReadBookTxtLines(context.BookTxtPath));
+            Assert.True(File.Exists(AbsolutePath(workspaceRoot, "part-two/act-one/scene-1.md")));
+            Assert.Equal(beforeRegistry.Count, (await context.RegistryService.LoadAsync(workspaceRoot)).Count);
+            Assert.DoesNotContain(board.Items, item => item.Kind == CorkboardItemKind.InlineCreate);
+            Assert.Equal("Create chapter", board.LastStructuralError?.Operation);
+            Assert.Equal("part-two/act-one/scene-1.md", board.LastStructuralError?.Path);
+            Assert.Equal(context.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+            Assert.Contains("already exists", board.LastStructuralError?.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+            var error = Assert.Single(context.NotificationService.Errors);
+            Assert.Contains(context.BookTxtPath, error);
+            Assert.Contains("already exists", error, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            DeleteWorkspace(workspaceRoot);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExistingChapterCommand_InvalidPathFailure_LeavesBookManifestRegistryAndProjectionRecoverable()
+    {
+        var workspaceRoot = CreateWorkspace(
+            ("Book.txt", "chapter-one.md"),
+            ("chapter-one.md", "# Chapter One"),
+            ("chapter-two.md", "# Chapter Two"));
+
+        try
+        {
+            using var context = new TestContext(workspaceRoot, ownsWorkspace: false);
+            var excluded = await context.ExclusionManifestService.ExcludeAsync(workspaceRoot, "chapter-two.md");
+            Assert.True(excluded.IsSuccess, excluded.Error);
+
+            await context.OpenWorkspaceAsync(expectedNodeCount: 2);
+            using var board = context.CreateBoard();
+            await WaitForBoardProjectionAsync(board, "chapter-one.md");
+            await WaitForExcludedCardAsync(board, "chapter-two.md");
+
+            var beforeBook = ReadBookTxtLines(context.BookTxtPath);
+            var beforeManifest = await context.LoadExcludedPathsAsync();
+            var beforeRegistry = await context.RegistryService.LoadAsync(workspaceRoot);
+            var beforeProjection = board.Items.Select(item => (item.Kind, item.RelativePath)).ToArray();
+
+            await ExecuteCommandAsync(board.IncludeExistingChapterCommand.Execute(
+                new IncludeExistingChapterRequest("../escape.md", board.GetBookInsertIndex())));
+
+            Assert.Equal(beforeBook, ReadBookTxtLines(context.BookTxtPath));
+            Assert.Equal(beforeManifest, await context.LoadExcludedPathsAsync());
+            Assert.Equal(beforeRegistry.Count, (await context.RegistryService.LoadAsync(workspaceRoot)).Count);
+            Assert.Equal(beforeProjection, board.Items.Select(item => (item.Kind, item.RelativePath)).ToArray());
+            Assert.Equal("Include chapter", board.LastStructuralError?.Operation);
+            Assert.Equal("../escape.md", board.LastStructuralError?.Path);
+            Assert.Equal(context.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+            Assert.Contains("outside the manuscript root", board.LastStructuralError?.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+            var error = Assert.Single(context.NotificationService.Errors);
+            Assert.Contains(context.BookTxtPath, error);
+            Assert.Contains("outside the manuscript root", error, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            DeleteWorkspace(workspaceRoot);
+        }
+    }
+
     private static string CreateWorkspace(params (string Path, string Content)[] files)
     {
         var root = Path.Combine(Path.GetTempPath(), $"hymnal-corkboard-integration-{Guid.NewGuid():N}");
@@ -298,6 +684,19 @@ public sealed class CorkboardViewModelIntegrationTests
 
     private static string[] ReadBookTxtLines(string bookTxtPath) => File.ReadAllLines(bookTxtPath);
 
+    private static void DeleteWorkspace(string workspaceRoot)
+    {
+        try
+        {
+            if (Directory.Exists(workspaceRoot))
+                Directory.Delete(workspaceRoot, recursive: true);
+        }
+        catch
+        {
+            // Best effort cleanup only.
+        }
+    }
+
     private static IEnumerable<string> GetProjectedPaths(CorkboardViewModel board) =>
         board.Items
             .Where(item => item.Kind is CorkboardItemKind.PartDivider or CorkboardItemKind.ChapterCard)
@@ -305,6 +704,21 @@ public sealed class CorkboardViewModelIntegrationTests
 
     private static ChapterCardItemViewModel GetChapterCard(CorkboardViewModel board, string relativePath) =>
         Assert.IsType<ChapterCardItemViewModel>(board.Items.First(item => item.RelativePath == relativePath));
+
+    private static PartDividerItemViewModel GetPartDivider(CorkboardViewModel board, string relativePath) =>
+        Assert.IsType<PartDividerItemViewModel>(board.Items.First(item => item.RelativePath == relativePath));
+
+    private static async Task<ExcludedChapterCardItemViewModel> WaitForExcludedCardAsync(CorkboardViewModel board, string relativePath)
+    {
+        await WaitUntilAsync(
+            () => board.Items.Any(item => item.Kind == CorkboardItemKind.ExcludedChapterCard
+                                          && string.Equals(item.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase)),
+            $"Excluded board card '{relativePath}' did not appear.");
+
+        return Assert.IsType<ExcludedChapterCardItemViewModel>(
+            board.Items.Single(item => item.Kind == CorkboardItemKind.ExcludedChapterCard
+                                       && string.Equals(item.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase)));
+    }
 
     private static async Task ExecuteCommandAsync(IObservable<System.Reactive.Unit> execution)
     {
@@ -382,6 +796,8 @@ public sealed class CorkboardViewModelIntegrationTests
 
     private sealed class TestContext : IDisposable
     {
+        private readonly bool _ownsWorkspace;
+
         public RecordingNotificationService NotificationService { get; } = new();
         public MetadataStore MetadataStore { get; } = new();
         public InMemoryAppSettingsStore SettingsStore { get; } = new();
@@ -402,9 +818,11 @@ public sealed class CorkboardViewModelIntegrationTests
 
         public TestContext(
             string workspaceRoot,
-            Func<IMetadataStore, IExclusionManifestService>? exclusionManifestServiceFactory = null)
+            Func<IMetadataStore, IExclusionManifestService>? exclusionManifestServiceFactory = null,
+            bool ownsWorkspace = true)
         {
             WorkspaceRoot = workspaceRoot;
+            _ownsWorkspace = ownsWorkspace;
             FolderPickerService = new StubFolderPickerService(workspaceRoot);
             ExclusionManifestService = exclusionManifestServiceFactory?.Invoke(MetadataStore)
                 ?? new ExclusionManifestService(MetadataStore);
@@ -569,6 +987,13 @@ public sealed class CorkboardViewModelIntegrationTests
             return (IDictionary<TKey, TValue>)field.GetValue(workspace)!;
         }
 
+        public async Task<IReadOnlyList<string>> LoadExcludedPathsAsync()
+        {
+            var manifest = await ExclusionManifestService.LoadAsync(WorkspaceRoot);
+            Assert.True(manifest.IsSuccess, manifest.Error);
+            return manifest.Value!.ExcludedPaths;
+        }
+
         public sealed class TestWorkspaceViewModel : WorkspaceViewModel
         {
             private readonly Func<Task<Result<Unit>>> _reloadWorkspaceFromDiskAsync;
@@ -615,6 +1040,9 @@ public sealed class CorkboardViewModelIntegrationTests
         {
             Editor.Dispose();
             ManuscriptService.Dispose();
+
+            if (!_ownsWorkspace)
+                return;
 
             try
             {

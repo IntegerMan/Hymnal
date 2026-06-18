@@ -158,7 +158,15 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
             if (chapter.Node.Kind == NodeKind.Chapter)
 
+            {
+
+                if (chapter.Node.IsExcluded)
+
+                    continue;
+
                 items.Add(new ChapterCardItemViewModel(new CardViewModel(chapter), currentPart));
+
+            }
 
         }
 
