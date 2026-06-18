@@ -726,7 +726,8 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         await ExecuteStructuralOperationAsync(
             "Remove from book",
             request.ChapterPath,
-            () => _structureService.ExcludeEntryAsync(_workspace.BookTxtPath, request.ChapterPath));
+            () => _structureService.ExcludeEntryAsync(_workspace.BookTxtPath, request.ChapterPath),
+            string.Empty);
     }
 
     private async Task DeleteChapterAsync(DeleteChapterRequest request)
@@ -811,6 +812,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         if (match == null)
         {
             _pendingSelectionPath = relativePath;
+            SetSelectedCard(null);
             return;
         }
 

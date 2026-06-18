@@ -445,6 +445,205 @@ public sealed class CorkboardViewModelTests
     }
 
     [Fact]
+    public async Task RemoveFromBookCommand_UsesCanonicalExcludeReloadsAndClearsSelectionWhenCardBecomesExcluded()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.OrphanDiscovery.Orphans = new[]
+        {
+            new OrphanFileInfo("part-one/chapter-one.md", "Chapter One", "part-one")
+        };
+        var part = CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part);
+        var chapter = CreateChapter(context, "part-one/chapter-one.md", "Chapter One");
+        SeedWorkspaceNodes(context, part, chapter);
+
+        using var board = context.CreateCorkboard();
+        var card = GetChapterCard(board, "part-one/chapter-one.md");
+        await ExecuteCommandAsync(board.SelectCardCommand.Execute(card));
+        context.Workspace.OnReload = () => SeedWorkspaceNodes(context, part);
+
+        await ExecuteCommandAsync(board.RemoveFromBookCommand.Execute(
+            new RemoveChapterRequest("part-one/chapter-one.md")));
+
+        var exclude = Assert.Single(context.StructureService.ExcludeCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md"), exclude);
+        Assert.Empty(context.StructureService.RemoveCalls);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Null(board.LastStructuralError);
+        Assert.Null(board.SelectedCard);
+        Assert.False(card.Card.IsSelected);
+        Assert.Contains(board.Items, item =>
+            item.Kind == CorkboardItemKind.ExcludedChapterCard &&
+            item.RelativePath == "part-one/chapter-one.md");
+    }
+
+    [Fact]
+    public async Task IncludeExistingChapterCommand_WithIndex_UsesCanonicalIncludeAndReloads()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.OrphanDiscovery.Orphans = new[]
+        {
+            new OrphanFileInfo("part-one/excluded.md", "Excluded", "part-one")
+        };
+        var part = CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part);
+        SeedWorkspaceNodes(context, part);
+
+        using var board = context.CreateCorkboard();
+        Assert.True(
+            SpinWait.SpinUntil(
+                () => board.Items.Any(item => item.Kind == CorkboardItemKind.ExcludedChapterCard && item.RelativePath == "part-one/excluded.md"),
+                TimeSpan.FromSeconds(2)),
+            "Excluded card was not projected before include contract assertion.");
+        context.Workspace.OnReload = () =>
+        {
+            context.OrphanDiscovery.Orphans = Array.Empty<OrphanFileInfo>();
+            SeedWorkspaceNodes(context, part, CreateChapter(context, "part-one/excluded.md", "Excluded"));
+        };
+
+        await ExecuteCommandAsync(board.IncludeExistingChapterCommand.Execute(
+            new IncludeExistingChapterRequest("part-one/excluded.md", Index: 1)));
+
+        var include = Assert.Single(context.StructureService.IncludeExistingIndexCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/excluded.md", 1), include);
+        Assert.Empty(context.StructureService.AddExistingIndexCalls);
+        Assert.Empty(context.StructureService.IncludeExistingPartCalls);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Null(board.LastStructuralError);
+        Assert.True(
+            SpinWait.SpinUntil(
+                () => board.Items.Any(item =>
+                    item.Kind == CorkboardItemKind.ChapterCard &&
+                    item.RelativePath == "part-one/excluded.md"),
+                TimeSpan.FromSeconds(2)),
+            "Included card was not projected after workspace reload.");
+    }
+
+    [Fact]
+    public async Task IncludeExistingChapterCommand_WithPartPath_UsesCanonicalIncludeAfterPartAndReloads()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.OrphanDiscovery.Orphans = new[]
+        {
+            new OrphanFileInfo("part-one/excluded.md", "Excluded", "part-one")
+        };
+        var part = CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part);
+        SeedWorkspaceNodes(context, part);
+
+        using var board = context.CreateCorkboard();
+        Assert.True(
+            SpinWait.SpinUntil(
+                () => board.Items.Any(item => item.Kind == CorkboardItemKind.ExcludedChapterCard && item.RelativePath == "part-one/excluded.md"),
+                TimeSpan.FromSeconds(2)),
+            "Excluded card was not projected before include-after-part contract assertion.");
+        context.Workspace.OnReload = () =>
+        {
+            context.OrphanDiscovery.Orphans = Array.Empty<OrphanFileInfo>();
+            SeedWorkspaceNodes(context, part, CreateChapter(context, "part-one/excluded.md", "Excluded"));
+        };
+
+        await ExecuteCommandAsync(board.IncludeExistingChapterCommand.Execute(
+            new IncludeExistingChapterRequest("part-one/excluded.md", PartPath: "part-one/part.md")));
+
+        var include = Assert.Single(context.StructureService.IncludeExistingPartCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/excluded.md", "part-one/part.md"), include);
+        Assert.Empty(context.StructureService.AddExistingPartCalls);
+        Assert.Empty(context.StructureService.IncludeExistingIndexCalls);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Null(board.LastStructuralError);
+    }
+
+    [Fact]
+    public async Task IncludeExistingChapterCommand_WithoutIndexOrPartPath_FailsLocallyWithoutCallingCore()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part));
+
+        using var board = context.CreateCorkboard();
+
+        await ExecuteCommandAsync(board.IncludeExistingChapterCommand.Execute(
+            new IncludeExistingChapterRequest("part-one/excluded.md")));
+
+        Assert.Empty(context.StructureService.IncludeExistingIndexCalls);
+        Assert.Empty(context.StructureService.IncludeExistingPartCalls);
+        Assert.Empty(context.StructureService.AddExistingIndexCalls);
+        Assert.Empty(context.StructureService.AddExistingPartCalls);
+        Assert.Equal(0, context.Workspace.ReloadCount);
+        Assert.Equal("Include chapter", board.LastStructuralError?.Operation);
+        Assert.Equal("part-one/excluded.md", board.LastStructuralError?.Path);
+        Assert.Equal(context.Workspace.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+        Assert.Contains("requires either an index or a part path", board.LastStructuralError?.Message ?? string.Empty);
+        Assert.Contains("requires either an index or a part path", Assert.Single(context.NotificationService.Errors));
+    }
+
+    [Fact]
+    public async Task IncludeExistingChapterCommand_CoreFailure_LeavesProjectionIntactAndSurfacesStructuralError()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.StructureService.IncludeExistingIndexResult = Result<Unit>.Fail("include denied by structure service");
+        context.OrphanDiscovery.Orphans = new[]
+        {
+            new OrphanFileInfo("part-one/excluded.md", "Excluded", "part-one")
+        };
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part));
+
+        using var board = context.CreateCorkboard();
+        Assert.True(
+            SpinWait.SpinUntil(
+                () => board.Items.Any(item => item.Kind == CorkboardItemKind.ExcludedChapterCard && item.RelativePath == "part-one/excluded.md"),
+                TimeSpan.FromSeconds(2)),
+            "Excluded card was not projected before include failure assertion.");
+        var itemsBefore = board.Items.Select(item => (item.Kind, item.RelativePath)).ToArray();
+
+        await ExecuteCommandAsync(board.IncludeExistingChapterCommand.Execute(
+            new IncludeExistingChapterRequest("part-one/excluded.md", Index: 1)));
+
+        Assert.Single(context.StructureService.IncludeExistingIndexCalls);
+        Assert.Equal(0, context.Workspace.ReloadCount);
+        Assert.Equal(itemsBefore, board.Items.Select(item => (item.Kind, item.RelativePath)).ToArray());
+        Assert.Equal("Include chapter", board.LastStructuralError?.Operation);
+        Assert.Equal("part-one/excluded.md", board.LastStructuralError?.Path);
+        Assert.Equal(context.Workspace.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+        Assert.Equal("include denied by structure service", board.LastStructuralError?.Message);
+        Assert.Contains("include denied by structure service", Assert.Single(context.NotificationService.Errors));
+    }
+
+    [Fact]
+    public async Task RemoveFromBookCommand_CoreFailure_LeavesProjectionIntactAndSurfacesStructuralError()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.StructureService.ExcludeResult = Result<Unit>.Fail("exclude denied by structure service");
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"));
+
+        using var board = context.CreateCorkboard();
+        var card = GetChapterCard(board, "part-one/chapter-one.md");
+        await ExecuteCommandAsync(board.SelectCardCommand.Execute(card));
+        var itemsBefore = board.Items.Select(item => (item.Kind, item.RelativePath)).ToArray();
+
+        await ExecuteCommandAsync(board.RemoveFromBookCommand.Execute(
+            new RemoveChapterRequest("part-one/chapter-one.md")));
+
+        Assert.Single(context.StructureService.ExcludeCalls);
+        Assert.Empty(context.StructureService.RemoveCalls);
+        Assert.Equal(0, context.Workspace.ReloadCount);
+        Assert.Equal(itemsBefore, board.Items.Select(item => (item.Kind, item.RelativePath)).ToArray());
+        Assert.Same(card.Card, board.SelectedCard);
+        Assert.Equal("Remove from book", board.LastStructuralError?.Operation);
+        Assert.Equal("part-one/chapter-one.md", board.LastStructuralError?.Path);
+        Assert.Equal(context.Workspace.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+        Assert.Equal("exclude denied by structure service", board.LastStructuralError?.Message);
+        Assert.Contains("exclude denied by structure service", Assert.Single(context.NotificationService.Errors));
+    }
+
+    [Fact]
     public async Task StructuralFailure_LeavesSelectionIntactAndSurfacesError()
     {
         var context = CreateContext();
@@ -750,6 +949,7 @@ public sealed class CorkboardViewModelTests
         public int ReorderCount { get; private set; }
         public Result<Unit> ReloadResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> ReorderResult { get; set; } = Result<Unit>.Ok(Unit.Default);
+        public Action? OnReload { get; set; }
 
         public SpyWorkspaceViewModel(
             ManuscriptService manuscriptService,
@@ -771,6 +971,9 @@ public sealed class CorkboardViewModelTests
         public override Task<Result<Unit>> ReloadCurrentWorkspaceAsync()
         {
             ReloadCount++;
+            if (ReloadResult.IsSuccess)
+                OnReload?.Invoke();
+
             return Task.FromResult(ReloadResult);
         }
 
@@ -849,18 +1052,24 @@ public sealed class CorkboardViewModelTests
         public List<(string BookTxtPath, string ExistingPath, string ReplacementPath, int NewIndex)> MoveCalls { get; } = new();
         public List<(string BookTxtPath, string ExistingPath, string ReplacementPath)> RenameCalls { get; } = new();
         public List<(string BookTxtPath, string ChapterPath, string Content, int Index)> CreateCalls { get; } = new();
-        public List<(string BookTxtPath, string ChapterPath, int Index)> IncludeIndexCalls { get; } = new();
-        public List<(string BookTxtPath, string ChapterPath, string PartPath)> IncludePartCalls { get; } = new();
+        public List<(string BookTxtPath, string ChapterPath, int Index)> AddExistingIndexCalls { get; } = new();
+        public List<(string BookTxtPath, string ChapterPath, string PartPath)> AddExistingPartCalls { get; } = new();
+        public List<(string BookTxtPath, string ChapterPath, int Index)> IncludeExistingIndexCalls { get; } = new();
+        public List<(string BookTxtPath, string ChapterPath, string PartPath)> IncludeExistingPartCalls { get; } = new();
         public List<(string BookTxtPath, string ChapterPath)> RemoveCalls { get; } = new();
+        public List<(string BookTxtPath, string ChapterPath)> ExcludeCalls { get; } = new();
         public List<(string BookTxtPath, string ChapterPath)> DeleteCalls { get; } = new();
 
         public Result<Unit> ReorderResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> MoveResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> RenameResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> CreateResult { get; set; } = Result<Unit>.Ok(Unit.Default);
-        public Result<Unit> IncludeIndexResult { get; set; } = Result<Unit>.Ok(Unit.Default);
-        public Result<Unit> IncludePartResult { get; set; } = Result<Unit>.Ok(Unit.Default);
+        public Result<Unit> AddExistingIndexResult { get; set; } = Result<Unit>.Ok(Unit.Default);
+        public Result<Unit> AddExistingPartResult { get; set; } = Result<Unit>.Ok(Unit.Default);
+        public Result<Unit> IncludeExistingIndexResult { get; set; } = Result<Unit>.Ok(Unit.Default);
+        public Result<Unit> IncludeExistingPartResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> RemoveResult { get; set; } = Result<Unit>.Ok(Unit.Default);
+        public Result<Unit> ExcludeResult { get; set; } = Result<Unit>.Ok(Unit.Default);
         public Result<Unit> DeleteResult { get; set; } = Result<Unit>.Ok(Unit.Default);
 
         public Task<Result<IReadOnlyList<string>>> ReadNormalizedEntriesAsync(string bookTxtPath)
@@ -886,14 +1095,26 @@ public sealed class CorkboardViewModelTests
 
         public Task<Result<Unit>> AddExistingEntryAsync(string bookTxtPath, string chapterPath, int index)
         {
-            IncludeIndexCalls.Add((bookTxtPath, chapterPath, index));
-            return Task.FromResult(IncludeIndexResult);
+            AddExistingIndexCalls.Add((bookTxtPath, chapterPath, index));
+            return Task.FromResult(AddExistingIndexResult);
         }
 
         public Task<Result<Unit>> AddExistingEntryAfterPartAsync(string bookTxtPath, string chapterPath, string partPath)
         {
-            IncludePartCalls.Add((bookTxtPath, chapterPath, partPath));
-            return Task.FromResult(IncludePartResult);
+            AddExistingPartCalls.Add((bookTxtPath, chapterPath, partPath));
+            return Task.FromResult(AddExistingPartResult);
+        }
+
+        public Task<Result<Unit>> IncludeExistingEntryAsync(string bookTxtPath, string chapterPath, int index)
+        {
+            IncludeExistingIndexCalls.Add((bookTxtPath, chapterPath, index));
+            return Task.FromResult(IncludeExistingIndexResult);
+        }
+
+        public Task<Result<Unit>> IncludeExistingEntryAfterPartAsync(string bookTxtPath, string chapterPath, string partPath)
+        {
+            IncludeExistingPartCalls.Add((bookTxtPath, chapterPath, partPath));
+            return Task.FromResult(IncludeExistingPartResult);
         }
 
         public Task<Result<Unit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index)
@@ -909,6 +1130,12 @@ public sealed class CorkboardViewModelTests
         {
             RemoveCalls.Add((bookTxtPath, chapterPath));
             return Task.FromResult(RemoveResult);
+        }
+
+        public Task<Result<Unit>> ExcludeEntryAsync(string bookTxtPath, string chapterPath)
+        {
+            ExcludeCalls.Add((bookTxtPath, chapterPath));
+            return Task.FromResult(ExcludeResult);
         }
 
         public Task<Result<Unit>> DeleteChapterFileAsync(string bookTxtPath, string chapterPath)
