@@ -1,6 +1,7 @@
 using Hymnal.Core.Common;
 using Hymnal.Core.Infrastructure;
 using Hymnal.Core.Interfaces;
+using Hymnal.Core.Models;
 
 namespace Hymnal.Core.Services;
 
@@ -8,16 +9,26 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
 {
     private readonly IMetadataStore _metadataStore;
     private readonly IExclusionManifestService _exclusionManifestService;
+    private readonly ChapterRegistryService _chapterRegistryService;
 
     public BookTxtStructureService(IMetadataStore metadataStore)
-        : this(metadataStore, new ExclusionManifestService(metadataStore))
+        : this(metadataStore, new ExclusionManifestService(metadataStore), new ChapterRegistryService(metadataStore))
     {
     }
 
     public BookTxtStructureService(IMetadataStore metadataStore, IExclusionManifestService exclusionManifestService)
+        : this(metadataStore, exclusionManifestService, new ChapterRegistryService(metadataStore))
+    {
+    }
+
+    public BookTxtStructureService(
+        IMetadataStore metadataStore,
+        IExclusionManifestService exclusionManifestService,
+        ChapterRegistryService chapterRegistryService)
     {
         _metadataStore = metadataStore;
         _exclusionManifestService = exclusionManifestService;
+        _chapterRegistryService = chapterRegistryService;
     }
 
     public async Task<Result<IReadOnlyList<string>>> ReadNormalizedEntriesAsync(string bookTxtPath)
@@ -98,6 +109,98 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
 
         var write = await WriteBookTxtAsync(doc.BookTxtPath, lines).ConfigureAwait(false);
         return write.IsSuccess ? Result<Unit>.Ok(Unit.Default) : Result<Unit>.Fail(write.Error!);
+    }
+
+    public async Task<Result<Unit>> MoveEntryAsync(string bookTxtPath, string existingPath, string replacementPath, int newIndex)
+    {
+        var document = await LoadDocumentAsync(bookTxtPath).ConfigureAwait(false);
+        if (!document.IsSuccess)
+            return Result<Unit>.Fail(document.Error!);
+
+        var doc = document.Value!;
+        var sourcePath = NormalizeStructurePath(doc.ManuscriptRoot, existingPath, nameof(existingPath));
+        if (!sourcePath.IsSuccess)
+            return Result<Unit>.Fail(sourcePath.Error!);
+
+        var replacement = NormalizeStructurePath(doc.ManuscriptRoot, replacementPath, nameof(replacementPath));
+        if (!replacement.IsSuccess)
+            return Result<Unit>.Fail(replacement.Error!);
+
+        if (string.Equals(sourcePath.Value!.RelativePath, replacement.Value!.RelativePath, StringComparison.Ordinal))
+            return Result<Unit>.Ok(Unit.Default);
+
+        if (string.Equals(sourcePath.Value.RelativePath, replacement.Value.RelativePath, StringComparison.OrdinalIgnoreCase))
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during path validation: case-only path moves are not supported.");
+
+        var sourceIndex = FindEntryIndex(doc.Entries, sourcePath.Value.RelativePath);
+        if (sourceIndex < 0)
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during Book.txt validation: source entry was not found in '{doc.BookTxtPath}'.");
+
+        if (FindEntryIndex(doc.Entries, replacement.Value.RelativePath) >= 0)
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during Book.txt validation: target entry already exists in '{doc.BookTxtPath}'.");
+
+        if (newIndex < 0 || newIndex >= doc.Entries.Count)
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during Book.txt validation: requested move index {newIndex} is out of range for '{doc.BookTxtPath}'.");
+
+        if (!File.Exists(sourcePath.Value.AbsolutePath))
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during file move validation: source file '{sourcePath.Value.AbsolutePath}' does not exist.");
+
+        if (File.Exists(replacement.Value.AbsolutePath))
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during file move validation: target file '{replacement.Value.AbsolutePath}' already exists.");
+
+        var registryValidation = await BuildRegistryMoveAsync(
+            doc.ManuscriptRoot,
+            sourcePath.Value.RelativePath,
+            replacement.Value.RelativePath).ConfigureAwait(false);
+        if (!registryValidation.IsSuccess)
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during registry validation: {registryValidation.Error}");
+
+        var originalLines = doc.RawLines.ToList();
+        var updatedLines = BuildMoveLines(doc, sourceIndex, replacement.Value.RelativePath, newIndex);
+
+        try
+        {
+            var targetDirectory = Path.GetDirectoryName(replacement.Value.AbsolutePath);
+            if (!string.IsNullOrWhiteSpace(targetDirectory))
+                Directory.CreateDirectory(targetDirectory);
+
+            File.Move(sourcePath.Value.AbsolutePath, replacement.Value.AbsolutePath);
+        }
+        catch (Exception ex)
+        {
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during file move from '{sourcePath.Value.AbsolutePath}' to '{replacement.Value.AbsolutePath}': {ex.Message}");
+        }
+
+        var bookWrite = await WriteBookTxtAsync(doc.BookTxtPath, updatedLines).ConfigureAwait(false);
+        if (!bookWrite.IsSuccess)
+            return await RollBackMoveAsync(
+                doc.BookTxtPath,
+                sourcePath.Value,
+                replacement.Value,
+                restoreBookTxtLines: null,
+                failurePhase: "Book.txt write",
+                failureDetail: bookWrite.Error!).ConfigureAwait(false);
+
+        try
+        {
+            await _chapterRegistryService.SaveAsync(doc.ManuscriptRoot, registryValidation.Value!).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return await RollBackMoveAsync(
+                doc.BookTxtPath,
+                sourcePath.Value,
+                replacement.Value,
+                originalLines,
+                failurePhase: "registry update",
+                failureDetail: ex.Message).ConfigureAwait(false);
+        }
+
+        var include = await _exclusionManifestService.IncludeAsync(doc.ManuscriptRoot, replacement.Value.RelativePath).ConfigureAwait(false);
+        if (!include.IsSuccess)
+            return Result<Unit>.Fail($"Move operation failed for '{sourcePath.Value.RelativePath}' to '{replacement.Value.RelativePath}' during manifest save after file move, Book.txt write, and registry update: {include.Error}");
+
+        return Result<Unit>.Ok(Unit.Default);
     }
 
     public async Task<Result<Unit>> AddExistingEntryAsync(string bookTxtPath, string chapterPath, int index)
@@ -385,6 +488,97 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
 
             return Result<Unit>.Fail($"Failed to delete chapter file '{normalized.Value.AbsolutePath}': {ex.Message}");
         }
+    }
+
+    private async Task<Result<Dictionary<string, ChapterRegistryEntry>>> BuildRegistryMoveAsync(
+        string manuscriptRoot,
+        string sourceRelativePath,
+        string replacementRelativePath)
+    {
+        Dictionary<string, ChapterRegistryEntry> registry;
+        try
+        {
+            registry = await _chapterRegistryService.LoadAsync(manuscriptRoot).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return Result<Dictionary<string, ChapterRegistryEntry>>.Fail($"failed to load chapter registry: {ex.Message}");
+        }
+
+        var sourceMatches = registry
+            .Where(pair => string.Equals(pair.Value.CurrentPath, sourceRelativePath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (sourceMatches.Count == 0)
+            return Result<Dictionary<string, ChapterRegistryEntry>>.Fail($"no registry entry exists for source path '{sourceRelativePath}'; refusing to move because UUID continuity cannot be proven.");
+
+        if (sourceMatches.Count > 1)
+            return Result<Dictionary<string, ChapterRegistryEntry>>.Fail($"multiple registry entries exist for source path '{sourceRelativePath}'; refusing to move because UUID continuity is ambiguous.");
+
+        var sourceUuid = sourceMatches[0].Key;
+        var targetConflict = registry.Any(pair =>
+            !string.Equals(pair.Key, sourceUuid, StringComparison.Ordinal) &&
+            string.Equals(pair.Value.CurrentPath, replacementRelativePath, StringComparison.OrdinalIgnoreCase));
+        if (targetConflict)
+            return Result<Dictionary<string, ChapterRegistryEntry>>.Fail($"another registry entry already targets replacement path '{replacementRelativePath}'.");
+
+        var updated = _chapterRegistryService.ReconcileRename(registry, sourceRelativePath, replacementRelativePath);
+        return Result<Dictionary<string, ChapterRegistryEntry>>.Ok(updated);
+    }
+
+    private static List<string> BuildMoveLines(BookDocument doc, int sourceIndex, string replacementRelativePath, int newIndex)
+    {
+        var lines = doc.RawLines.ToList();
+        var sourceRawIndex = doc.EntryLineIndexes[sourceIndex];
+        lines[sourceRawIndex] = replacementRelativePath;
+
+        if (sourceIndex == newIndex)
+            return lines;
+
+        var movingLine = lines[sourceRawIndex];
+        lines.RemoveAt(sourceRawIndex);
+        var insertionIndex = FindRawInsertionIndex(lines, newIndex);
+        lines.Insert(insertionIndex, movingLine);
+        return lines;
+    }
+
+    private async Task<Result<Unit>> RollBackMoveAsync(
+        string bookTxtPath,
+        (string RelativePath, string AbsolutePath) sourcePath,
+        (string RelativePath, string AbsolutePath) replacementPath,
+        IReadOnlyList<string>? restoreBookTxtLines,
+        string failurePhase,
+        string failureDetail)
+    {
+        var rollbackFailures = new List<string>();
+
+        try
+        {
+            if (File.Exists(replacementPath.AbsolutePath))
+                File.Move(replacementPath.AbsolutePath, sourcePath.AbsolutePath);
+            else
+                rollbackFailures.Add($"target file '{replacementPath.AbsolutePath}' was missing during rollback");
+        }
+        catch (Exception ex)
+        {
+            rollbackFailures.Add($"file rollback from '{replacementPath.AbsolutePath}' to '{sourcePath.AbsolutePath}' failed: {ex.Message}");
+        }
+
+        if (restoreBookTxtLines is not null)
+        {
+            var restoreBook = await WriteBookTxtAsync(bookTxtPath, restoreBookTxtLines).ConfigureAwait(false);
+            if (!restoreBook.IsSuccess)
+                rollbackFailures.Add($"Book.txt rollback failed: {restoreBook.Error}");
+        }
+
+        if (rollbackFailures.Count > 0)
+        {
+            return Result<Unit>.Fail(
+                $"Move operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during {failurePhase}: {failureDetail}; rollback attempted but rollback failed: {string.Join("; ", rollbackFailures)}.");
+        }
+
+        return Result<Unit>.Fail(
+            $"Move operation failed for '{sourcePath.RelativePath}' to '{replacementPath.RelativePath}' during {failurePhase}: {failureDetail}; rollback attempted and manuscript state was restored.");
     }
 
     private async Task<Result<BookDocument>> LoadDocumentAsync(string bookTxtPath)

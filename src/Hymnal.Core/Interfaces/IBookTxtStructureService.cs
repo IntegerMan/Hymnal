@@ -10,6 +10,13 @@ public interface IBookTxtStructureService
 
     Task<Result<Unit>> RenameEntryAsync(string bookTxtPath, string existingPath, string replacementPath);
 
+    /// <summary>
+    /// Moves an included chapter file to a replacement relative path, rewrites Book.txt at the requested entry index,
+    /// and preserves chapter-registry identity for the moved chapter.
+    /// </summary>
+    Task<Result<Unit>> MoveEntryAsync(string bookTxtPath, string existingPath, string replacementPath, int newIndex)
+        => throw new NotSupportedException("Moving entries is not supported by this implementation.");
+
     Task<Result<Unit>> AddExistingEntryAsync(string bookTxtPath, string chapterPath, int index);
 
     Task<Result<Unit>> AddExistingEntryAfterPartAsync(string bookTxtPath, string chapterPath, string partPath);

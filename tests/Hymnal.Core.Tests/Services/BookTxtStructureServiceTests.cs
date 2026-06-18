@@ -41,6 +41,18 @@ public class BookTxtStructureServiceTests
         return result.Value!.ExcludedPaths;
     }
 
+    private static async Task SaveRegistryAsync(string workspaceRoot, params ChapterRegistryEntry[] entries)
+    {
+        var registry = entries.ToDictionary(entry => entry.Uuid, entry => entry);
+        await new ChapterRegistryService(new MetadataStore()).SaveAsync(workspaceRoot, registry);
+    }
+
+    private static async Task<Dictionary<string, ChapterRegistryEntry>> LoadRegistryAsync(string workspaceRoot)
+        => await new ChapterRegistryService(new MetadataStore()).LoadAsync(workspaceRoot);
+
+    private static string AbsolutePath(string workspaceRoot, string relativePath)
+        => Path.Combine(workspaceRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+
     private static string ManifestPath(string workspaceRoot)
         => Path.Combine(workspaceRoot, ".hymnal-data", "exclusions.json");
 
@@ -527,6 +539,302 @@ public class BookTxtStructureServiceTests
     }
 
     [Fact]
+    public async Task PathMove_MoveEntryAsync_MovesAcrossParts_UpdatesBookTxtRegistryAndManifest()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-two/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/part.md", "{class: part}\n# Part Two"));
+
+        try
+        {
+            const string uuid = "chapter-uuid-1";
+            await SaveRegistryAsync(workspace.Root, new ChapterRegistryEntry
+            {
+                Uuid = uuid,
+                CurrentPath = "part-one/chapter-one.md",
+                Orphaned = false,
+                Title = "Chapter One"
+            });
+            Directory.CreateDirectory(Path.GetDirectoryName(ManifestPath(workspace.Root))!);
+            await File.WriteAllTextAsync(
+                ManifestPath(workspace.Root),
+                "{\"schemaVersion\":1,\"excludedPaths\":[\"part-two/chapter-one.md\"]}");
+            var service = CreateService();
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/chapter-one.md",
+                2);
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.False(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-two/chapter-one.md")));
+            Assert.Equal(new[]
+            {
+                "part-one/part.md",
+                "part-two/part.md",
+                "part-two/chapter-one.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+
+            var registry = await LoadRegistryAsync(workspace.Root);
+            Assert.True(registry.ContainsKey(uuid));
+            Assert.Equal("part-two/chapter-one.md", registry[uuid].CurrentPath);
+            Assert.Equal("Chapter One", registry[uuid].Title);
+            Assert.Empty(await LoadExcludedPathsAsync(workspace.Root));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PathMove_MoveEntryAsync_TargetConflictFailsWithoutWrites()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md\npart-two/chapter-one.md"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/chapter-one.md", "# Existing Target"));
+
+        try
+        {
+            var originalBookTxt = ReadBookTxt(workspace.BookTxtPath);
+            await SaveRegistryAsync(workspace.Root, new ChapterRegistryEntry
+            {
+                Uuid = "chapter-uuid-1",
+                CurrentPath = "part-one/chapter-one.md"
+            });
+            var service = CreateService();
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/chapter-one.md",
+                1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("target entry already exists", result.Error);
+            Assert.Equal(originalBookTxt, ReadBookTxt(workspace.BookTxtPath));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.Equal("# Existing Target", File.ReadAllText(AbsolutePath(workspace.Root, "part-two/chapter-one.md")));
+            var registry = await LoadRegistryAsync(workspace.Root);
+            Assert.Equal("part-one/chapter-one.md", registry["chapter-uuid-1"].CurrentPath);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PathMove_MoveEntryAsync_BookTxtWriteFailureRollsFileBackAndReportsPhase()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md\npart-two/part.md"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/part.md", "{class: part}\n# Part Two"));
+
+        try
+        {
+            var originalBookTxt = ReadBookTxt(workspace.BookTxtPath);
+            await SaveRegistryAsync(workspace.Root, new ChapterRegistryEntry
+            {
+                Uuid = "chapter-uuid-1",
+                CurrentPath = "part-one/chapter-one.md"
+            });
+            var service = CreateService(new PathAwareThrowingMetadataStore(path => path.EndsWith("Book.txt", StringComparison.OrdinalIgnoreCase)));
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/chapter-one.md",
+                1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("Book.txt write", result.Error);
+            Assert.Contains("rollback attempted and manuscript state was restored", result.Error);
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.False(File.Exists(AbsolutePath(workspace.Root, "part-two/chapter-one.md")));
+            Assert.Equal(originalBookTxt, ReadBookTxt(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PathMove_MoveEntryAsync_BookTxtWriteFailureReportsRollbackFailure()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md\npart-two/part.md"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/part.md", "{class: part}\n# Part Two"));
+
+        try
+        {
+            await SaveRegistryAsync(workspace.Root, new ChapterRegistryEntry
+            {
+                Uuid = "chapter-uuid-1",
+                CurrentPath = "part-one/chapter-one.md"
+            });
+            var sourceAbsolutePath = AbsolutePath(workspace.Root, "part-one/chapter-one.md");
+            var service = CreateService(new PathAwareThrowingMetadataStore(
+                path => path.EndsWith("Book.txt", StringComparison.OrdinalIgnoreCase),
+                beforeThrow: path => Directory.CreateDirectory(sourceAbsolutePath)));
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/chapter-one.md",
+                1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("Book.txt write", result.Error);
+            Assert.Contains("rollback attempted but rollback failed", result.Error);
+            Assert.Contains("part-one/chapter-one.md", result.Error);
+            Assert.Contains("part-two/chapter-one.md", result.Error);
+            Assert.True(Directory.Exists(sourceAbsolutePath));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-two/chapter-one.md")));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PathMove_MoveEntryAsync_RegistrySaveFailureRestoresBookTxtAndFile()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md\npart-two/part.md"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-two/part.md", "{class: part}\n# Part Two"));
+
+        try
+        {
+            var originalBookTxt = ReadBookTxt(workspace.BookTxtPath);
+            await SaveRegistryAsync(workspace.Root, new ChapterRegistryEntry
+            {
+                Uuid = "chapter-uuid-1",
+                CurrentPath = "part-one/chapter-one.md"
+            });
+            var service = CreateService(new PathAwareThrowingMetadataStore(
+                path => path.EndsWith("chapter-registry.json", StringComparison.OrdinalIgnoreCase)));
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/chapter-one.md",
+                1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("registry update", result.Error);
+            Assert.Contains("rollback attempted and manuscript state was restored", result.Error);
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.False(File.Exists(AbsolutePath(workspace.Root, "part-two/chapter-one.md")));
+            Assert.Equal(new[] { "part-one/chapter-one.md", "part-two/part.md" }, ReadBookTxtLines(workspace.BookTxtPath));
+            var registry = await LoadRegistryAsync(workspace.Root);
+            Assert.Equal("part-one/chapter-one.md", registry["chapter-uuid-1"].CurrentPath);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PathMove_MoveEntryAsync_AmbiguousRegistryIdentityFailsBeforeFileMove()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            await SaveRegistryAsync(
+                workspace.Root,
+                new ChapterRegistryEntry { Uuid = "chapter-uuid-1", CurrentPath = "part-one/chapter-one.md" },
+                new ChapterRegistryEntry { Uuid = "chapter-uuid-2", CurrentPath = "part-one/chapter-one.md" });
+            var originalBookTxt = ReadBookTxt(workspace.BookTxtPath);
+            var service = CreateService();
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/chapter-one.md",
+                0);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("registry validation", result.Error);
+            Assert.Contains("ambiguous", result.Error);
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+            Assert.False(File.Exists(AbsolutePath(workspace.Root, "part-two/chapter-one.md")));
+            Assert.Equal(originalBookTxt, ReadBookTxt(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PathMove_MoveEntryAsync_RejectsInvalidReplacementPath()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var service = CreateService();
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "../escape.md",
+                0);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("outside the manuscript root", result.Error);
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PathMove_MoveEntryAsync_RejectsMissingSourceFile()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/chapter-one.md"));
+
+        try
+        {
+            var service = CreateService();
+
+            var result = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/chapter-one.md",
+                0);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("source file", result.Error);
+            Assert.Contains("does not exist", result.Error);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CreateNewChapterAsync_CreatesFileAndBookEntry()
     {
         var workspace = CreateWorkspace(
@@ -865,6 +1173,30 @@ public class BookTxtStructureServiceTests
 
         public Task<Result<ExclusionManifest>> IncludeAsync(string workspaceRoot, string relativePath)
             => Task.FromResult(Result<ExclusionManifest>.Fail("simulated manifest save failure"));
+    }
+
+    private sealed class PathAwareThrowingMetadataStore : IMetadataStore
+    {
+        private readonly Func<string, bool> _shouldThrow;
+        private readonly Action<string>? _beforeThrow;
+        private readonly MetadataStore _inner = new();
+
+        public PathAwareThrowingMetadataStore(Func<string, bool> shouldThrow, Action<string>? beforeThrow = null)
+        {
+            _shouldThrow = shouldThrow;
+            _beforeThrow = beforeThrow;
+        }
+
+        public Task WriteTextAtomicAsync(string absolutePath, string content)
+        {
+            if (_shouldThrow(absolutePath))
+            {
+                _beforeThrow?.Invoke(absolutePath);
+                throw new IOException($"simulated atomic write failure for {Path.GetFileName(absolutePath)}");
+            }
+
+            return _inner.WriteTextAtomicAsync(absolutePath, content);
+        }
     }
 
     private sealed class ThrowingMetadataStore : IMetadataStore
