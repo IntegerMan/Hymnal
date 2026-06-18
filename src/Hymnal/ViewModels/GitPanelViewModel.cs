@@ -129,6 +129,8 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         && AheadRemoteCount == 0
         && !HasMergeConflict;
 
+    public int OutgoingCount => UncommittedChangeCount + AheadRemoteCount;
+
     private string _primaryActionText = "Sync";
     public string PrimaryActionText
     {
@@ -394,6 +396,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         ApplySummaryText(status);
         IsVisible = true;
         UpdatePrimaryActionText();
+        this.RaisePropertyChanged(nameof(OutgoingCount));
         RaiseIsFullySyncedChanged();
 
         if (status.HasMergeConflict)
@@ -607,6 +610,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         UncommittedChangeCount = 0;
         BehindRemoteCount = 0;
         AheadRemoteCount = 0;
+        this.RaisePropertyChanged(nameof(OutgoingCount));
         HasMergeConflict = false;
         ChangedFiles = Array.Empty<GitChangedFile>();
         ChangedFileTree = Array.Empty<GitChangeTreeNode>();
@@ -628,6 +632,7 @@ public sealed class GitPanelViewModel : ViewModelBase, IDisposable
         UncommittedChangeCount = 0;
         BehindRemoteCount = 0;
         AheadRemoteCount = 0;
+        this.RaisePropertyChanged(nameof(OutgoingCount));
         HasMergeConflict = false;
         ChangedFiles = Array.Empty<GitChangedFile>();
         ChangedFileTree = Array.Empty<GitChangeTreeNode>();

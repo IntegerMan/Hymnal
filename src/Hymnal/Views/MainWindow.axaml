@@ -198,12 +198,37 @@
                             <StackPanel Orientation="Horizontal"
                                         VerticalAlignment="Center"
                                         Spacing="12">
-                                <TextBlock Text="{Binding GitPanelViewModel.ChangeSummaryText}"
-                                           FontSize="12"
-                                           MaxWidth="170"
-                                           TextTrimming="CharacterEllipsis"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                <StackPanel Orientation="Horizontal"
+                                            VerticalAlignment="Center"
+                                            Spacing="6"
+                                            ToolTip.Tip="{Binding GitPanelViewModel.ChangeSummaryText}">
+                                    <TextBlock Text="Changes"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               LetterSpacing="0.5"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="↓"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                        <TextBlock Text="{Binding GitPanelViewModel.BehindRemoteCount}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="↑"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                        <TextBlock Text="{Binding GitPanelViewModel.OutgoingCount}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    </StackPanel>
+                                </StackPanel>
                                 <Button Content="{Binding GitPanelViewModel.PrimaryActionText}"
                                         Click="SyncButton_Click"
                                         IsEnabled="{Binding GitPanelViewModel.CanSync}"
