@@ -592,6 +592,78 @@ public class BookTxtStructureServiceTests
     }
 
     [Fact]
+    public async Task CoreContract_ExcludeIncludeMoveAndReloadRead_PreservesManifestRegistryAndBookTxt()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md\npart-one/chapter-two.md\npart-two/part.md\npart-two/chapter-three.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-two.md", "# Chapter Two"),
+            ("part-one/excluded.md", "# Excluded"),
+            ("part-two/part.md", "{class: part}\n# Part Two"),
+            ("part-two/chapter-three.md", "# Chapter Three"));
+
+        try
+        {
+            const string movedUuid = "chapter-uuid-2";
+            await SaveRegistryAsync(workspace.Root, new ChapterRegistryEntry
+            {
+                Uuid = movedUuid,
+                CurrentPath = "part-one/chapter-two.md",
+                Orphaned = false,
+                Title = "Chapter Two"
+            });
+            Directory.CreateDirectory(Path.GetDirectoryName(ManifestPath(workspace.Root))!);
+            await File.WriteAllTextAsync(
+                ManifestPath(workspace.Root),
+                "{\"schemaVersion\":1,\"excludedPaths\":[\"part-one/excluded.md\",\"part-two/chapter-two.md\"]}");
+            var service = CreateService();
+
+            var exclude = await service.ExcludeEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md");
+            Assert.True(exclude.IsSuccess, exclude.Error);
+
+            var include = await service.IncludeExistingEntryAfterPartAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/part.md");
+            Assert.True(include.IsSuccess, include.Error);
+
+            var move = await service.MoveEntryAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-two.md",
+                "part-two/chapter-two.md",
+                newIndex: 4);
+            Assert.True(move.IsSuccess, move.Error);
+
+            var reloadRead = await service.ReadNormalizedEntriesAsync(workspace.BookTxtPath);
+            Assert.True(reloadRead.IsSuccess, reloadRead.Error);
+            Assert.Equal(new[]
+            {
+                "part-one/part.md",
+                "part-two/part.md",
+                "part-one/chapter-one.md",
+                "part-two/chapter-three.md",
+                "part-two/chapter-two.md"
+            }, reloadRead.Value);
+
+            Assert.False(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-two.md")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-two/chapter-two.md")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "part-one/chapter-one.md")));
+
+            var registry = await LoadRegistryAsync(workspace.Root);
+            Assert.True(registry.ContainsKey(movedUuid));
+            Assert.Equal("part-two/chapter-two.md", registry[movedUuid].CurrentPath);
+            Assert.False(registry[movedUuid].Orphaned);
+
+            Assert.Equal(new[] { "part-one/excluded.md" }, await LoadExcludedPathsAsync(workspace.Root));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task PathMove_MoveEntryAsync_TargetConflictFailsWithoutWrites()
     {
         var workspace = CreateWorkspace(

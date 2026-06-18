@@ -594,14 +594,14 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
 
         if (!string.IsNullOrWhiteSpace(request.PartPath))
         {
-            action = () => _structureService.AddExistingEntryAfterPartAsync(
+            action = () => _structureService.IncludeExistingEntryAfterPartAsync(
                 _workspace.BookTxtPath,
                 request.ChapterPath,
                 request.PartPath!);
         }
         else if (request.Index.HasValue)
         {
-            action = () => _structureService.AddExistingEntryAsync(
+            action = () => _structureService.IncludeExistingEntryAsync(
                 _workspace.BookTxtPath,
                 request.ChapterPath,
                 request.Index.Value);
@@ -630,7 +630,7 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         await ExecuteStructuralOperationAsync(
             "Remove from book",
             request.ChapterPath,
-            () => _structureService.RemoveEntryAsync(_workspace.BookTxtPath, request.ChapterPath));
+            () => _structureService.ExcludeEntryAsync(_workspace.BookTxtPath, request.ChapterPath));
     }
 
     private async Task DeleteChapterAsync(DeleteChapterRequest request)

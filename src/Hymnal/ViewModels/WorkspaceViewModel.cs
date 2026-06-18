@@ -1014,14 +1014,14 @@ public class WorkspaceViewModel : ViewModelBase
 
         if (!string.IsNullOrWhiteSpace(request.PartPath))
         {
-            action = () => _structureService.AddExistingEntryAfterPartAsync(
+            action = () => _structureService.IncludeExistingEntryAfterPartAsync(
                 BookTxtPath,
                 request.ChapterPath,
                 request.PartPath!);
         }
         else if (request.Index.HasValue)
         {
-            action = () => _structureService.AddExistingEntryAsync(
+            action = () => _structureService.IncludeExistingEntryAsync(
                 BookTxtPath,
                 request.ChapterPath,
                 request.Index.Value);
@@ -1041,7 +1041,7 @@ public class WorkspaceViewModel : ViewModelBase
 
         using var _ = _manuscriptService.SuppressFileWatcher();
 
-        var result = await _structureService.RemoveEntryAsync(_model.BookTxtPath, chapterPath).ConfigureAwait(false);
+        var result = await _structureService.ExcludeEntryAsync(_model.BookTxtPath, chapterPath).ConfigureAwait(false);
         if (!result.IsSuccess)
         {
             _notificationService.ShowError($"Failed to remove chapter: {result.Error}");
