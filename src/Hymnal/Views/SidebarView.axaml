@@ -170,7 +170,11 @@
 
                             <!-- Right-click context menu -->
                             <Grid.ContextMenu>
-                                <ContextMenu>
+                                <ContextMenu Opened="ChapterContextMenu_Opened">
+                                    <MenuItem Name="RenameMenuItem"
+                                              Header="Rename…"
+                                              Click="RenameNode_Click" />
+                                    <Separator Name="RenameSeparator" />
                                     <MenuItem Header="Mark complete"
                                               IsVisible="{Binding Node.Kind, Converter={StaticResource NodeKindIsChapterConverter}}"
                                               Command="{Binding CompletePhaseCommand}" />

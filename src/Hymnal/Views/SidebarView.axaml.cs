@@ -6,6 +6,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Hymnal.Core.Models;
 using Hymnal.ViewModels;
 
 namespace Hymnal.Views;
@@ -22,6 +25,61 @@ public partial class SidebarView : UserControl
     public SidebarView()
     {
         InitializeComponent();
+    }
+
+    public static bool CanRenameFromSidebar(ChapterNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        return !node.IsExcluded
+            && !node.IsMissing
+            && !string.IsNullOrWhiteSpace(node.RelativePath)
+            && (node.Kind == NodeKind.Chapter || node.Kind == NodeKind.Part);
+    }
+
+    private void ChapterContextMenu_Opened(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu menu)
+            return;
+
+        var canRename = menu.DataContext is ChapterViewModel chapter && CanRenameFromSidebar(chapter.Node);
+        SetNamedItemVisibility(menu, "RenameMenuItem", canRename);
+        SetNamedItemVisibility(menu, "RenameSeparator", canRename);
+    }
+
+    private async void RenameNode_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not WorkspaceViewModel vm)
+            return;
+
+        if (sender is not MenuItem { DataContext: ChapterViewModel chapter })
+            return;
+
+        if (!CanRenameFromSidebar(chapter.Node))
+            return;
+
+        var dialogTitle = chapter.Node.Kind == NodeKind.Part ? "Rename part" : "Rename chapter";
+        var prompt = chapter.Node.Kind == NodeKind.Part
+            ? "Enter the new sidebar title for this Part:"
+            : "Enter the new sidebar title for this chapter:";
+
+        var replacementTitle = await PromptForTextAsync(dialogTitle, prompt, chapter.Node.Title);
+        if (string.IsNullOrWhiteSpace(replacementTitle))
+            return;
+
+        replacementTitle = replacementTitle.Trim();
+        if (string.Equals(replacementTitle, chapter.Node.Title, StringComparison.Ordinal))
+            return;
+
+        if (chapter.Node.Kind == NodeKind.Part)
+        {
+            await ExecuteCommandAsync(vm.RenamePartCommand.Execute(
+                new RenamePartRequest(chapter.Node.RelativePath, replacementTitle)));
+            return;
+        }
+
+        await ExecuteCommandAsync(vm.RenameChapterCommand.Execute(
+            new RenameChapterRequest(chapter.Node.RelativePath, replacementTitle)));
     }
 
     private async void RemoveFromBook_Click(object? sender, RoutedEventArgs e)
@@ -203,6 +261,117 @@ public partial class SidebarView : UserControl
         await ExecuteCommandAsync(vm.ReorderChapterCommand.Execute(request));
     }
 
+    private async Task<string?> PromptForTextAsync(string title, string prompt, string initialValue)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+            return null;
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 440,
+            Height = 190,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new SolidColorBrush(Color.Parse("#120932"))
+        };
+
+        var input = new TextBox
+        {
+            Text = initialValue,
+            FontSize = 12,
+            Padding = new Thickness(8, 6),
+            Background = GetResource<IBrush>("SurfaceBaseBrush")
+                ?? new SolidColorBrush(Color.Parse("#0F0828")),
+            Foreground = GetResource<IBrush>("OnSurfaceBrush")
+                ?? Brushes.White,
+            BorderBrush = GetResource<IBrush>("BorderSubtleBrush")
+                ?? new SolidColorBrush(Color.Parse("#2D1B5E")),
+            BorderThickness = new Thickness(1)
+        };
+
+        var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        string? submitted = null;
+
+        void CloseWithResult(string? value)
+        {
+            if (!result.Task.IsCompleted)
+                result.TrySetResult(value);
+
+            if (dialog.IsVisible)
+                dialog.Close();
+        }
+
+        var ok = new Button
+        {
+            Content = "OK",
+            IsDefault = true,
+            Background = GetResource<IBrush>("SynthwavePurpleBrush")
+                ?? new SolidColorBrush(Color.Parse("#9D4EDD")),
+            Foreground = GetResource<IBrush>("OnSurfaceBrush")
+                ?? Brushes.White,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(12, 6)
+        };
+        ok.Click += (_, _) =>
+        {
+            submitted = input.Text?.Trim();
+            CloseWithResult(submitted);
+        };
+
+        var cancel = new Button
+        {
+            Content = "Cancel",
+            IsCancel = true,
+            Padding = new Thickness(12, 6)
+        };
+        cancel.Click += (_, _) => CloseWithResult(null);
+
+        dialog.Content = new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.Parse("#2D1B5E")),
+            BorderThickness = new Thickness(1),
+            Child = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = prompt,
+                        Foreground = GetResource<IBrush>("OnSurfaceBrush")
+                            ?? Brushes.White,
+                        TextWrapping = TextWrapping.Wrap
+                    },
+                    input,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children = { ok, cancel }
+                    }
+                }
+            }
+        };
+
+        dialog.Opened += (_, _) =>
+        {
+            input.Focus();
+            input.SelectAll();
+        };
+
+        dialog.Closed += (_, _) =>
+        {
+            if (!result.Task.IsCompleted)
+                result.TrySetResult(submitted);
+        };
+
+        _ = dialog.ShowDialog(owner);
+        return await result.Task;
+    }
+
     private static async Task ExecuteCommandAsync(IObservable<Unit> execution)
     {
         var completion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -244,6 +413,25 @@ public partial class SidebarView : UserControl
             else if (border.Name == "InsertAfter")
                 border.IsVisible = dropBefore == false;
         }
+    }
+
+    private static void SetNamedItemVisibility(ContextMenu menu, string name, bool isVisible)
+    {
+        foreach (var item in menu.Items.OfType<Control>())
+        {
+            if (item.Name != name)
+                continue;
+
+            item.IsVisible = isVisible;
+            return;
+        }
+    }
+
+    private T? GetResource<T>(string key) where T : class
+    {
+        return this.TryFindResource(key, out var value) && value is T typed
+            ? typed
+            : null;
     }
 
     private void ClearDragState()
