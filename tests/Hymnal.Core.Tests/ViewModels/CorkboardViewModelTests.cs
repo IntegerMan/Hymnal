@@ -249,6 +249,8 @@ public sealed class CorkboardViewModelTests
         Assert.Equal(1, context.StructureService.ReorderCalls.Count);
         Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", 3), context.StructureService.ReorderCalls[0]);
         Assert.Empty(context.StructureService.MoveCalls);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Equal(0, context.Workspace.ReorderCount);
         Assert.Null(board.LastStructuralError);
     }
 
@@ -348,6 +350,71 @@ public sealed class CorkboardViewModelTests
         Assert.Empty(context.StructureService.MoveCalls);
         Assert.Equal(3, context.NotificationService.Errors.Count);
         Assert.All(context.NotificationService.Errors, error => Assert.Contains(context.Workspace.BookTxtPath, error));
+    }
+
+    [Fact]
+    public async Task DropCardCommand_MoveFailure_LeavesProjectionIntactAndSurfacesStructuralError()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.StructureService.MoveResult = Result<Unit>.Fail("move failed on disk");
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+        var card = GetChapterCard(board, "part-one/chapter-one.md");
+        await ExecuteCommandAsync(board.SelectCardCommand.Execute(card));
+        var itemsBefore = board.Items.Select(item => item.RelativePath).ToArray();
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest(
+                "part-one/chapter-one.md",
+                TargetPartPath: "part-two/part.md",
+                AfterRelativePath: "part-two/chapter-two.md")));
+
+        var move = Assert.Single(context.StructureService.MoveCalls);
+        Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", "part-two/chapter-one.md", 3), move);
+        Assert.Empty(context.StructureService.ReorderCalls);
+        Assert.Equal(0, context.Workspace.ReloadCount);
+        Assert.Equal(itemsBefore, board.Items.Select(item => item.RelativePath));
+        Assert.Same(card.Card, board.SelectedCard);
+        Assert.Equal("Drop card", board.LastStructuralError?.Operation);
+        Assert.Equal("part-one/chapter-one.md", board.LastStructuralError?.Path);
+        Assert.Equal(context.Workspace.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+        Assert.Equal("move failed on disk", board.LastStructuralError?.Message);
+        Assert.Contains("move failed on disk", Assert.Single(context.NotificationService.Errors));
+    }
+
+    [Fact]
+    public async Task DropCardCommand_ReloadFailure_SurfacesStructuralErrorAfterSuccessfulMove()
+    {
+        var context = CreateContext();
+        context.EnableWorkspace();
+        context.Workspace.ReloadResult = Result<Unit>.Fail("reload failed after move");
+        SeedWorkspaceNodes(context,
+            CreateChapter(context, "part-one/part.md", "Part One", NodeKind.Part),
+            CreateChapter(context, "part-one/chapter-one.md", "Chapter One"),
+            CreateChapter(context, "part-two/part.md", "Part Two", NodeKind.Part),
+            CreateChapter(context, "part-two/chapter-two.md", "Chapter Two"));
+
+        using var board = context.CreateCorkboard();
+
+        await ExecuteCommandAsync(board.DropCardCommand.Execute(
+            new CorkboardDropRequest(
+                "part-one/chapter-one.md",
+                TargetPartPath: "part-two/part.md",
+                AfterRelativePath: "part-two/chapter-two.md")));
+
+        Assert.Single(context.StructureService.MoveCalls);
+        Assert.Equal(1, context.Workspace.ReloadCount);
+        Assert.Equal("Drop card", board.LastStructuralError?.Operation);
+        Assert.Equal("part-one/chapter-one.md", board.LastStructuralError?.Path);
+        Assert.Equal(context.Workspace.BookTxtPath, board.LastStructuralError?.BookTxtPath);
+        Assert.Equal("reload failed after move", board.LastStructuralError?.Message);
+        Assert.Contains("reload failed after move", Assert.Single(context.NotificationService.Errors));
     }
 
     [Fact]

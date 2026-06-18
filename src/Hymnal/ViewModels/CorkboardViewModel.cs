@@ -565,13 +565,72 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private Task DropCardAsync(CorkboardDropRequest request)
+    private async Task DropCardAsync(CorkboardDropRequest request)
     {
-        ReportStructuralFailure(
-            "Drop card",
-            request.RelativePath,
-            "Corkboard drop mapping is not implemented yet.");
-        return Task.CompletedTask;
+        if (!_workspace.HasWorkspace || string.IsNullOrWhiteSpace(_workspace.BookTxtPath))
+        {
+            ReportStructuralFailure("Drop card", request.RelativePath, "No workspace is open.");
+            return;
+        }
+
+        if (!TryFindCurrentChapter(request.RelativePath, out _))
+        {
+            var excludedMatch = _items.Any(item =>
+                item.Kind == CorkboardItemKind.ExcludedChapterCard &&
+                string.Equals(item.RelativePath, request.RelativePath, StringComparison.OrdinalIgnoreCase));
+
+            ReportStructuralFailure(
+                "Drop card",
+                request.RelativePath,
+                excludedMatch
+                    ? $"Chapter '{request.RelativePath}' is excluded and cannot be reordered as an included Book.txt entry."
+                    : $"Chapter '{request.RelativePath}' is not on the current board.");
+            return;
+        }
+
+        if (!TryResolveDrop(request, out var operation, out var error))
+        {
+            ReportStructuralFailure("Drop card", request.RelativePath, error!);
+            return;
+        }
+
+        try
+        {
+            using var _ = _manuscriptService.SuppressFileWatcher();
+
+            var result = operation.IsCrossPart
+                ? await _structureService.MoveEntryAsync(
+                    _workspace.BookTxtPath,
+                    request.RelativePath,
+                    operation.ReplacementPath!,
+                    operation.NewIndex)
+                : await _structureService.ReorderEntryAsync(
+                    _workspace.BookTxtPath,
+                    request.RelativePath,
+                    operation.NewIndex);
+
+            if (!result.IsSuccess)
+            {
+                ReportStructuralFailure("Drop card", request.RelativePath,
+                    result.Error ?? "Structural action failed.");
+                return;
+            }
+
+            LastStructuralError = null;
+            var reloadResult = await _workspace.ReloadCurrentWorkspaceAsync();
+            if (!reloadResult.IsSuccess)
+            {
+                ReportStructuralFailure("Drop card", request.RelativePath,
+                    reloadResult.Error ?? "Workspace reload failed.");
+                return;
+            }
+
+            RestoreSelection(operation.SelectionPath);
+        }
+        catch (Exception ex)
+        {
+            ReportStructuralFailure("Drop card", request.RelativePath, ex.Message);
+        }
     }
 
     private async Task RenameCardAsync(RenameCardRequest request)
@@ -820,6 +879,179 @@ public sealed class CorkboardViewModel : ViewModelBase, IDisposable
         newIndex = 0;
         error = "Reorder card requires either a target index or a neighbor path.";
         return false;
+    }
+
+    private sealed record ResolvedDropOperation(
+        int NewIndex,
+        bool IsCrossPart,
+        string? ReplacementPath,
+        string SelectionPath);
+
+    private bool TryResolveDrop(
+        CorkboardDropRequest request,
+        out ResolvedDropOperation operation,
+        out string? error)
+    {
+        operation = null!;
+        error = null;
+
+        var nodes = _workspace.Nodes.ToList();
+        var sourceIndex = FindNodeIndex(nodes, request.RelativePath);
+        if (sourceIndex < 0 || nodes[sourceIndex].Node.Kind != NodeKind.Chapter)
+        {
+            error = $"Chapter '{request.RelativePath}' is not on the current board.";
+            return false;
+        }
+
+        if (IsSelfTarget(request))
+        {
+            error = "A chapter cannot be dropped onto itself.";
+            return false;
+        }
+
+        if (!TryResolveTargetIndex(request, nodes, sourceIndex, out var newIndex, out error))
+            return false;
+
+        var sourcePartPath = FindOwningPartPath(nodes, sourceIndex);
+        var targetPartPath = ResolveTargetPartPath(request, nodes, newIndex);
+        var isCrossPart = !string.Equals(sourcePartPath ?? string.Empty, targetPartPath ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+        var replacementPath = isCrossPart
+            ? BuildReplacementPath(request.RelativePath, targetPartPath)
+            : null;
+
+        operation = new ResolvedDropOperation(
+            newIndex,
+            isCrossPart,
+            replacementPath,
+            replacementPath ?? request.RelativePath);
+        return true;
+    }
+
+    private static bool IsSelfTarget(CorkboardDropRequest request)
+        => string.Equals(request.RelativePath, request.AfterRelativePath, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(request.RelativePath, request.BeforeRelativePath, StringComparison.OrdinalIgnoreCase);
+
+    private static int FindNodeIndex(IReadOnlyList<ChapterViewModel> nodes, string relativePath)
+    {
+        for (var i = 0; i < nodes.Count; i++)
+        {
+            if (string.Equals(nodes[i].Node.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+
+        return -1;
+    }
+
+    private bool TryResolveTargetIndex(
+        CorkboardDropRequest request,
+        IReadOnlyList<ChapterViewModel> nodes,
+        int sourceIndex,
+        out int newIndex,
+        out string? error)
+    {
+        if (!string.IsNullOrWhiteSpace(request.AfterRelativePath))
+        {
+            var afterIndex = FindNodeIndex(nodes, request.AfterRelativePath);
+            if (afterIndex < 0)
+            {
+                newIndex = 0;
+                error = $"Drop target '{request.AfterRelativePath}' was not found in Book.txt.";
+                return false;
+            }
+
+            newIndex = sourceIndex > afterIndex ? afterIndex + 1 : afterIndex;
+            error = null;
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BeforeRelativePath))
+        {
+            var beforeIndex = FindNodeIndex(nodes, request.BeforeRelativePath);
+            if (beforeIndex < 0)
+            {
+                newIndex = 0;
+                error = $"Drop target '{request.BeforeRelativePath}' was not found in Book.txt.";
+                return false;
+            }
+
+            newIndex = sourceIndex < beforeIndex ? beforeIndex - 1 : beforeIndex;
+            error = null;
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TargetPartPath))
+        {
+            var partIndex = FindNodeIndex(nodes, request.TargetPartPath);
+            if (partIndex < 0 || nodes[partIndex].Node.Kind != NodeKind.Part)
+            {
+                newIndex = 0;
+                error = $"Target Part '{request.TargetPartPath}' was not found in Book.txt.";
+                return false;
+            }
+
+            newIndex = partIndex + 1;
+            error = null;
+            return true;
+        }
+
+        newIndex = sourceIndex;
+        error = "Drop card requires a target Part or neighbor path.";
+        return false;
+    }
+
+    private static string? FindOwningPartPath(IReadOnlyList<ChapterViewModel> nodes, int chapterIndex)
+    {
+        for (var i = chapterIndex - 1; i >= 0; i--)
+        {
+            if (nodes[i].Node.Kind == NodeKind.Part)
+                return nodes[i].Node.RelativePath;
+        }
+
+        return null;
+    }
+
+    private static string? ResolveTargetPartPath(
+        CorkboardDropRequest request,
+        IReadOnlyList<ChapterViewModel> nodes,
+        int targetIndex)
+    {
+        if (!string.IsNullOrWhiteSpace(request.TargetPartPath))
+            return request.TargetPartPath;
+
+        if (!string.IsNullOrWhiteSpace(request.AfterRelativePath))
+        {
+            var afterIndex = FindNodeIndex(nodes, request.AfterRelativePath);
+            if (afterIndex >= 0)
+                return nodes[afterIndex].Node.Kind == NodeKind.Part
+                    ? nodes[afterIndex].Node.RelativePath
+                    : FindOwningPartPath(nodes, afterIndex);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BeforeRelativePath))
+        {
+            var beforeIndex = FindNodeIndex(nodes, request.BeforeRelativePath);
+            if (beforeIndex >= 0)
+                return FindOwningPartPath(nodes, beforeIndex);
+        }
+
+        var priorIndex = Math.Min(targetIndex - 1, nodes.Count - 1);
+        for (var i = priorIndex; i >= 0; i--)
+        {
+            if (nodes[i].Node.Kind == NodeKind.Part)
+                return nodes[i].Node.RelativePath;
+        }
+
+        return null;
+    }
+
+    private static string BuildReplacementPath(string sourcePath, string? targetPartPath)
+    {
+        var fileName = Path.GetFileName(sourcePath.Replace('\\', '/'));
+        var targetFolder = GetPartFolderPrefix(targetPartPath);
+        return string.IsNullOrWhiteSpace(targetFolder)
+            ? fileName
+            : $"{targetFolder}/{fileName}";
     }
 
     private void ReportStructuralFailure(string operation, string? path, string message)
