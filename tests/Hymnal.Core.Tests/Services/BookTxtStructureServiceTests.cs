@@ -1,6 +1,7 @@
 using Hymnal.Core.Common;
 using Hymnal.Core.Infrastructure;
 using Hymnal.Core.Interfaces;
+using Hymnal.Core.Models;
 using Hymnal.Core.Services;
 
 namespace Hymnal.Core.Tests.Services;
@@ -25,8 +26,23 @@ public class BookTxtStructureServiceTests
         return (root, Path.Combine(root, "Book.txt"));
     }
 
-    private static BookTxtStructureService CreateService(IMetadataStore? metadataStore = null)
-        => new(metadataStore ?? new MetadataStore());
+    private static BookTxtStructureService CreateService(
+        IMetadataStore? metadataStore = null,
+        IExclusionManifestService? exclusionManifestService = null)
+    {
+        var store = metadataStore ?? new MetadataStore();
+        return new BookTxtStructureService(store, exclusionManifestService ?? new ExclusionManifestService(store));
+    }
+
+    private static async Task<string[]> LoadExcludedPathsAsync(string workspaceRoot)
+    {
+        var result = await new ExclusionManifestService(new MetadataStore()).LoadAsync(workspaceRoot);
+        Assert.True(result.IsSuccess, result.Error);
+        return result.Value!.ExcludedPaths;
+    }
+
+    private static string ManifestPath(string workspaceRoot)
+        => Path.Combine(workspaceRoot, ".hymnal-data", "exclusions.json");
 
     private static string ReadBookTxt(string bookTxtPath) => File.ReadAllText(bookTxtPath);
 
@@ -151,6 +167,358 @@ public class BookTxtStructureServiceTests
                 "part-one/chapter-two.md",
                 "part-one/chapter-one.md"
             }, ReadBookTxtLines(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_ExcludeEntryAsync_RemovesBookLineAndAddsManifestPath()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var service = CreateService();
+
+            var result = await service.ExcludeEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md");
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Equal(new[] { "part-one/part.md" }, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.True(File.Exists(Path.Combine(workspace.Root, "part-one", "chapter-one.md")));
+            Assert.Equal(new[] { "part-one/chapter-one.md" }, await LoadExcludedPathsAsync(workspace.Root));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_IncludeExistingEntryAsync_InsertsAtIndexAndRemovesManifestPath()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-two.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-two.md", "# Chapter Two"));
+
+        try
+        {
+            var manifest = new ExclusionManifestService(new MetadataStore());
+            var exclude = await manifest.ExcludeAsync(workspace.Root, "part-one/chapter-one.md");
+            Assert.True(exclude.IsSuccess, exclude.Error);
+            var service = CreateService();
+
+            var result = await service.IncludeExistingEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", 1);
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Equal(new[]
+            {
+                "part-one/part.md",
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.Empty(await LoadExcludedPathsAsync(workspace.Root));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_IncludeExistingEntryAfterPartAsync_InsertsAfterPartAndRemovesManifestPath()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\n\npart-one/chapter-two.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"),
+            ("part-one/chapter-two.md", "# Chapter Two"));
+
+        try
+        {
+            var manifest = new ExclusionManifestService(new MetadataStore());
+            var exclude = await manifest.ExcludeAsync(workspace.Root, "part-one/chapter-one.md");
+            Assert.True(exclude.IsSuccess, exclude.Error);
+            var service = CreateService();
+
+            var result = await service.IncludeExistingEntryAfterPartAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-one/part.md");
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Equal(new[]
+            {
+                "part-one/part.md",
+                string.Empty,
+                "part-one/chapter-one.md",
+                "part-one/chapter-two.md"
+            }, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.Empty(await LoadExcludedPathsAsync(workspace.Root));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_IncludeExistingEntryAsync_RejectsDuplicateBookTxtEntry()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var manifest = new RecordingManifestService();
+            var service = CreateService(exclusionManifestService: manifest);
+
+            var result = await service.IncludeExistingEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", 1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("already exists", result.Error);
+            Assert.Equal(0, manifest.IncludeCalls);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_IncludeExistingEntryAsync_RejectsMissingFile()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"));
+
+        try
+        {
+            var manifest = new RecordingManifestService();
+            var service = CreateService(exclusionManifestService: manifest);
+
+            var result = await service.IncludeExistingEntryAsync(workspace.BookTxtPath, "part-one/missing.md", 1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("does not exist", result.Error);
+            Assert.Equal(0, manifest.IncludeCalls);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_IncludeExistingEntryAsync_RejectsInvalidIndex()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var manifest = new RecordingManifestService();
+            var service = CreateService(exclusionManifestService: manifest);
+
+            var result = await service.IncludeExistingEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", 2);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("out of range", result.Error);
+            Assert.Equal(0, manifest.IncludeCalls);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_IncludeExistingEntryAfterPartAsync_RejectsMissingPartPath()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var manifest = new RecordingManifestService();
+            var service = CreateService(exclusionManifestService: manifest);
+
+            var result = await service.IncludeExistingEntryAfterPartAsync(
+                workspace.BookTxtPath,
+                "part-one/chapter-one.md",
+                "part-two/part.md");
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("Part entry 'part-two/part.md' was not found", result.Error);
+            Assert.Equal(0, manifest.IncludeCalls);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_ExcludeEntryAsync_RejectsPathOutsideWorkspace()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"));
+
+        try
+        {
+            var manifest = new RecordingManifestService();
+            var service = CreateService(exclusionManifestService: manifest);
+
+            var result = await service.ExcludeEntryAsync(workspace.BookTxtPath, "../escape.md");
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("outside the manuscript root", result.Error);
+            Assert.Equal(0, manifest.ExcludeCalls);
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_ExcludeEntryAsync_PrunesStaleManifestPathsWhenSaving()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ManifestPath(workspace.Root))!);
+            await File.WriteAllTextAsync(
+                ManifestPath(workspace.Root),
+                "{\"schemaVersion\":1,\"excludedPaths\":[\"part-one/stale.md\"]}");
+            var service = CreateService();
+
+            var result = await service.ExcludeEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md");
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Equal(new[] { "part-one/chapter-one.md" }, await LoadExcludedPathsAsync(workspace.Root));
+            Assert.DoesNotContain("stale.md", await File.ReadAllTextAsync(ManifestPath(workspace.Root)));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_IncludeExistingEntryAsync_PrunesStaleManifestPathsWhenSaving()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ManifestPath(workspace.Root))!);
+            await File.WriteAllTextAsync(
+                ManifestPath(workspace.Root),
+                "{\"schemaVersion\":1,\"excludedPaths\":[\"part-one/chapter-one.md\",\"part-one/stale.md\"]}");
+            var service = CreateService();
+
+            var result = await service.IncludeExistingEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", 1);
+
+            Assert.True(result.IsSuccess, result.Error);
+            Assert.Empty(await LoadExcludedPathsAsync(workspace.Root));
+            Assert.DoesNotContain("stale.md", await File.ReadAllTextAsync(ManifestPath(workspace.Root)));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_ExcludeEntryAsync_DoesNotUpdateManifestWhenBookTxtWriteFails()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var manifest = new RecordingManifestService();
+            var service = CreateService(new ThrowingMetadataStore(), manifest);
+
+            var result = await service.ExcludeEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md");
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("Book.txt", result.Error);
+            Assert.Contains("Book.txt write or validation", result.Error);
+            Assert.Equal(0, manifest.ExcludeCalls);
+            Assert.Equal(new[] { "part-one/part.md", "part-one/chapter-one.md" }, ReadBookTxtLines(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_ExcludeEntryAsync_ReturnsManifestPhaseFailureAfterBookTxtWrite()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md\npart-one/chapter-one.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var service = CreateService(exclusionManifestService: new FailingManifestService());
+
+            var result = await service.ExcludeEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md");
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("manifest save after Book.txt write", result.Error);
+            Assert.Equal(new[] { "part-one/part.md" }, ReadBookTxtLines(workspace.BookTxtPath));
+        }
+        finally
+        {
+            Directory.Delete(workspace.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludeExclude_IncludeExistingEntryAsync_ReturnsManifestPhaseFailureAfterBookTxtWrite()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", "part-one/part.md"),
+            ("part-one/part.md", "{class: part}\n# Part One"),
+            ("part-one/chapter-one.md", "# Chapter One"));
+
+        try
+        {
+            var service = CreateService(exclusionManifestService: new FailingManifestService());
+
+            var result = await service.IncludeExistingEntryAsync(workspace.BookTxtPath, "part-one/chapter-one.md", 1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("manifest save after Book.txt write", result.Error);
+            Assert.Equal(new[] { "part-one/part.md", "part-one/chapter-one.md" }, ReadBookTxtLines(workspace.BookTxtPath));
         }
         finally
         {
@@ -454,6 +822,49 @@ public class BookTxtStructureServiceTests
         {
             Directory.Delete(workspace.Root, recursive: true);
         }
+    }
+
+    private sealed class RecordingManifestService : IExclusionManifestService
+    {
+        public int IncludeCalls { get; private set; }
+
+        public int ExcludeCalls { get; private set; }
+
+        public Task<Result<ExclusionManifest>> LoadAsync(string workspaceRoot)
+            => Task.FromResult(Result<ExclusionManifest>.Ok(new ExclusionManifest()));
+
+        public Task<Result<ExclusionManifest>> SaveAsync(string workspaceRoot, ExclusionManifest manifest)
+            => Task.FromResult(Result<ExclusionManifest>.Ok(manifest));
+
+        public Task<Result<ExclusionManifest>> ExcludeAsync(string workspaceRoot, string relativePath)
+        {
+            ExcludeCalls++;
+            return Task.FromResult(Result<ExclusionManifest>.Ok(new ExclusionManifest
+            {
+                ExcludedPaths = new[] { relativePath.Replace('\\', '/') }
+            }));
+        }
+
+        public Task<Result<ExclusionManifest>> IncludeAsync(string workspaceRoot, string relativePath)
+        {
+            IncludeCalls++;
+            return Task.FromResult(Result<ExclusionManifest>.Ok(new ExclusionManifest()));
+        }
+    }
+
+    private sealed class FailingManifestService : IExclusionManifestService
+    {
+        public Task<Result<ExclusionManifest>> LoadAsync(string workspaceRoot)
+            => Task.FromResult(Result<ExclusionManifest>.Fail("simulated manifest load failure"));
+
+        public Task<Result<ExclusionManifest>> SaveAsync(string workspaceRoot, ExclusionManifest manifest)
+            => Task.FromResult(Result<ExclusionManifest>.Fail("simulated manifest save failure"));
+
+        public Task<Result<ExclusionManifest>> ExcludeAsync(string workspaceRoot, string relativePath)
+            => Task.FromResult(Result<ExclusionManifest>.Fail("simulated manifest save failure"));
+
+        public Task<Result<ExclusionManifest>> IncludeAsync(string workspaceRoot, string relativePath)
+            => Task.FromResult(Result<ExclusionManifest>.Fail("simulated manifest save failure"));
     }
 
     private sealed class ThrowingMetadataStore : IMetadataStore

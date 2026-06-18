@@ -55,6 +55,9 @@ public partial class App : Application
         // S04 services
         services.AddSingleton<INotesService, NotesService>();
 
+        // M005/S01 services — persistent exclusion manifest
+        services.AddSingleton<IExclusionManifestService, ExclusionManifestService>();
+
         // M004/S02 services — supplemental docs sidebar tree
         services.AddSingleton<ISupplementalDocsService, SupplementalDocsService>();
 

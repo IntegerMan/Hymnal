@@ -1,4 +1,5 @@
 using Hymnal.Core.Common;
+using Hymnal.Core.Infrastructure;
 using Hymnal.Core.Interfaces;
 
 namespace Hymnal.Core.Services;
@@ -6,10 +7,17 @@ namespace Hymnal.Core.Services;
 public sealed class BookTxtStructureService : IBookTxtStructureService
 {
     private readonly IMetadataStore _metadataStore;
+    private readonly IExclusionManifestService _exclusionManifestService;
 
     public BookTxtStructureService(IMetadataStore metadataStore)
+        : this(metadataStore, new ExclusionManifestService(metadataStore))
+    {
+    }
+
+    public BookTxtStructureService(IMetadataStore metadataStore, IExclusionManifestService exclusionManifestService)
     {
         _metadataStore = metadataStore;
+        _exclusionManifestService = exclusionManifestService;
     }
 
     public async Task<Result<IReadOnlyList<string>>> ReadNormalizedEntriesAsync(string bookTxtPath)
@@ -160,6 +168,50 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
         return write.IsSuccess ? Result<Unit>.Ok(Unit.Default) : Result<Unit>.Fail(write.Error!);
     }
 
+    public async Task<Result<Unit>> IncludeExistingEntryAsync(string bookTxtPath, string chapterPath, int index)
+    {
+        var document = await LoadDocumentAsync(bookTxtPath).ConfigureAwait(false);
+        if (!document.IsSuccess)
+            return Result<Unit>.Fail(document.Error!);
+
+        var doc = document.Value!;
+        var normalized = NormalizeStructurePath(doc.ManuscriptRoot, chapterPath, nameof(chapterPath));
+        if (!normalized.IsSuccess)
+            return Result<Unit>.Fail(normalized.Error!);
+
+        var add = await AddExistingEntryAsync(bookTxtPath, normalized.Value!.RelativePath, index).ConfigureAwait(false);
+        if (!add.IsSuccess)
+            return Result<Unit>.Fail($"Include operation failed for '{normalized.Value.RelativePath}' during Book.txt write or validation: {add.Error}");
+
+        var include = await _exclusionManifestService.IncludeAsync(doc.ManuscriptRoot, normalized.Value.RelativePath).ConfigureAwait(false);
+        if (!include.IsSuccess)
+            return Result<Unit>.Fail($"Include operation failed for '{normalized.Value.RelativePath}' during manifest save after Book.txt write: {include.Error}");
+
+        return Result<Unit>.Ok(Unit.Default);
+    }
+
+    public async Task<Result<Unit>> IncludeExistingEntryAfterPartAsync(string bookTxtPath, string chapterPath, string partPath)
+    {
+        var document = await LoadDocumentAsync(bookTxtPath).ConfigureAwait(false);
+        if (!document.IsSuccess)
+            return Result<Unit>.Fail(document.Error!);
+
+        var doc = document.Value!;
+        var normalized = NormalizeStructurePath(doc.ManuscriptRoot, chapterPath, nameof(chapterPath));
+        if (!normalized.IsSuccess)
+            return Result<Unit>.Fail(normalized.Error!);
+
+        var add = await AddExistingEntryAfterPartAsync(bookTxtPath, normalized.Value!.RelativePath, partPath).ConfigureAwait(false);
+        if (!add.IsSuccess)
+            return Result<Unit>.Fail($"Include operation failed for '{normalized.Value.RelativePath}' during Book.txt write or validation: {add.Error}");
+
+        var include = await _exclusionManifestService.IncludeAsync(doc.ManuscriptRoot, normalized.Value.RelativePath).ConfigureAwait(false);
+        if (!include.IsSuccess)
+            return Result<Unit>.Fail($"Include operation failed for '{normalized.Value.RelativePath}' during manifest save after Book.txt write: {include.Error}");
+
+        return Result<Unit>.Ok(Unit.Default);
+    }
+
     public async Task<Result<Unit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index)
     {
         var document = await LoadDocumentAsync(bookTxtPath).ConfigureAwait(false);
@@ -270,6 +322,28 @@ public sealed class BookTxtStructureService : IBookTxtStructureService
 
         var write = await WriteBookTxtAsync(doc.BookTxtPath, lines).ConfigureAwait(false);
         return write.IsSuccess ? Result<Unit>.Ok(Unit.Default) : Result<Unit>.Fail(write.Error!);
+    }
+
+    public async Task<Result<Unit>> ExcludeEntryAsync(string bookTxtPath, string chapterPath)
+    {
+        var document = await LoadDocumentAsync(bookTxtPath).ConfigureAwait(false);
+        if (!document.IsSuccess)
+            return Result<Unit>.Fail(document.Error!);
+
+        var doc = document.Value!;
+        var normalized = NormalizeStructurePath(doc.ManuscriptRoot, chapterPath, nameof(chapterPath));
+        if (!normalized.IsSuccess)
+            return Result<Unit>.Fail(normalized.Error!);
+
+        var remove = await RemoveEntryAsync(bookTxtPath, normalized.Value!.RelativePath).ConfigureAwait(false);
+        if (!remove.IsSuccess)
+            return Result<Unit>.Fail($"Exclude operation failed for '{normalized.Value.RelativePath}' during Book.txt write or validation: {remove.Error}");
+
+        var exclude = await _exclusionManifestService.ExcludeAsync(doc.ManuscriptRoot, normalized.Value.RelativePath).ConfigureAwait(false);
+        if (!exclude.IsSuccess)
+            return Result<Unit>.Fail($"Exclude operation failed for '{normalized.Value.RelativePath}' during manifest save after Book.txt write: {exclude.Error}");
+
+        return Result<Unit>.Ok(Unit.Default);
     }
 
     public async Task<Result<Unit>> DeleteChapterFileAsync(string bookTxtPath, string chapterPath)
