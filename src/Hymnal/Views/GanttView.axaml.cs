@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -240,6 +241,12 @@ public partial class GanttView : UserControl
 
     private async void ChapterGrid_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (await TryHandleRowMoveShortcutAsync(e.Key, e.KeyModifiers))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (DataContext is not GanttViewModel vm)
             return;
 
@@ -273,6 +280,80 @@ public partial class GanttView : UserControl
                 e.Handled = true;
             }
         }
+    }
+
+    private async void TimelineCanvas_RowReorderRequested(object? sender, GanttCanvas.GanttRowReorderRequestedEventArgs e)
+    {
+        await HandleTimelineRowReorderAsync(e);
+    }
+
+    private async Task<bool> TryHandleRowMoveShortcutAsync(Key key, KeyModifiers modifiers)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return false;
+
+        if (IsEditingControlFocused())
+            return false;
+
+        if (ChapterGrid.SelectedItem is not GanttRowViewModel row || !row.IsEditable)
+            return false;
+
+        if (!TryGetRowMoveDirection(key, modifiers, out var moveUp))
+            return false;
+
+        vm.SelectedRow = row;
+        await ExecuteCommandAsync(moveUp ? vm.MoveSelectedRowUpCommand : vm.MoveSelectedRowDownCommand);
+        SyncGridSelection(vm);
+        return true;
+    }
+
+    private async Task HandleTimelineRowReorderAsync(GanttCanvas.GanttRowReorderRequestedEventArgs e)
+    {
+        if (DataContext is not GanttViewModel vm)
+            return;
+
+        if (e.DropBeforeTarget)
+            await vm.MoveRowBeforeAsync(e.SourceRow, e.TargetRow);
+        else
+            await vm.MoveRowAfterAsync(e.SourceRow, e.TargetRow);
+
+        SyncGridSelection(vm);
+    }
+
+    private static bool TryGetRowMoveDirection(Key key, KeyModifiers modifiers, out bool moveUp)
+    {
+        moveUp = false;
+
+        if (modifiers != KeyModifiers.Alt)
+            return false;
+
+        if (key == Key.Up)
+        {
+            moveUp = true;
+            return true;
+        }
+
+        if (key == Key.Down)
+            return true;
+
+        return false;
+    }
+
+    private static async Task ExecuteCommandAsync(System.IObservable<System.Reactive.Unit> execution)
+    {
+        var completion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = execution.Subscribe(
+            _ => { },
+            ex => completion.TrySetException(ex),
+            () => completion.TrySetResult(null));
+
+        await completion.Task;
+    }
+
+    private void SyncGridSelection(GanttViewModel vm)
+    {
+        if (vm.SelectedRow != null)
+            ChapterGrid.SelectedItem = vm.SelectedRow;
     }
 
     private bool IsEditingControlFocused()

@@ -283,6 +283,7 @@
                     <views:GanttCanvas x:Name="TimelineCanvas"
                                        Rows="{Binding Rows}"
                                        ShowTable="False"
+                                       RowReorderRequested="TimelineCanvas_RowReorderRequested"
                                        HorizontalAlignment="Stretch"
                                        VerticalAlignment="Top" />
                 </ScrollViewer>
