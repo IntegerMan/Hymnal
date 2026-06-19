@@ -206,6 +206,141 @@ public sealed class StructuralConsistencyUatTests
         }
     }
 
+    [Fact]
+    public async Task ControlledStructuralFailures_AreVisibleAndLeaveStateRecoverableAcrossSurfaces()
+    {
+        var workspace = CreateWorkspace(
+            ("Book.txt", string.Join('\n',
+                "front/part.md",
+                "front/alpha.md",
+                "front/beta.md",
+                "back/part.md",
+                "back/omega.md")),
+            ("front/part.md", "{class: part}\n# Front"),
+            ("front/alpha.md", "# Alpha\n\nOriginal alpha body."),
+            ("front/beta.md", "# Beta\n\nOriginal beta body."),
+            ("back/part.md", "{class: part}\n# Back"),
+            ("back/omega.md", "# Omega\n\nOriginal omega body."),
+            ("back/beta.md", "# Existing Back Beta\n\nThis pre-existing file forces a deterministic Corkboard move conflict."));
+
+        try
+        {
+            var structure = new RecordingStructureService();
+            using var context = new TestContext(workspace.Root, structure, ownsWorkspace: false);
+            await SeedRegistryAndSidecarsAsync(context, new[]
+            {
+                "front/alpha.md",
+                "front/beta.md",
+                "back/omega.md"
+            });
+
+            await context.OpenWorkspaceAsync(expectedNodeCount: 5);
+            var alphaUuid = (await context.WaitForNodeAsync("front/alpha.md", requireUuid: true)).Uuid;
+            var betaUuid = (await context.WaitForNodeAsync("front/beta.md", requireUuid: true)).Uuid;
+            var omegaUuid = (await context.WaitForNodeAsync("back/omega.md", requireUuid: true)).Uuid;
+
+            // Successful setup edits prove the later failures happen after real cross-surface structural activity.
+            await ExecuteCommandAsync(context.Workspace.ReorderChapterCommand.Execute(new ReorderCardRequest(
+                "front/beta.md",
+                BeforeRelativePath: "front/alpha.md")));
+            using var board = context.CreateBoard();
+            await WaitForBoardProjectionAsync(board,
+                "front/part.md",
+                "front/beta.md",
+                "front/alpha.md",
+                "back/part.md",
+                "back/omega.md");
+            await ExecuteCommandAsync(board.DropCardCommand.Execute(new CorkboardDropRequest(
+                "front/alpha.md",
+                BeforeRelativePath: "front/beta.md")));
+
+            var stableBook = new[]
+            {
+                "front/part.md",
+                "front/alpha.md",
+                "front/beta.md",
+                "back/part.md",
+                "back/omega.md"
+            };
+            await WaitForVisibleOrderAsync(context.Workspace, stableBook);
+            await WaitForBoardProjectionAsync(board, stableBook);
+            Assert.Equal(stableBook, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.Empty(context.NotificationService.Errors);
+            Assert.Null(board.LastStructuralError);
+
+            // Corkboard surface: a cross-Part move would target back/beta.md, which already exists on disk.
+            await ExecuteCommandAsync(board.DropCardCommand.Execute(new CorkboardDropRequest(
+                "front/beta.md",
+                TargetPartPath: "back/part.md",
+                AfterRelativePath: "back/omega.md")));
+
+            Assert.NotNull(board.LastStructuralError);
+            var corkboardError = board.LastStructuralError!;
+            Assert.Equal("Drop card", corkboardError.Operation);
+            Assert.Equal("front/beta.md", corkboardError.Path);
+            Assert.Equal(workspace.BookTxtPath, corkboardError.BookTxtPath);
+            Assert.Contains("Move operation failed", corkboardError.Message);
+            Assert.Contains("front/beta.md", corkboardError.Message);
+            Assert.Contains("back/beta.md", corkboardError.Message);
+            Assert.Contains("target file", corkboardError.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(context.NotificationService.Errors, message =>
+                message.Contains("Drop card", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("front/beta.md", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("Book.txt", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("target file", StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal(stableBook, ReadBookTxtLines(workspace.BookTxtPath));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "front/beta.md")));
+            Assert.True(File.Exists(AbsolutePath(workspace.Root, "back/beta.md")));
+            Assert.Equal("# Beta\n\nOriginal beta body.", await File.ReadAllTextAsync(AbsolutePath(workspace.Root, "front/beta.md")));
+            Assert.Equal("# Existing Back Beta\n\nThis pre-existing file forces a deterministic Corkboard move conflict.", await File.ReadAllTextAsync(AbsolutePath(workspace.Root, "back/beta.md")));
+            await WaitForBoardProjectionAsync(board, stableBook);
+
+            // Gantt surface: row drag delegates to the sidebar/Workspace command, which rejects cross-Part chapter reorders.
+            var gantt = context.CreateGanttViewModel();
+            await WaitForGanttRowsAsync(gantt, new[] { "__book__" }.Concat(stableBook).ToArray());
+            await gantt.MoveRowAfterAsync(
+                GetGanttRow(gantt, "front/alpha.md"),
+                GetGanttRow(gantt, "back/omega.md"));
+
+            Assert.Contains(context.NotificationService.Errors, message =>
+                message.Contains("Reorder failed", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("front/alpha.md", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("Book.txt", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("cannot be moved across Part sections", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("Move chapters between Parts from the corkboard", StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal(stableBook, ReadBookTxtLines(workspace.BookTxtPath));
+            await WaitForVisibleOrderAsync(context.Workspace, stableBook);
+            await WaitForBoardProjectionAsync(board, stableBook);
+            await WaitForGanttRowsAsync(gantt, new[] { "__book__" }.Concat(stableBook).ToArray());
+            Assert.Empty(await context.LoadExcludedPathsAsync());
+
+            using var reloaded = new TestContext(workspace.Root, new RecordingStructureService(), ownsWorkspace: false);
+            await reloaded.OpenWorkspaceAsync(expectedNodeCount: 5);
+            using var reloadedBoard = reloaded.CreateBoard();
+            var reloadedGantt = reloaded.CreateGanttViewModel();
+            await WaitForVisibleOrderAsync(reloaded.Workspace, stableBook);
+            await WaitForBoardProjectionAsync(reloadedBoard, stableBook);
+            await WaitForGanttRowsAsync(reloadedGantt, new[] { "__book__" }.Concat(stableBook).ToArray());
+
+            var registry = await reloaded.RegistryService.LoadAsync(workspace.Root);
+            AssertRegistryPath(registry, alphaUuid, "front/alpha.md");
+            AssertRegistryPath(registry, betaUuid, "front/beta.md");
+            AssertRegistryPath(registry, omegaUuid, "back/omega.md");
+            await AssertUuidSidecarsAsync(workspace.Root, alphaUuid, "front/alpha.md");
+            await AssertUuidSidecarsAsync(workspace.Root, betaUuid, "front/beta.md");
+            await AssertUuidSidecarsAsync(workspace.Root, omegaUuid, "back/omega.md");
+            Assert.Null(reloadedBoard.LastStructuralError);
+            Assert.Empty(reloaded.NotificationService.Errors);
+        }
+        finally
+        {
+            DeleteWorkspace(workspace.Root);
+        }
+    }
+
+
     private static (string Root, string BookTxtPath) CreateWorkspace(params (string Path, string Content)[] files)
     {
         var root = Path.Combine(Path.GetTempPath(), $"hymnal-structural-uat-{Guid.NewGuid():N}");
