@@ -2,6 +2,8 @@ using System;
 
 using System.Collections.Generic;
 
+using System.Linq;
+
 using Hymnal.Core.Models;
 
 using ReactiveUI;
@@ -104,7 +106,10 @@ public abstract class CorkboardItemViewModel : ViewModelBase, IDisposable
 
         var orphansByFolder = GroupOrphansByFolder(orphanFiles);
 
-        var excludedWorkspacePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var excludedWorkspacePaths = chapters
+            .Where(chapter => chapter.Node.Kind == NodeKind.Chapter && chapter.Node.IsExcluded)
+            .Select(chapter => chapter.Node.RelativePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
 
 
