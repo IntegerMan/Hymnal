@@ -158,10 +158,11 @@ public sealed class GanttViewSmokeTests
 
         SetAutoPropertyBackingField(workspace, "Nodes", readOnly);
 
-        reorderRequests = [];
+        var requests = new Collection<ReorderCardRequest>();
+        reorderRequests = requests;
         var reorderCommand = ReactiveCommand.CreateFromTask<ReorderCardRequest>(request =>
         {
-            reorderRequests.Add(request);
+            requests.Add(request);
             return Task.CompletedTask;
         });
 
