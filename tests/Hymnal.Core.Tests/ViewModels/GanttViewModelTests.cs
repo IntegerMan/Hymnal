@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Reflection;
+using System.Threading;
 using System.Runtime.CompilerServices;
 using Hymnal.Core.Common;
 using Hymnal.Core.Infrastructure;
@@ -711,9 +712,11 @@ public class GanttViewModelTests
             ("part-two/part.md", "{class: part}\n# Part Two"),
             ("part-two/chapter-four.md", "# Chapter Four"));
 
+        IntegrationWorkspaceContext? context = null;
+        IntegrationWorkspaceContext? freshContext = null;
         try
         {
-            var context = new IntegrationWorkspaceContext(workspace.Root);
+            context = new IntegrationWorkspaceContext(workspace.Root);
             await context.OpenWorkspaceAsync();
             await WaitForVisibleOrderAsync(context.Workspace,
                 "part-one/part.md",
@@ -744,8 +747,10 @@ public class GanttViewModelTests
             }, ReadBookTxtLines(workspace.BookTxtPath));
             Assert.Equal("part-one/chapter-one.md", gantt.SelectedRow?.RelativePath);
             Assert.Empty(context.NotificationService.Errors);
+            context.Dispose();
+            context = null;
 
-            var freshContext = new IntegrationWorkspaceContext(workspace.Root);
+            freshContext = new IntegrationWorkspaceContext(workspace.Root);
             await freshContext.OpenWorkspaceAsync();
             await WaitForVisibleOrderAsync(freshContext.Workspace,
                 "part-one/part.md",
@@ -769,6 +774,8 @@ public class GanttViewModelTests
         }
         finally
         {
+            context?.Dispose();
+            freshContext?.Dispose();
             DeleteWorkspace(workspace.Root);
         }
     }
@@ -910,8 +917,22 @@ public class GanttViewModelTests
 
     private static void DeleteWorkspace(string root)
     {
-        if (Directory.Exists(root))
-            Directory.Delete(root, recursive: true);
+        if (!Directory.Exists(root))
+            return;
+
+        // File watchers may still hold handles briefly after Dispose() — retry with backoff.
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+                return;
+            }
+            catch (IOException) when (attempt < 4)
+            {
+                Thread.Sleep(50 * (1 << attempt));
+            }
+        }
     }
 
     private static async Task WaitForVisibleOrderAsync(WorkspaceViewModel workspace, params string[] expectedPaths)
@@ -951,7 +972,7 @@ public class GanttViewModelTests
         throw new FileNotFoundException($"Could not find repository file '{relativePath}'.");
     }
 
-    private sealed class IntegrationWorkspaceContext
+    private sealed class IntegrationWorkspaceContext : IDisposable
     {
         public RecordingNotificationService NotificationService { get; } = new();
         public MetadataStore MetadataStore { get; } = new();
@@ -1001,6 +1022,11 @@ public class GanttViewModelTests
 
         public GanttViewModel CreateGanttViewModel() =>
             new(Workspace, PhaseDataService, NotificationService);
+
+        public void Dispose()
+        {
+            ManuscriptService.Dispose();
+        }
 
         public async Task OpenWorkspaceAsync()
         {

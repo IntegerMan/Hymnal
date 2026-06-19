@@ -219,7 +219,9 @@ public sealed class MainWindowPlanModeTests
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
                 NotificationService,
-                SettingsStore);
+                SettingsStore,
+                AiTestDoubles.CreateStubAiChatViewModel(EditorViewModel, Workspace, NotificationService),
+                AiTestDoubles.CreateStubSettingsFactory(NotificationService));
         }
 
         public CorkboardViewModel CreateCorkboard()

@@ -158,7 +158,9 @@ public sealed class MainWindowGitPanelTests : IDisposable
                 supplementalDocs,
                 gitPanel,
                 Notifications,
-                SettingsStore);
+                SettingsStore,
+                AiTestDoubles.CreateStubAiChatViewModel(Editor, Workspace, Notifications),
+                AiTestDoubles.CreateStubSettingsFactory(Notifications));
         }
 
         public void EnableWorkspace()

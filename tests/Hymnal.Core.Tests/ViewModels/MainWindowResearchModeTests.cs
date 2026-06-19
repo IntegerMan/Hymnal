@@ -258,7 +258,9 @@ public sealed class MainWindowResearchModeTests
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
                 NotificationService,
-                SettingsStore);
+                SettingsStore,
+                AiTestDoubles.CreateStubAiChatViewModel(EditorViewModel, Workspace, NotificationService),
+                AiTestDoubles.CreateStubSettingsFactory(NotificationService));
         }
 
         private void SetWorkspaceModel(bool hasWorkspace)

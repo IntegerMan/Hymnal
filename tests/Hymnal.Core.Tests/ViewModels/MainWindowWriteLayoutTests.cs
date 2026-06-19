@@ -241,7 +241,9 @@ public sealed class MainWindowWriteLayoutTests : IDisposable
                 docs,
                 gitPanel,
                 NotificationService,
-                SettingsStore);
+                SettingsStore,
+                AiTestDoubles.CreateStubAiChatViewModel(Editor, Workspace, NotificationService),
+                AiTestDoubles.CreateStubSettingsFactory(NotificationService));
         }
 
         public void EnableWorkspace()

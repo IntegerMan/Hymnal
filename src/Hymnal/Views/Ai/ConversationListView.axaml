@@ -1,0 +1,96 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels.Ai"
+             x:Class="Hymnal.Views.Ai.ConversationListView"
+             x:DataType="vm:ConversationListViewModel"
+             Background="{DynamicResource SurfaceElevatedBrush}">
+
+    <Grid RowDefinitions="Auto,Auto,*">
+
+        <!-- Search header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,8,8,4">
+            <TextBox Grid.Column="0"
+                     Text="{Binding SearchQuery, Mode=TwoWay}"
+                     Watermark="Search conversations…"
+                     FontSize="11"
+                     Background="{DynamicResource SurfaceBaseBrush}"
+                     Foreground="{DynamicResource OnSurfaceBrush}"
+                     BorderThickness="1"
+                     BorderBrush="{DynamicResource BorderDefaultBrush}"
+                     CornerRadius="5"
+                     Padding="6,4" />
+            <ToggleButton Grid.Column="1"
+                          Content="Archived"
+                          IsChecked="{Binding ShowArchived}"
+                          Margin="4,0,0,0"
+                          Padding="6,4"
+                          FontSize="10"
+                          Background="{DynamicResource SurfaceOverlayBrush}"
+                          Foreground="{DynamicResource OnSurfaceDimBrush}" />
+        </Grid>
+
+        <!-- Separator -->
+        <Border Grid.Row="1"
+                Height="1"
+                Background="{DynamicResource BorderSubtleBrush}" />
+
+        <!-- Conversation list -->
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <Panel>
+
+                <!-- Empty state -->
+                <TextBlock IsVisible="{Binding Conversations.Count, Converter={x:Static ObjectConverters.IsNull}}"
+                           Text="No conversations yet. Start a new one."
+                           Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           FontSize="11"
+                           Margin="16,32" />
+
+                <ItemsControl ItemsSource="{Binding Conversations}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ConversationListItemViewModel">
+                            <Border Padding="10,8"
+                                    Margin="0,1"
+                                    CornerRadius="4"
+                                    Background="{DynamicResource SurfaceBaseBrush}"
+                                    Cursor="Hand">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource OnSurfaceBrush}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding Role}"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource SynthwavePurpleBrush}" />
+                                            <TextBlock Text="·"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                                            <TextBlock Text="{Binding RelativeDate}"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                                            <TextBlock Text="·"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                                            <TextBlock Text="{Binding MessageCount}"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                                            <TextBlock Text="msgs"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+            </Panel>
+        </ScrollViewer>
+
+    </Grid>
+
+</UserControl>

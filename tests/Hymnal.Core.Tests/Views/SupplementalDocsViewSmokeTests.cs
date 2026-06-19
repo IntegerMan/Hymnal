@@ -202,7 +202,9 @@ public sealed class SupplementalDocsViewSmokeTests
                 docsVm,
                 gitPanelVm,
                 NotificationService,
-                SettingsStore);
+                SettingsStore,
+                AiTestDoubles.CreateStubAiChatViewModel(EditorViewModel, Workspace, NotificationService),
+                AiTestDoubles.CreateStubSettingsFactory(NotificationService));
         }
 
         private void SeedWorkspace()

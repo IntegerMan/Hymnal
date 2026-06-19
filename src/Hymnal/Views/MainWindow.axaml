@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Hymnal.ViewModels"
         xmlns:views="clr-namespace:Hymnal.Views"
+        xmlns:aiviews="using:Hymnal.Views.Ai"
         xmlns:conv="using:Hymnal.Views.Converters"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -85,6 +86,8 @@
 
     <Window.KeyBindings>
         <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
+        <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenSettingsCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+A" Command="{Binding ToggleAiChatCommand}" />
         <KeyBinding Gesture="F1" Command="{Binding ShowAboutCommand}" />
         <KeyBinding Gesture="F3" Command="{Binding ChapterInfoViewModel.ToggleCommand}" />
         <KeyBinding Gesture="F4" Command="{Binding NotesViewModel.ToggleCommand}" />
@@ -173,6 +176,24 @@
                                   ToolTip.Tip="Reserved for later" />
                 </StackPanel>
 
+                <!-- Settings + AI icons (always visible, no workspace required) -->
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Right"
+                            Margin="0,0,4,0"
+                            Spacing="0"
+                            IsVisible="{Binding !WorkspaceViewModel.HasWorkspace}">
+                    <Button Classes="nav-icon"
+                            Command="{Binding OpenSettingsCommand}"
+                            ToolTip.Tip="Settings (Ctrl+,)">
+                        <Path Data="M12 15.5A3.5 3.5 0 018.5 12 3.5 3.5 0 0112 8.5a3.5 3.5 0 013.5 3.5 3.5 3.5 0 01-3.5 3.5m7.43-2.92c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.16-1.63c.19-.15.24-.42.12-.64l-2.05-3.55c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22L2.74 8.87c-.12.21-.08.49.12.64L5.02 11.1c-.04.34-.07.67-.07 1s.03.65.07.97l-2.16 1.66c-.19.15-.24.42-.12.64l2.05 3.55c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2.05-3.55c.12-.22.07-.49-.12-.64l-2.16-1.66z"
+                              Fill="{DynamicResource OnSurfaceDimBrush}"
+                              Width="18" Height="18"
+                              Stretch="Uniform" />
+                    </Button>
+                </StackPanel>
+
                 <Border Grid.Column="2"
                         Margin="4,0,12,4"
                         MinHeight="40"
@@ -237,6 +258,26 @@
                                         Background="{DynamicResource SynthwavePurpleBrush}"
                                         Foreground="{DynamicResource OnSurfaceBrush}"
                                         ToolTip.Tip="Sync local changes, or pull when already up to date" />
+                                <!-- AI Chat toggle -->
+                                <Button Classes="nav-icon"
+                                        Command="{Binding ToggleAiChatCommand}"
+                                        ToolTip.Tip="AI Chat (Ctrl+Shift+A)">
+                                    <Path Data="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"
+                                          Stroke="{DynamicResource OnSurfaceDimBrush}"
+                                          StrokeThickness="1.5"
+                                          StrokeLineCap="Round"
+                                          Width="18" Height="18"
+                                          Stretch="Uniform" />
+                                </Button>
+                                <!-- Settings -->
+                                <Button Classes="nav-icon"
+                                        Command="{Binding OpenSettingsCommand}"
+                                        ToolTip.Tip="Settings (Ctrl+,)">
+                                    <Path Data="M12 15.5A3.5 3.5 0 018.5 12 3.5 3.5 0 0112 8.5a3.5 3.5 0 013.5 3.5 3.5 3.5 0 01-3.5 3.5m7.43-2.92c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.16-1.63c.19-.15.24-.42.12-.64l-2.05-3.55c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22L2.74 8.87c-.12.21-.08.49.12.64L5.02 11.1c-.04.34-.07.67-.07 1s.03.65.07.97l-2.16 1.66c-.19.15-.24.42-.12.64l2.05 3.55c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2.05-3.55c.12-.22.07-.49-.12-.64l-2.16-1.66z"
+                                          Fill="{DynamicResource OnSurfaceDimBrush}"
+                                          Width="18" Height="18"
+                                          Stretch="Uniform" />
+                                </Button>
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -488,6 +529,17 @@
                                       Width="18" Height="18"
                                       Stretch="Uniform" />
                             </Button>
+                            <!-- AI Chat (Ctrl+Shift+A) -->
+                            <Button Classes="nav-icon"
+                                    Command="{Binding ToggleAiChatCommand}"
+                                    ToolTip.Tip="AI Chat (Ctrl+Shift+A)">
+                                <Path Data="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"
+                                      Stroke="{DynamicResource OnSurfaceDimBrush}"
+                                      StrokeThickness="1.5"
+                                      StrokeLineCap="Round"
+                                      Width="18" Height="18"
+                                      Stretch="Uniform" />
+                            </Button>
                         </StackPanel>
 
                         <!-- EXPANDED: Outlook-style explorer bar.
@@ -504,7 +556,7 @@
                              full sections (header + content) rather than a header row directly.
                         -->
                         <Grid IsVisible="{Binding IsAnyRightPaneOpen}"
-                              RowDefinitions="*,Auto,*"
+                              RowDefinitions="*,Auto,*,Auto,*"
                               x:Name="RightPaneGrid">
 
                             <!-- Row 0: Chapter panel DockPanel (header pinned top + content fills rest) -->
@@ -577,6 +629,54 @@
                                                  DataContext="{Binding NotesViewModel}" />
                             </DockPanel>
 
+                            <!-- Row 3: GridSplitter between Notes and AI (visible when both open) -->
+                            <GridSplitter Grid.Row="3"
+                                          Height="4"
+                                          ResizeDirection="Rows"
+                                          IsVisible="{Binding AiChatViewModel.IsVisible}"
+                                          Background="{DynamicResource BorderSubtleBrush}" />
+
+                            <!-- Row 4: AI Chat DockPanel -->
+                            <DockPanel Grid.Row="4"
+                                       IsVisible="{Binding AiChatViewModel.IsVisible}">
+                                <Border DockPanel.Dock="Top"
+                                        Height="48"
+                                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                        BorderThickness="0,1,0,1">
+                                    <Grid ColumnDefinitions="48,*,Auto">
+                                        <Button Grid.Column="0"
+                                                Classes="nav-icon"
+                                                Command="{Binding ToggleAiChatCommand}"
+                                                ToolTip.Tip="AI Chat (Ctrl+Shift+A)">
+                                            <Path Data="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"
+                                                  Stroke="{DynamicResource SynthwavePurpleBrush}"
+                                                  StrokeThickness="1.5"
+                                                  StrokeLineCap="Round"
+                                                  Width="18" Height="18"
+                                                  Stretch="Uniform" />
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="AI CHAT"
+                                                   VerticalAlignment="Center"
+                                                   Margin="4,0,0,0"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   LetterSpacing="1.5"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                        <Button Grid.Column="2"
+                                                Classes="nav-icon"
+                                                Command="{Binding AiChatViewModel.NewConversationCommand}"
+                                                ToolTip.Tip="New conversation"
+                                                Margin="0,0,4,0">
+                                            <TextBlock Text="+"
+                                                       FontSize="16"
+                                                       Foreground="{DynamicResource SynthwavePurpleBrush}" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                                <aiviews:AiChatView DataContext="{Binding AiChatViewModel}" />
+                            </DockPanel>
+
                         </Grid>
 
                     </Panel>
@@ -587,6 +687,48 @@
             <!-- Research / Plan / Manage — lazy-loaded via ViewLocator, full width -->
             <ContentControl IsVisible="{Binding !IsEditorVisible}"
                             Content="{Binding SecondaryCentreContent}" />
+
+            <!-- Settings overlay — covers full shell area when IsSettingsOpen -->
+            <Border IsVisible="{Binding IsSettingsOpen}"
+                    Background="{DynamicResource SurfaceBaseBrush}"
+                    ZIndex="100">
+                <Grid RowDefinitions="48,*">
+                    <!-- Settings header bar -->
+                    <Border Grid.Row="0"
+                            Background="{DynamicResource SurfaceElevatedBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="0,0,0,1">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="Settings"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource OnSurfaceBrush}"
+                                       VerticalAlignment="Center"
+                                       Margin="16,0" />
+                            <Button Grid.Column="1"
+                                    Classes="nav-icon"
+                                    Command="{Binding CloseSettingsCommand}"
+                                    ToolTip.Tip="Close settings (Esc)"
+                                    Margin="0,0,8,0">
+                                <TextBlock Text="✕"
+                                           FontSize="14"
+                                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                            </Button>
+                        </Grid>
+                    </Border>
+                    <!-- Settings view -->
+                    <ContentControl Grid.Row="1"
+                                    Content="{Binding ActiveSettingsViewModel}">
+                        <ContentControl.DataTemplates>
+                            <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                                <views:SettingsView />
+                            </DataTemplate>
+                        </ContentControl.DataTemplates>
+                    </ContentControl>
+                </Grid>
+            </Border>
+
         </Panel>
 
         <!-- Synthwave accent stripe bottom (Row 3) -->

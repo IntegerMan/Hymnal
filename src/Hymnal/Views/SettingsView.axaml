@@ -1,0 +1,210 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels"
+             xmlns:aivm="using:Hymnal.ViewModels.Ai"
+             x:Class="Hymnal.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel"
+             Background="{DynamicResource SurfaceBaseBrush}">
+
+    <Grid ColumnDefinitions="160,*" Margin="0">
+
+        <!-- Left nav -->
+        <Border Grid.Column="0"
+                Background="{DynamicResource SurfaceElevatedBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="0,0,1,0"
+                Padding="0,16">
+            <StackPanel Spacing="2" Margin="8,0">
+                <TextBlock Text="AI Providers"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource SynthwavePurpleBrush}"
+                           Padding="8,6"
+                           Background="{DynamicResource SurfaceOverlayBrush}"
+                           />
+            </StackPanel>
+        </Border>
+
+        <!-- Content area -->
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="24,20">
+            <StackPanel Spacing="16" MaxWidth="600">
+
+                <!-- Section header -->
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="AI Providers"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceBrush}" />
+                    <Button Grid.Column="1"
+                            Content="+ Add provider"
+                            Command="{Binding AddProfileCommand}"
+                            Padding="10,6"
+                            FontSize="12"
+                            Background="{DynamicResource SynthwavePurpleBrush}"
+                            Foreground="White"
+                            CornerRadius="5" />
+                </Grid>
+
+                <!-- Provider list -->
+                <ItemsControl ItemsSource="{Binding Profiles}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="aivm:ProviderProfileViewModel">
+                            <Border Margin="0,0,0,12"
+                                    Padding="16,14"
+                                    CornerRadius="8"
+                                    Background="{DynamicResource SurfaceElevatedBrush}"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource BorderDefaultBrush}">
+                                <StackPanel Spacing="10">
+
+                                    <!-- Header row -->
+                                    <Grid ColumnDefinitions="*,Auto,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="2">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource OnSurfaceBrush}" />
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{DynamicResource OnSurfaceMutedBrush}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} · {1}">
+                                                        <Binding Path="BaseUrl" />
+                                                        <Binding Path="ModelId" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <Button Grid.Column="1"
+                                                Content="Set active"
+                                                Command="{Binding SetActiveCommand}"
+                                                IsVisible="{Binding !IsActive}"
+                                                Margin="8,0,0,0"
+                                                Padding="8,4"
+                                                FontSize="11"
+                                                Background="{DynamicResource SurfaceOverlayBrush}"
+                                                Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                CornerRadius="4" />
+                                        <TextBlock Grid.Column="2"
+                                                   Text="Active ✓"
+                                                   IsVisible="{Binding IsActive}"
+                                                   Foreground="{DynamicResource SuccessBrush}"
+                                                   FontSize="11"
+                                                   Margin="8,0,0,0"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <!-- Edit fields -->
+                                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="120,*">
+                                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                                   Text="Display name"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBox Grid.Row="0" Grid.Column="1"
+                                                 Text="{Binding DisplayName, Mode=TwoWay}"
+                                                 FontSize="12"
+                                                 Margin="0,0,0,6"
+                                                 Background="{DynamicResource SurfaceBaseBrush}"
+                                                 Foreground="{DynamicResource OnSurfaceBrush}"
+                                                 BorderThickness="1"
+                                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                                 CornerRadius="4"
+                                                 Padding="6,4" />
+
+                                        <TextBlock Grid.Row="1" Grid.Column="0"
+                                                   Text="Base URL"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBox Grid.Row="1" Grid.Column="1"
+                                                 Text="{Binding BaseUrl, Mode=TwoWay}"
+                                                 FontSize="12"
+                                                 Margin="0,0,0,6"
+                                                 Background="{DynamicResource SurfaceBaseBrush}"
+                                                 Foreground="{DynamicResource OnSurfaceBrush}"
+                                                 BorderThickness="1"
+                                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                                 CornerRadius="4"
+                                                 Padding="6,4" />
+
+                                        <TextBlock Grid.Row="2" Grid.Column="0"
+                                                   Text="Model ID"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBox Grid.Row="2" Grid.Column="1"
+                                                 Text="{Binding ModelId, Mode=TwoWay}"
+                                                 FontSize="12"
+                                                 Margin="0,0,0,6"
+                                                 Background="{DynamicResource SurfaceBaseBrush}"
+                                                 Foreground="{DynamicResource OnSurfaceBrush}"
+                                                 BorderThickness="1"
+                                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                                 CornerRadius="4"
+                                                 Padding="6,4" />
+
+                                        <TextBlock Grid.Row="3" Grid.Column="0"
+                                                   Text="API key"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBox Grid.Row="3" Grid.Column="1"
+                                                 Text="{Binding ApiKey, Mode=TwoWay}"
+                                                 PasswordChar="•"
+                                                 FontSize="12"
+                                                 Margin="0,0,0,6"
+                                                 Background="{DynamicResource SurfaceBaseBrush}"
+                                                 Foreground="{DynamicResource OnSurfaceBrush}"
+                                                 BorderThickness="1"
+                                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                                 CornerRadius="4"
+                                                 Padding="6,4" />
+
+                                        <!-- Test result -->
+                                        <TextBlock Grid.Row="4" Grid.Column="1"
+                                                   Text="{Binding TestResult}"
+                                                   IsVisible="{Binding TestResult, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                   FontSize="11"
+                                                   Margin="0,0,0,6"
+                                                   Foreground="{DynamicResource CyanBrush}" />
+                                    </Grid>
+
+                                    <!-- Action buttons -->
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Save"
+                                                Command="{Binding SaveCommand}"
+                                                Padding="10,5"
+                                                FontSize="11"
+                                                Background="{DynamicResource SynthwavePurpleBrush}"
+                                                Foreground="White"
+                                                CornerRadius="4" />
+                                        <Button Content="Test connection"
+                                                Command="{Binding TestConnectionCommand}"
+                                                IsEnabled="{Binding !IsTesting}"
+                                                Padding="10,5"
+                                                FontSize="11"
+                                                Background="{DynamicResource SurfaceOverlayBrush}"
+                                                Foreground="{DynamicResource OnSurfaceDimBrush}"
+                                                CornerRadius="4" />
+                                        <Button Content="Delete"
+                                                Command="{Binding DeleteCommand}"
+                                                Padding="10,5"
+                                                FontSize="11"
+                                                Background="{DynamicResource SurfaceBaseBrush}"
+                                                Foreground="{DynamicResource ErrorBrush}"
+                                                CornerRadius="4" />
+                                    </StackPanel>
+
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </Grid>
+
+</UserControl>

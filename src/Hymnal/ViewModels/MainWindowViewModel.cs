@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Infrastructure;
+using Hymnal.ViewModels.Ai;
 using ReactiveUI;
 using System;
 using System.IO;
@@ -32,6 +33,28 @@ public class MainWindowViewModel : ViewModelBase
     public ResearchViewModel ResearchViewModel { get; }
     public SupplementalDocsViewModel SupplementalDocsViewModel { get; }
     public GitPanelViewModel GitPanelViewModel { get; }
+    public AiChatViewModel AiChatViewModel { get; }
+
+    // ── Settings overlay ──────────────────────────────────────────────────────
+
+    private bool _isSettingsOpen;
+    public bool IsSettingsOpen
+    {
+        get => _isSettingsOpen;
+        private set => this.RaiseAndSetIfChanged(ref _isSettingsOpen, value);
+    }
+
+    private readonly Func<SettingsViewModel> _settingsVmFactory;
+    private SettingsViewModel? _activeSettingsVm;
+    public SettingsViewModel? ActiveSettingsViewModel
+    {
+        get => _activeSettingsVm;
+        private set => this.RaiseAndSetIfChanged(ref _activeSettingsVm, value);
+    }
+
+    public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
+    public ReactiveCommand<Unit, Unit> CloseSettingsCommand { get; }
+    public ReactiveCommand<Unit, Unit> ToggleAiChatCommand { get; }
 
     // ── Window title ──────────────────────────────────────────────────────────
 
@@ -87,6 +110,7 @@ public class MainWindowViewModel : ViewModelBase
             EditorViewModel.IsResearchSurface = value == ShellMode.Research;
             CorkboardViewModel.SetViewActive(value == ShellMode.Plan);
             GanttViewModel.SetViewActive(value == ShellMode.Manage);
+            AiChatViewModel.CurrentShellModeName = value.ToString();
             this.RaisePropertyChanged(nameof(ActiveMode));
             this.RaisePropertyChanged(nameof(IsEditorVisible));
             this.RaisePropertyChanged(nameof(IsGanttVisible));
@@ -214,7 +238,9 @@ public class MainWindowViewModel : ViewModelBase
         SupplementalDocsViewModel supplementalDocsViewModel,
         GitPanelViewModel gitPanelViewModel,
         NotificationService notificationService,
-        IAppSettingsStore settingsStore)
+        IAppSettingsStore settingsStore,
+        AiChatViewModel aiChatViewModel,
+        Func<SettingsViewModel> settingsVmFactory)
     {
         _settingsStore = settingsStore;
         _workspaceVm = workspaceViewModel;
@@ -232,9 +258,31 @@ public class MainWindowViewModel : ViewModelBase
         ResearchViewModel = researchViewModel;
         SupplementalDocsViewModel = supplementalDocsViewModel;
         GitPanelViewModel = gitPanelViewModel;
+        AiChatViewModel = aiChatViewModel;
+        _settingsVmFactory = settingsVmFactory;
 
         CorkboardViewModel.SetViewActive(false);
         GanttViewModel.SetViewActive(false);
+
+        OpenSettingsCommand = ReactiveCommand.Create(() =>
+        {
+            ActiveSettingsViewModel = _settingsVmFactory();
+            IsSettingsOpen = true;
+        });
+        CloseSettingsCommand = ReactiveCommand.Create(() =>
+        {
+            IsSettingsOpen = false;
+            ActiveSettingsViewModel = null;
+        });
+        ToggleAiChatCommand = ReactiveCommand.Create(() =>
+        {
+            AiChatViewModel.IsVisible = !AiChatViewModel.IsVisible;
+        });
+
+        Disposables.Add(OpenSettingsCommand.ThrownExceptions
+            .Subscribe(ex => notificationService.ShowError($"Failed to open settings: {ex.Message}")));
+        Disposables.Add(CloseSettingsCommand.ThrownExceptions
+            .Subscribe(ex => notificationService.ShowError($"Failed to close settings: {ex.Message}")));
 
         _isAnyLeftPaneOpen = Observable.CombineLatest(
                 workspaceViewModel.WhenAnyValue(x => x.IsChaptersPaneVisible),
@@ -316,14 +364,16 @@ public class MainWindowViewModel : ViewModelBase
         _isAnyRightPaneOpen = Observable.CombineLatest(
                 chapterPanelOpenObs,
                 NotesViewModel.WhenAnyValue(x => x.IsVisible),
-                (chPanel, notes) => chPanel || notes)
+                AiChatViewModel.WhenAnyValue(x => x.IsVisible),
+                (chPanel, notes, ai) => chPanel || notes || ai)
             .ToProperty(this, x => x.IsAnyRightPaneOpen);
         Disposables.Add(_isAnyRightPaneOpen);
 
         _isBothRightPanesOpen = Observable.CombineLatest(
                 chapterPanelOpenObs,
                 NotesViewModel.WhenAnyValue(x => x.IsVisible),
-                (chPanel, notes) => chPanel && notes)
+                AiChatViewModel.WhenAnyValue(x => x.IsVisible),
+                (chPanel, notes, ai) => (chPanel ? 1 : 0) + (notes ? 1 : 0) + (ai ? 1 : 0) >= 2)
             .ToProperty(this, x => x.IsBothRightPanesOpen);
         Disposables.Add(_isBothRightPanesOpen);
 
@@ -501,6 +551,9 @@ public class MainWindowViewModel : ViewModelBase
         await _notesVm.PersistVisibilityAsync().ConfigureAwait(false);
         _chapterInfoVm.ApplyVisibility(false);
         await _chapterInfoVm.PersistVisibilityAsync().ConfigureAwait(false);
+
+        // Hide AI chat panel
+        AiChatViewModel.IsVisible = false;
 
         // Persist and broadcast the geometry defaults.
         await PersistWriteLayoutAsync(defaults).ConfigureAwait(false);

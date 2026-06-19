@@ -2,14 +2,20 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using Hymnal.Core.Interfaces;
 using Hymnal.Core.Infrastructure;
+using Hymnal.Core.Infrastructure.Ai;
+using Hymnal.Core.Interfaces;
 using Hymnal.Core.Services;
+using Hymnal.Core.Services.Ai;
 using Hymnal.Infrastructure;
 using Hymnal.ViewModels;
+using Hymnal.ViewModels.Ai;
 using Hymnal.Views;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using OpenAI;
 using System;
+using System.ClientModel;
 
 namespace Hymnal;
 
@@ -64,6 +70,38 @@ public partial class App : Application
 
         // M004/S02 services — supplemental docs sidebar tree
         services.AddSingleton<ISupplementalDocsService, SupplementalDocsService>();
+
+        // M006 — AI platform services
+        // IChatClient factory: builds an MEAI-compatible client from a ProviderProfile + API key
+        services.AddSingleton<Func<Hymnal.Core.Models.Ai.ProviderProfile, string, IChatClient>>(sp =>
+            (profile, apiKey) =>
+            {
+                var opts = new OpenAIClientOptions { Endpoint = new Uri(profile.BaseUrl) };
+                return new OpenAIClient(new ApiKeyCredential(apiKey), opts)
+                    .GetChatClient(profile.ModelId)
+                    .AsIChatClient();
+            });
+
+        services.AddSingleton<IRolePromptProvider, RolePromptProvider>();
+        services.AddSingleton<IManuscriptContextReader, ManuscriptContextReader>();
+        services.AddSingleton<WriteContextBuilder>(sp =>
+            new WriteContextBuilder(sp.GetRequiredService<IManuscriptContextReader>()));
+        services.AddSingleton<PlanContextBuilder>(sp =>
+            new PlanContextBuilder(sp.GetRequiredService<IManuscriptContextReader>()));
+        services.AddSingleton<ManageContextBuilder>(sp =>
+            new ManageContextBuilder(sp.GetRequiredService<IManuscriptContextReader>()));
+
+        services.AddSingleton<IConversationStore, ConversationStore>();
+        services.AddSingleton<IProviderProfileService>(sp =>
+            new ProviderProfileService(
+                sp.GetRequiredService<IAppSettingsStore>(),
+                sp.GetRequiredService<ICredentialStore>(),
+                sp.GetRequiredService<Func<Hymnal.Core.Models.Ai.ProviderProfile, string, IChatClient>>()));
+        services.AddSingleton<IAiChatService>(sp =>
+            new AiChatService(
+                sp.GetRequiredService<IProviderProfileService>(),
+                sp.GetRequiredService<ICredentialStore>(),
+                sp.GetRequiredService<Func<Hymnal.Core.Models.Ai.ProviderProfile, string, IChatClient>>()));
 
         // S03 view-models (order matters: EditorViewModel before WorkspaceViewModel)
         services.AddSingleton<EditorViewModel>(sp =>
@@ -162,6 +200,32 @@ public partial class App : Application
                 sp.GetRequiredService<WordCountHistoryService>(),
                 sp.GetRequiredService<TargetsService>()));
 
+        // M006 — AI chat ViewModels (must be registered after Editor/Workspace VMs)
+        services.AddSingleton<ConversationListViewModel>(sp =>
+            new ConversationListViewModel(
+                sp.GetRequiredService<IConversationStore>(),
+                sp.GetRequiredService<INotificationService>()));
+
+        services.AddSingleton<AiChatViewModel>(sp =>
+            new AiChatViewModel(
+                sp.GetRequiredService<IAiChatService>(),
+                sp.GetRequiredService<IConversationStore>(),
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<WorkspaceViewModel>(),
+                sp.GetRequiredService<INotificationService>(),
+                sp.GetRequiredService<IRolePromptProvider>(),
+                sp.GetRequiredService<WriteContextBuilder>(),
+                sp.GetRequiredService<PlanContextBuilder>(),
+                sp.GetRequiredService<ManageContextBuilder>(),
+                sp.GetRequiredService<ConversationListViewModel>()));
+
+        services.AddTransient<SettingsViewModel>(sp =>
+            new SettingsViewModel(
+                sp.GetRequiredService<IProviderProfileService>(),
+                sp.GetRequiredService<ICredentialStore>(),
+                sp.GetRequiredService<IAiChatService>(),
+                sp.GetRequiredService<INotificationService>()));
+
         services.AddTransient<MainWindowViewModel>(sp =>
             new MainWindowViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
@@ -175,7 +239,9 @@ public partial class App : Application
                 sp.GetRequiredService<SupplementalDocsViewModel>(),
                 sp.GetRequiredService<GitPanelViewModel>(),
                 sp.GetRequiredService<NotificationService>(),
-                sp.GetRequiredService<IAppSettingsStore>()));
+                sp.GetRequiredService<IAppSettingsStore>(),
+                sp.GetRequiredService<AiChatViewModel>(),
+                () => sp.GetRequiredService<SettingsViewModel>()));
 
         _serviceProvider = services.BuildServiceProvider();
         Services = _serviceProvider;

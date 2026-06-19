@@ -1,0 +1,208 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hymnal.ViewModels.Ai"
+             xmlns:models="using:Hymnal.Core.Models.Ai"
+             x:Class="Hymnal.Views.Ai.AiChatView"
+             x:DataType="vm:AiChatViewModel"
+             Background="{DynamicResource SurfaceElevatedBrush}">
+
+    <Panel>
+
+        <!-- No provider configured state -->
+        <StackPanel IsVisible="{Binding !IsProviderConfigured}"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Spacing="8"
+                    Margin="16">
+            <TextBlock Text="Configure an AI provider in Settings to use AI features."
+                       Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="12" />
+        </StackPanel>
+
+        <!-- No workspace state -->
+        <StackPanel IsVisible="{Binding !HasWorkspace}"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Spacing="8"
+                    Margin="16">
+            <TextBlock Text="Open a workspace to use AI features."
+                       Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="12" />
+        </StackPanel>
+
+        <!-- Main chat panel -->
+        <Grid IsVisible="{Binding IsProviderConfigured}"
+              RowDefinitions="Auto,Auto,*,Auto">
+
+            <!-- Context row: role selector + scope -->
+            <Grid Grid.Row="0"
+                  ColumnDefinitions="Auto,*,Auto"
+                  Margin="8,8,8,4">
+                <ComboBox Grid.Column="0"
+                          ItemsSource="{Binding AvailableRoles}"
+                          SelectedItem="{Binding SelectedRole}"
+                          FontSize="11"
+                          Foreground="{DynamicResource OnSurfaceDimBrush}"
+                          Background="{DynamicResource SurfaceOverlayBrush}"
+                          BorderThickness="0"
+                          Padding="6,2" />
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            Spacing="2">
+                    <Button Content="CH"
+                            FontSize="10"
+                            Padding="4,1"
+                            Command="{Binding $parent[UserControl].((vm:AiChatViewModel)DataContext).SelectedScope}"
+                            Background="{DynamicResource SurfaceOverlayBrush}"
+                            Foreground="{DynamicResource OnSurfaceDimBrush}"
+                            BorderThickness="0" />
+                    <Button Content="PART"
+                            FontSize="10"
+                            Padding="4,1"
+                            Background="{DynamicResource SurfaceOverlayBrush}"
+                            Foreground="{DynamicResource OnSurfaceDimBrush}"
+                            BorderThickness="0" />
+                    <Button Content="BOOK"
+                            FontSize="10"
+                            Padding="4,1"
+                            Background="{DynamicResource SurfaceOverlayBrush}"
+                            Foreground="{DynamicResource OnSurfaceDimBrush}"
+                            BorderThickness="0" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Separator -->
+            <Border Grid.Row="1"
+                    Height="1"
+                    Background="{DynamicResource BorderSubtleBrush}"
+                    Margin="0" />
+
+            <!-- Message area -->
+            <ScrollViewer Grid.Row="2"
+                          Name="MessageScroller"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="2" Margin="8,8,8,4">
+
+                    <!-- Empty state -->
+                    <TextBlock IsVisible="{Binding Messages.Count, Converter={x:Static ObjectConverters.IsNull}}"
+                               Text="Start a conversation. Your message is sent with the current chapter as context."
+                               Foreground="{DynamicResource OnSurfaceMutedBrush}"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               FontSize="11"
+                               Margin="0,32,0,0" />
+
+                    <ItemsControl ItemsSource="{Binding Messages}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ChatMessageViewModel">
+                                <!-- System message divider -->
+                                <Panel>
+                                    <Border IsVisible="{Binding IsSystem}"
+                                            Margin="0,4"
+                                            Padding="8,3"
+                                            CornerRadius="4"
+                                            HorizontalAlignment="Center"
+                                            Background="{DynamicResource SurfaceOverlayBrush}">
+                                        <TextBlock Text="{Binding Content}"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                                    </Border>
+
+                                    <!-- User bubble -->
+                                    <Border IsVisible="{Binding IsUser}"
+                                            Margin="32,2,0,2"
+                                            Padding="10,7"
+                                            CornerRadius="8"
+                                            HorizontalAlignment="Right"
+                                            Background="{DynamicResource SurfaceHighBrush}">
+                                        <TextBlock Text="{Binding Content}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource OnSurfaceBrush}" />
+                                    </Border>
+
+                                    <!-- Assistant bubble -->
+                                    <Border IsVisible="{Binding IsAssistant}"
+                                            Margin="0,2,32,2"
+                                            Padding="10,7"
+                                            CornerRadius="8"
+                                            Background="{DynamicResource SurfaceOverlayBrush}">
+                                        <TextBlock Text="{Binding Content}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource OnSurfaceBrush}" />
+                                    </Border>
+                                </Panel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Composer area -->
+            <Grid Grid.Row="3"
+                  RowDefinitions="Auto,Auto"
+                  Margin="8,4,8,8">
+
+                <!-- Error message -->
+                <TextBlock Grid.Row="0"
+                           Text="{Binding ErrorMessage}"
+                           IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}"
+                           Foreground="{DynamicResource ErrorBrush}"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,4" />
+
+                <!-- Input + buttons -->
+                <Grid Grid.Row="1"
+                      ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0"
+                             Text="{Binding ComposerText, Mode=TwoWay}"
+                             Watermark="Type a message…"
+                             AcceptsReturn="False"
+                             TextWrapping="Wrap"
+                             MaxHeight="100"
+                             FontSize="12"
+                             FontFamily="{DynamicResource InterFont}"
+                             Background="{DynamicResource SurfaceBaseBrush}"
+                             Foreground="{DynamicResource OnSurfaceBrush}"
+                             BorderThickness="1"
+                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                             CornerRadius="6"
+                             Padding="8,6"
+                             CaretBrush="{DynamicResource SynthwavePurpleBrush}"
+                             Name="ComposerBox" />
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Bottom">
+                        <Button Content="Stop"
+                                Command="{Binding StopCommand}"
+                                IsVisible="{Binding IsStreaming}"
+                                Padding="8,5"
+                                FontSize="11"
+                                Background="{DynamicResource ErrorBrush}"
+                                Foreground="White"
+                                CornerRadius="5" />
+                        <Button Content="Send ↵"
+                                Command="{Binding SendCommand}"
+                                Padding="8,5"
+                                FontSize="11"
+                                Background="{DynamicResource SynthwavePurpleBrush}"
+                                Foreground="White"
+                                CornerRadius="5" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+
+        </Grid>
+
+    </Panel>
+
+</UserControl>
