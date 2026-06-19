@@ -38,7 +38,25 @@ public sealed class GanttCanvas : Control
         }
     }
 
+    public sealed class GanttRowReorderRequestedEventArgs : EventArgs
+    {
+        public GanttRowViewModel SourceRow { get; }
+        public GanttRowViewModel TargetRow { get; }
+        public bool DropBeforeTarget { get; }
+
+        public GanttRowReorderRequestedEventArgs(
+            GanttRowViewModel sourceRow,
+            GanttRowViewModel targetRow,
+            bool dropBeforeTarget)
+        {
+            SourceRow = sourceRow;
+            TargetRow = targetRow;
+            DropBeforeTarget = dropBeforeTarget;
+        }
+    }
+
     public event EventHandler<GanttCellEditRequestedEventArgs>? CellEditRequested;
+    public event EventHandler<GanttRowReorderRequestedEventArgs>? RowReorderRequested;
 
     // ── Bar hover hit-testing ─────────────────────────────────────────────────
 
@@ -124,6 +142,7 @@ public sealed class GanttCanvas : Control
     }
 
     private INotifyCollectionChanged? _trackedCollection;
+    private Point? _rowDragStartPoint;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -162,8 +181,7 @@ public sealed class GanttCanvas : Control
         base.OnPointerPressed(e);
         try
         {
-            if (!ShowTable)
-                return;
+            _rowDragStartPoint = null;
 
             var rows = Rows;
             if (rows == null || rows.Count == 0) return;
@@ -176,7 +194,7 @@ public sealed class GanttCanvas : Control
 
             var row = rows[rowIndex];
             var editColumn = GetEditableColumnAtX(pos.X);
-            bool clickedEditableTableCell = editColumn != GanttEditableColumn.None;
+            bool clickedEditableTableCell = ShowTable && editColumn != GanttEditableColumn.None;
 
             if (row.IsChapter && !row.IsBook && clickedEditableTableCell)
             {
@@ -184,9 +202,29 @@ public sealed class GanttCanvas : Control
                 var cellRect = GetCellBounds(rowIndex, editColumn);
                 CellEditRequested?.Invoke(this, new GanttCellEditRequestedEventArgs(row, editColumn, cellRect));
                 row.EditDatesCommand.Execute().Subscribe();
+                return;
+            }
+
+            _rowDragStartPoint = row.IsEditable ? pos : null;
+        }
+        catch { /* swallow */ }
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        try
+        {
+            if (_rowDragStartPoint is { } startPoint)
+            {
+                TryRaiseRowReorderIntent(startPoint, e.GetPosition(this));
             }
         }
         catch { /* swallow */ }
+        finally
+        {
+            _rowDragStartPoint = null;
+        }
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -855,6 +893,114 @@ public sealed class GanttCanvas : Control
         };
         Grid.SetColumn(tb, column);
         grid.Children.Add(tb);
+    }
+
+    // ── Row reorder hit-testing ───────────────────────────────────────────────
+
+    public bool TryRaiseRowReorderIntent(Point sourcePoint, Point targetPoint)
+    {
+        if (!TryCreateRowReorderIntent(sourcePoint, targetPoint, out var args) || args == null)
+            return false;
+
+        RowReorderRequested?.Invoke(this, args);
+        return true;
+    }
+
+    public bool TryCreateRowReorderIntent(
+        Point sourcePoint,
+        Point targetPoint,
+        out GanttRowReorderRequestedEventArgs? args)
+    {
+        args = null;
+
+        var rows = Rows;
+        if (rows == null || rows.Count == 0)
+            return false;
+
+        if (!TryGetRowHit(sourcePoint, rows, out var sourceIndex, out var sourceRow))
+            return false;
+
+        if (!TryGetRowHit(targetPoint, rows, out var targetIndex, out var targetRow))
+            return false;
+
+        if (!sourceRow.IsEditable || !targetRow.IsEditable)
+            return false;
+
+        if (!RowsSharePartScope(rows, sourceIndex, targetIndex))
+            return false;
+
+        var dropBeforeTarget = IsPointBeforeRowMidpoint(targetPoint, targetIndex);
+        if (IsNoOpDrop(sourceIndex, targetIndex, dropBeforeTarget))
+            return false;
+
+        args = new GanttRowReorderRequestedEventArgs(sourceRow, targetRow, dropBeforeTarget);
+        return true;
+    }
+
+    private static bool TryGetRowHit(
+        Point point,
+        IReadOnlyList<GanttRowViewModel> rows,
+        out int rowIndex,
+        out GanttRowViewModel row)
+    {
+        rowIndex = -1;
+        row = null!;
+
+        if (point.X < 0 || point.Y < HeaderHeight)
+            return false;
+
+        rowIndex = (int)((point.Y - HeaderHeight) / RowHeight);
+        if (rowIndex < 0 || rowIndex >= rows.Count)
+            return false;
+
+        row = rows[rowIndex];
+        return true;
+    }
+
+    private static bool IsPointBeforeRowMidpoint(Point point, int rowIndex)
+    {
+        var rowTop = HeaderHeight + rowIndex * RowHeight;
+        return point.Y < rowTop + RowHeight / 2.0;
+    }
+
+    private static bool IsNoOpDrop(int sourceIndex, int targetIndex, bool dropBeforeTarget)
+    {
+        if (sourceIndex == targetIndex)
+            return true;
+
+        if (dropBeforeTarget && sourceIndex + 1 == targetIndex)
+            return true;
+
+        if (!dropBeforeTarget && sourceIndex - 1 == targetIndex)
+            return true;
+
+        return false;
+    }
+
+    private static bool RowsSharePartScope(
+        IReadOnlyList<GanttRowViewModel> rows,
+        int sourceIndex,
+        int targetIndex)
+    {
+        return string.Equals(
+            GetPartScopeKey(rows, sourceIndex),
+            GetPartScopeKey(rows, targetIndex),
+            StringComparison.Ordinal);
+    }
+
+    private static string GetPartScopeKey(IReadOnlyList<GanttRowViewModel> rows, int rowIndex)
+    {
+        for (var i = rowIndex; i >= 0; i--)
+        {
+            var row = rows[i];
+            if (row.IsPart)
+                return row.RelativePath;
+
+            if (row.IsBook)
+                break;
+        }
+
+        return string.Empty;
     }
 
     // ── Utility helpers ───────────────────────────────────────────────────────
