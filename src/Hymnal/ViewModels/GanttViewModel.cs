@@ -133,6 +133,8 @@ public sealed class GanttViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> ClearEndDateCommand { get; }
     public ReactiveCommand<GanttRowViewModel, Unit> MarkRowCompleteCommand { get; }
     public ReactiveCommand<Unit, Unit> CompleteSelectedRowCommand { get; }
+    public ReactiveCommand<Unit, Unit> MoveSelectedRowUpCommand { get; }
+    public ReactiveCommand<Unit, Unit> MoveSelectedRowDownCommand { get; }
 
     private GanttRowViewModel? _selectedRow;
     public GanttRowViewModel? SelectedRow
@@ -185,6 +187,15 @@ public sealed class GanttViewModel : ViewModelBase
             CompleteSelectedRowAsync,
             this.WhenAnyValue(x => x.SelectedRow).Select(r => r?.IsEditable == true));
         Disposables.Add(CompleteSelectedRowCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+
+        MoveSelectedRowUpCommand = ReactiveCommand.CreateFromTask(
+            MoveSelectedRowUpAsync,
+            this.WhenAnyValue(x => x.SelectedRow).Select(r => r?.IsEditable == true));
+        MoveSelectedRowDownCommand = ReactiveCommand.CreateFromTask(
+            MoveSelectedRowDownAsync,
+            this.WhenAnyValue(x => x.SelectedRow).Select(r => r?.IsEditable == true));
+        Disposables.Add(MoveSelectedRowUpCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
+        Disposables.Add(MoveSelectedRowDownCommand.ThrownExceptions.Subscribe(ex => _notificationService.ShowError(ex.Message)));
 
         RebuildRows();
     }
@@ -277,6 +288,139 @@ public sealed class GanttViewModel : ViewModelBase
     {
         if (SelectedRow?.IsEditable == true)
             await MarkRowCompleteAsync(SelectedRow).ConfigureAwait(false);
+    }
+
+    private Task MoveSelectedRowUpAsync()
+    {
+        var row = SelectedRow;
+        if (!IsIncludedEditableChapter(row))
+            return Task.CompletedTask;
+
+        var index = _rows.IndexOf(row!);
+        if (index <= 0)
+            return Task.CompletedTask;
+
+        for (var i = index - 1; i >= 0; i--)
+        {
+            if (IsIncludedEditableChapter(_rows[i]))
+                return MoveRowBeforeAsync(row!, _rows[i]);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task MoveSelectedRowDownAsync()
+    {
+        var row = SelectedRow;
+        if (!IsIncludedEditableChapter(row))
+            return Task.CompletedTask;
+
+        var index = _rows.IndexOf(row!);
+        if (index < 0 || index >= _rows.Count - 1)
+            return Task.CompletedTask;
+
+        for (var i = index + 1; i < _rows.Count; i++)
+        {
+            if (IsIncludedEditableChapter(_rows[i]))
+                return MoveRowAfterAsync(row!, _rows[i]);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Reorders an included chapter row before another included chapter row by delegating
+    /// to the workspace's canonical Book.txt reorder command.
+    /// </summary>
+    public Task MoveRowBeforeAsync(GanttRowViewModel? sourceRow, GanttRowViewModel? targetRow)
+    {
+        if (!CanReorderRows(sourceRow, targetRow))
+            return Task.CompletedTask;
+
+        if (IsImmediatelyBefore(sourceRow!, targetRow!))
+            return Task.CompletedTask;
+
+        return ExecuteWorkspaceReorderAsync(new ReorderCardRequest(
+            sourceRow!.RelativePath,
+            BeforeRelativePath: targetRow!.RelativePath));
+    }
+
+    /// <summary>
+    /// Reorders an included chapter row after another included chapter row by delegating
+    /// to the workspace's canonical Book.txt reorder command.
+    /// </summary>
+    public Task MoveRowAfterAsync(GanttRowViewModel? sourceRow, GanttRowViewModel? targetRow)
+    {
+        if (!CanReorderRows(sourceRow, targetRow))
+            return Task.CompletedTask;
+
+        if (IsImmediatelyAfter(sourceRow!, targetRow!))
+            return Task.CompletedTask;
+
+        return ExecuteWorkspaceReorderAsync(new ReorderCardRequest(
+            sourceRow!.RelativePath,
+            AfterRelativePath: targetRow!.RelativePath));
+    }
+
+    private bool CanReorderRows(GanttRowViewModel? sourceRow, GanttRowViewModel? targetRow)
+    {
+        if (!IsIncludedEditableChapter(sourceRow) || !IsIncludedEditableChapter(targetRow))
+            return false;
+
+        if (!_rows.Contains(sourceRow!) || !_rows.Contains(targetRow!))
+            return false;
+
+        return !string.Equals(sourceRow!.RelativePath, targetRow!.RelativePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsIncludedEditableChapter(GanttRowViewModel? row)
+    {
+        if (row?.IsEditable != true)
+            return false;
+
+        return _workspace.Nodes.Any(node =>
+            node.Node.Kind == NodeKind.Chapter
+            && !node.Node.IsExcluded
+            && !node.Node.IsMissing
+            && string.Equals(node.Node.RelativePath, row.RelativePath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsImmediatelyBefore(GanttRowViewModel sourceRow, GanttRowViewModel targetRow)
+    {
+        var sourceIndex = _rows.IndexOf(sourceRow);
+        var targetIndex = _rows.IndexOf(targetRow);
+        return sourceIndex >= 0 && targetIndex >= 0 && sourceIndex + 1 == targetIndex;
+    }
+
+    private bool IsImmediatelyAfter(GanttRowViewModel sourceRow, GanttRowViewModel targetRow)
+    {
+        var sourceIndex = _rows.IndexOf(sourceRow);
+        var targetIndex = _rows.IndexOf(targetRow);
+        return sourceIndex >= 0 && targetIndex >= 0 && sourceIndex - 1 == targetIndex;
+    }
+
+    private async Task ExecuteWorkspaceReorderAsync(ReorderCardRequest request)
+    {
+        var selectionPath = request.RelativePath;
+        var completion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = _workspace.ReorderChapterCommand.Execute(request).Subscribe(
+            _ => { },
+            ex => completion.TrySetException(ex),
+            () => completion.TrySetResult(null));
+
+        await completion.Task.ConfigureAwait(false);
+        RestoreSelectedRow(selectionPath);
+    }
+
+    private void RestoreSelectedRow(string? relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+            return;
+
+        var match = _rows.FirstOrDefault(row =>
+            string.Equals(row.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+        if (match != null)
+            SelectedRow = match;
     }
 
     public string? GetCellCopyValue(GanttRowViewModel row, GanttEditableColumn column)

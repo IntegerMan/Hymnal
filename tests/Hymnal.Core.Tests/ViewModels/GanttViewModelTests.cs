@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
+using Hymnal.Core.Common;
+using Hymnal.Core.Infrastructure;
 using Hymnal.Core.Interfaces;
 using Hymnal.Core.Models;
 using Hymnal.Core.Services;
@@ -571,6 +573,266 @@ public class GanttViewModelTests
                 Directory.Delete(tempRoot, recursive: true);
         }
     }
+
+    // ── Gantt row reorder ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GanttViewModel_MoveRowAfterAsync_DelegatesIncludedChapterMoveToWorkspaceReorderCommand()
+    {
+        using var context = ReorderTestContext.Create(
+            PartNode("part-one/part.md", "Part One", 0),
+            ChapterNodeForReorder("part-one/chapter-one.md", "Chapter One", 1),
+            ChapterNodeForReorder("part-one/chapter-two.md", "Chapter Two", 2));
+        var gantt = context.CreateGanttViewModel();
+
+        await gantt.MoveRowAfterAsync(ChapterRow(gantt, 0), ChapterRow(gantt, 1));
+
+        var call = Assert.Single(context.StructureService.ReorderCalls);
+        Assert.Equal("part-one/chapter-one.md", call.ChapterPath);
+        Assert.Equal(2, call.NewIndex);
+    }
+
+    [Fact]
+    public async Task GanttViewModel_MoveSelectedRowUpCommand_DelegatesUsingPreviousChapterNeighbor()
+    {
+        using var context = ReorderTestContext.Create(
+            PartNode("part-one/part.md", "Part One", 0),
+            ChapterNodeForReorder("part-one/chapter-one.md", "Chapter One", 1),
+            ChapterNodeForReorder("part-one/chapter-two.md", "Chapter Two", 2));
+        var gantt = context.CreateGanttViewModel();
+        gantt.SelectedRow = ChapterRow(gantt, 1);
+
+        await ExecuteCommandAsync(gantt.MoveSelectedRowUpCommand.Execute());
+
+        var call = Assert.Single(context.StructureService.ReorderCalls);
+        Assert.Equal("part-one/chapter-two.md", call.ChapterPath);
+        Assert.Equal(1, call.NewIndex);
+    }
+
+    [Fact]
+    public async Task GanttViewModel_MoveRowBeforeAsync_RejectsPartRollupTargetBeforeWorkspaceCommand()
+    {
+        using var context = ReorderTestContext.Create(
+            PartNode("part-one/part.md", "Part One", 0),
+            ChapterNodeForReorder("part-one/chapter-one.md", "Chapter One", 1));
+        var gantt = context.CreateGanttViewModel();
+
+        await gantt.MoveRowBeforeAsync(ChapterRow(gantt), PartRow(gantt));
+
+        Assert.Empty(context.StructureService.ReorderCalls);
+    }
+
+    [Fact]
+    public async Task GanttViewModel_MoveRowAfterAsync_RejectsExcludedChapterBeforeWorkspaceCommand()
+    {
+        using var context = ReorderTestContext.Create(
+            ChapterNodeForReorder("chapter-one.md", "Chapter One", 0),
+            ChapterNodeForReorder("chapter-two.md", "Chapter Two", 1) with { IsExcluded = true });
+        var gantt = context.CreateGanttViewModel();
+
+        await gantt.MoveRowAfterAsync(ChapterRow(gantt, 1), ChapterRow(gantt, 0));
+
+        Assert.Empty(context.StructureService.ReorderCalls);
+    }
+
+    [Fact]
+    public async Task GanttViewModel_MoveRowBeforeAsync_RejectsAbsentTargetRowBeforeWorkspaceCommand()
+    {
+        using var context = ReorderTestContext.Create(
+            ChapterNodeForReorder("chapter-one.md", "Chapter One", 0),
+            ChapterNodeForReorder("chapter-two.md", "Chapter Two", 1));
+        var gantt = context.CreateGanttViewModel();
+        var staleTarget = new GanttRowViewModel(GanttProjection.Project(
+            ChapterNodeForReorder("chapter-two.md", "Chapter Two", 1),
+            MakePhase(start: "2024-01-01", end: "2024-01-31")));
+
+        await gantt.MoveRowBeforeAsync(ChapterRow(gantt, 0), staleTarget);
+
+        Assert.Empty(context.StructureService.ReorderCalls);
+    }
+
+    [Fact]
+    public async Task GanttViewModel_MoveRowAfterAsync_RejectsNoOpSelfDropBeforeWorkspaceCommand()
+    {
+        using var context = ReorderTestContext.Create(
+            ChapterNodeForReorder("chapter-one.md", "Chapter One", 0),
+            ChapterNodeForReorder("chapter-two.md", "Chapter Two", 1));
+        var gantt = context.CreateGanttViewModel();
+        var row = ChapterRow(gantt, 0);
+
+        await gantt.MoveRowAfterAsync(row, row);
+
+        Assert.Empty(context.StructureService.ReorderCalls);
+    }
+
+    private static ChapterNode ChapterNodeForReorder(string path, string title, int index) =>
+        new(path, path, title, NodeKind.Chapter, IsMissing: false, Index: index);
+
+    private static ChapterNode PartNode(string path, string title, int index) =>
+        new(path, path, title, NodeKind.Part, IsMissing: false, Index: index);
+
+    private static async Task ExecuteCommandAsync(IObservable<global::System.Reactive.Unit> execution)
+    {
+        var completion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = execution.Subscribe(
+            _ => { },
+            ex => completion.TrySetException(ex),
+            () => completion.TrySetResult(null));
+
+        await completion.Task;
+    }
+
+    private sealed class ReorderTestContext : IDisposable
+    {
+        private readonly string _workspaceRoot;
+        private readonly PhaseDataService _phaseDataService;
+        private readonly TargetsService _targetsService;
+        private readonly IAppSettingsStore _settingsStore;
+        private readonly INotificationService _notificationService;
+
+        public RecordingBookTxtStructureService StructureService { get; }
+        public WorkspaceViewModel Workspace { get; }
+
+        private ReorderTestContext(string workspaceRoot, IReadOnlyList<ChapterNode> nodes)
+        {
+            _workspaceRoot = workspaceRoot;
+            var metadataStore = new MetadataStore();
+            _phaseDataService = new PhaseDataService(metadataStore);
+            _targetsService = new TargetsService(metadataStore);
+            _settingsStore = Substitute.For<IAppSettingsStore>();
+            _notificationService = Substitute.For<INotificationService>();
+            StructureService = new RecordingBookTxtStructureService();
+
+            var manuscriptService = new ManuscriptService(
+                _notificationService,
+                new ExclusionManifestService(metadataStore));
+            var editor = new EditorViewModel(metadataStore, _notificationService, new WordCountService());
+
+            Workspace = new WorkspaceViewModel(
+                manuscriptService,
+                StructureService,
+                Substitute.For<IFilePickerService>(),
+                _settingsStore,
+                Substitute.For<IFolderPickerService>(),
+                _notificationService,
+                editor,
+                new ChapterRegistryService(metadataStore),
+                _phaseDataService,
+                _targetsService,
+                new WordCountService(),
+                new WordCountHistoryService(metadataStore),
+                new ExclusionManifestService(metadataStore),
+                new OrphanFileDiscoveryService());
+
+            SeedWorkspace(nodes);
+        }
+
+        public static ReorderTestContext Create(params ChapterNode[] nodes)
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"hymnal-gantt-reorder-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            return new ReorderTestContext(root, nodes);
+        }
+
+        public GanttViewModel CreateGanttViewModel() =>
+            new(Workspace, _phaseDataService, _notificationService);
+
+        private void SeedWorkspace(IReadOnlyList<ChapterNode> nodes)
+        {
+            var model = new ManuscriptModel();
+            model.SetRoots(_workspaceRoot, _workspaceRoot);
+            model.Load(nodes);
+
+            SetPrivateField(Workspace, "_model", model);
+            SetPrivateProperty(Workspace, nameof(WorkspaceViewModel.HasWorkspace), true);
+
+            var workspaceNodes = GetPrivateList<ChapterViewModel>(Workspace, "_nodes");
+            var visibleNodes = GetPrivateList<ChapterViewModel>(Workspace, "_visibleNodes");
+            var lookup = GetPrivateDictionary<string, ChapterViewModel>(Workspace, "_nodesByPath");
+
+            workspaceNodes.Clear();
+            visibleNodes.Clear();
+            lookup.Clear();
+
+            foreach (var node in nodes.OrderBy(node => node.Index))
+            {
+                var vm = new ChapterViewModel(
+                    node,
+                    $"uuid-{node.Index}",
+                    MakePhase(start: "2024-01-01", end: "2024-01-31"),
+                    _phaseDataService,
+                    _targetsService,
+                    _settingsStore,
+                    _notificationService,
+                    _workspaceRoot);
+                workspaceNodes.Add(vm);
+                visibleNodes.Add(vm);
+                lookup[node.RelativePath] = vm;
+            }
+        }
+
+        private static void SetPrivateField<T>(WorkspaceViewModel workspace, string fieldName, T value)
+        {
+            var field = typeof(WorkspaceViewModel).GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"Unable to locate WorkspaceViewModel field '{fieldName}'.");
+            field.SetValue(workspace, value);
+        }
+
+        private static void SetPrivateProperty<T>(WorkspaceViewModel workspace, string propertyName, T value)
+        {
+            var property = typeof(WorkspaceViewModel).GetProperty(propertyName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"Unable to locate WorkspaceViewModel property '{propertyName}'.");
+            property.SetValue(workspace, value);
+        }
+
+        private static IList<T> GetPrivateList<T>(WorkspaceViewModel workspace, string fieldName)
+        {
+            var field = typeof(WorkspaceViewModel).GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"Unable to locate WorkspaceViewModel field '{fieldName}'.");
+            return (IList<T>)field.GetValue(workspace)!;
+        }
+
+        private static IDictionary<TKey, TValue> GetPrivateDictionary<TKey, TValue>(WorkspaceViewModel workspace, string fieldName)
+            where TKey : notnull
+        {
+            var field = typeof(WorkspaceViewModel).GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"Unable to locate WorkspaceViewModel field '{fieldName}'.");
+            return (IDictionary<TKey, TValue>)field.GetValue(workspace)!;
+        }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(_workspaceRoot))
+                Directory.Delete(_workspaceRoot, recursive: true);
+        }
+    }
+
+    private sealed class RecordingBookTxtStructureService : IBookTxtStructureService
+    {
+        public List<ReorderCall> ReorderCalls { get; } = new();
+
+        public Task<Result<IReadOnlyList<string>>> ReadNormalizedEntriesAsync(string bookTxtPath) =>
+            Task.FromResult(Result<IReadOnlyList<string>>.Ok(Array.Empty<string>()));
+
+        public Task<Result<Hymnal.Core.Common.Unit>> ReorderEntryAsync(string bookTxtPath, string chapterPath, int newIndex)
+        {
+            ReorderCalls.Add(new ReorderCall(bookTxtPath, chapterPath, newIndex));
+            return Task.FromResult(Result<Hymnal.Core.Common.Unit>.Fail("Stop after recording reorder."));
+        }
+
+        public Task<Result<Hymnal.Core.Common.Unit>> RenameEntryAsync(string bookTxtPath, string existingPath, string replacementPath) => NotSupported();
+        public Task<Result<Hymnal.Core.Common.Unit>> AddExistingEntryAsync(string bookTxtPath, string chapterPath, int index) => NotSupported();
+        public Task<Result<Hymnal.Core.Common.Unit>> AddExistingEntryAfterPartAsync(string bookTxtPath, string chapterPath, string partPath) => NotSupported();
+        public Task<Result<Hymnal.Core.Common.Unit>> CreateNewChapterAsync(string bookTxtPath, string chapterPath, string content, int index) => NotSupported();
+        public Task<Result<Hymnal.Core.Common.Unit>> CreateNewPartAsync(string bookTxtPath, string partPath, string title, int index) => NotSupported();
+        public Task<Result<Hymnal.Core.Common.Unit>> RemoveEntryAsync(string bookTxtPath, string chapterPath) => NotSupported();
+        public Task<Result<Hymnal.Core.Common.Unit>> DeleteChapterFileAsync(string bookTxtPath, string chapterPath) => NotSupported();
+
+        private static Task<Result<Hymnal.Core.Common.Unit>> NotSupported() =>
+            Task.FromResult(Result<Hymnal.Core.Common.Unit>.Fail("Unexpected structure service call."));
+    }
+
+    private sealed record ReorderCall(string BookTxtPath, string ChapterPath, int NewIndex);
 
     // ── Helpers for Part rollup tests ─────────────────────────────────────────
 
