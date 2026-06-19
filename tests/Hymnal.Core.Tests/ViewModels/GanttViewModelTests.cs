@@ -279,6 +279,36 @@ public class GanttViewModelTests
         Assert.True(updated, "Gantt rows did not refresh after ChapterViewModel.ApplyPhaseData().");
     }
 
+    [Fact]
+    public async Task GanttViewModel_SaveInlineCellAsync_NoOpAgainstPersistedDates_DoesNotRaiseValidationError()
+    {
+        var metadataStore = Substitute.For<IMetadataStore>();
+        var phaseDataService = new PhaseDataService(metadataStore);
+        var targetsService = new TargetsService(metadataStore);
+        var settingsStore = Substitute.For<IAppSettingsStore>();
+        var notificationService = Substitute.For<INotificationService>();
+
+        var chapter = new ChapterViewModel(
+            MakeNode(title: "Chapter One", path: "ch01.md"),
+            "uuid-1",
+            MakePhase(status: ChapterStatus.Drafting, start: "2024-03-10", end: "2024-03-01"),
+            phaseDataService,
+            targetsService,
+            settingsStore,
+            notificationService,
+            workspaceRoot: Path.Combine(Path.GetTempPath(), "hymnal-gantt-tests"));
+
+        var workspace = CreateWorkspace(chapter);
+        var gantt = new GanttViewModel(workspace, phaseDataService, notificationService);
+        var row = ChapterRow(gantt);
+
+        await gantt.SaveInlineCellAsync(row, GanttEditableColumn.StartDate);
+
+        notificationService.DidNotReceive().ShowError("End date cannot be before start date.");
+        Assert.DoesNotContain(metadataStore.ReceivedCalls(), call =>
+            string.Equals(call.GetMethodInfo().Name, nameof(IMetadataStore.WriteTextAtomicAsync), StringComparison.Ordinal));
+    }
+
     // ── Part rollup rows ──────────────────────────────────────────────────────
 
     [Fact]

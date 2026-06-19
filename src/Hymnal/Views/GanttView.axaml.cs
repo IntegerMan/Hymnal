@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Avalonia;
@@ -19,11 +20,20 @@ namespace Hymnal.Views;
 public partial class GanttView : UserControl
 {
     private long _lastDatePickerOpenTick;
+    private Point? _gridDragStartPoint;
+    private GanttRowViewModel? _gridDragSourceRow;
+    private bool _gridDragOperationStarted;
 
     public GanttView()
     {
         InitializeComponent();
         ArgumentNullException.ThrowIfNull(ChapterGrid);
+        ArgumentNullException.ThrowIfNull(TimelineCanvas);
+
+        ChapterGrid.AddHandler(PointerPressedEvent, ChapterGrid_PointerPressed, RoutingStrategies.Tunnel);
+        ChapterGrid.AddHandler(PointerMovedEvent, ChapterGrid_PointerMoved, RoutingStrategies.Tunnel);
+        ChapterGrid.AddHandler(PointerReleasedEvent, ChapterGrid_PointerReleased, RoutingStrategies.Tunnel);
+        ChapterGrid.AddHandler(PointerCaptureLostEvent, ChapterGrid_PointerCaptureLost, RoutingStrategies.Tunnel);
     }
 
     private void DatePicker_GotFocus(object? sender, RoutedEventArgs e)
@@ -97,6 +107,152 @@ public partial class GanttView : UserControl
         };
 
         return btn;
+    }
+
+    private void ChapterGrid_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (IsEditingControlFocused() || IsGridDragBlocked(e.Source as AvaloniaObject))
+            return;
+
+        if (TryGetGridRowFromEvent(e.Source as AvaloniaObject, out var row) && row.IsEditable)
+        {
+            _gridDragSourceRow = row;
+            _gridDragStartPoint = e.GetPosition(ChapterGrid);
+            _gridDragOperationStarted = false;
+            ChapterGrid.SelectedItem = row;
+            if (DataContext is GanttViewModel vm)
+                vm.SelectedRow = row;
+            e.Pointer.Capture(ChapterGrid);
+            return;
+        }
+
+        ResetGridDragState();
+    }
+
+    private void ChapterGrid_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_gridDragSourceRow == null || _gridDragStartPoint is not { } startPoint)
+            return;
+
+        var point = e.GetPosition(ChapterGrid);
+        if (!_gridDragOperationStarted)
+        {
+            if (Math.Abs(point.X - startPoint.X) < 4 && Math.Abs(point.Y - startPoint.Y) < 4)
+                return;
+
+            _gridDragOperationStarted = true;
+        }
+
+        TimelineCanvas.UpdateRowReorderPreview(ToCanvasRowPoint(startPoint), ToCanvasRowPoint(point));
+    }
+
+    private async void ChapterGrid_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_gridDragSourceRow == null || _gridDragStartPoint is not { } startPoint)
+        {
+            ResetGridDragState();
+            return;
+        }
+
+        try
+        {
+            await CompleteGridDragForTestsAsync(startPoint, e.GetPosition(ChapterGrid));
+        }
+        finally
+        {
+            e.Pointer.Capture(null);
+        }
+    }
+
+    private void ChapterGrid_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        ResetGridDragState();
+    }
+
+    private static bool TryGetGridRowFromEvent(AvaloniaObject? source, out GanttRowViewModel row)
+    {
+        row = null!;
+
+        if (source is not Visual visual)
+            return false;
+
+        var gridRow = visual.FindAncestorOfType<DataGridRow>();
+        if (gridRow?.DataContext is not GanttRowViewModel vm)
+            return false;
+
+        row = vm;
+        return true;
+    }
+
+    private static Point ToCanvasRowPoint(Point gridPoint) => new(12, gridPoint.Y);
+
+    private static bool IsGridDragBlocked(AvaloniaObject? source)
+    {
+        if (source is not Visual visual)
+            return false;
+
+        return visual.FindAncestorOfType<CalendarDatePicker>() != null
+               || visual.FindAncestorOfType<TextBox>() != null
+               || visual.FindAncestorOfType<ComboBox>() != null
+               || visual.FindAncestorOfType<Button>() != null;
+    }
+
+    private void ResetGridDragState()
+    {
+        _gridDragStartPoint = null;
+        _gridDragSourceRow = null;
+        _gridDragOperationStarted = false;
+        TimelineCanvas.ClearRowReorderPreview();
+    }
+
+    // Reflection hooks for view smoke tests — avoid constructing Avalonia pointer event args.
+    private void ChapterGrid_PointerPressedStateForTests(Point point, string relativePath)
+    {
+        _gridDragSourceRow = DataContext is GanttViewModel vm
+            ? vm.Rows.FirstOrDefault(row => string.Equals(row.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase))
+            : null;
+        _gridDragStartPoint = _gridDragSourceRow != null ? point : null;
+        _gridDragOperationStarted = false;
+    }
+
+    private void ChapterGrid_PointerMovedStateForTests(Point point)
+    {
+        if (_gridDragSourceRow == null || _gridDragStartPoint is not { } startPoint)
+            return;
+
+        _gridDragOperationStarted = true;
+        TimelineCanvas.UpdateRowReorderPreview(ToCanvasRowPoint(startPoint), ToCanvasRowPoint(point));
+    }
+
+    private Task ChapterGrid_PointerReleasedStateForTests(Point point)
+    {
+        if (_gridDragSourceRow == null || _gridDragStartPoint is not { } startPoint)
+        {
+            ResetGridDragState();
+            return Task.CompletedTask;
+        }
+
+        return CompleteGridDragForTestsAsync(startPoint, point);
+    }
+
+    private async Task CompleteGridDragForTestsAsync(Point startPoint, Point endPoint)
+    {
+        try
+        {
+            if (_gridDragOperationStarted
+                && TimelineCanvas.TryCreateRowReorderIntent(
+                    ToCanvasRowPoint(startPoint),
+                    ToCanvasRowPoint(endPoint),
+                    out var args)
+                && args != null)
+            {
+                await HandleTimelineRowReorderAsync(args);
+            }
+        }
+        finally
+        {
+            ResetGridDragState();
+        }
     }
 
     private void ChapterGrid_ContextMenuOpening(object? sender, CancelEventArgs e)

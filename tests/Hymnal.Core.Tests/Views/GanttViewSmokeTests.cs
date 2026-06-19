@@ -40,6 +40,9 @@ public sealed class GanttViewSmokeTests
 
         Assert.Contains("KeyDown=\"ChapterGrid_KeyDown\"", xaml, StringComparison.Ordinal);
         Assert.Contains("RowReorderRequested=\"TimelineCanvas_RowReorderRequested\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ChapterGrid_PointerPressed", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ChapterGrid_PointerMoved", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ChapterGrid_PointerReleased", codeBehind, StringComparison.Ordinal);
         Assert.Contains("MoveSelectedRowUpCommand", codeBehind, StringComparison.Ordinal);
         Assert.Contains("MoveSelectedRowDownCommand", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("BookTxtStructureService", codeBehind, StringComparison.Ordinal);
@@ -70,6 +73,39 @@ public sealed class GanttViewSmokeTests
 
             var args = new GanttCanvas.GanttRowReorderRequestedEventArgs(sourceRow, targetRow, dropBeforeTarget: true);
             InvokePrivateAsync(view, "HandleTimelineRowReorderAsync", args).GetAwaiter().GetResult();
+
+            var request = Assert.Single(reorderRequests);
+            Assert.Equal("part-one/chapter-two.md", request.RelativePath);
+            Assert.Equal("part-one/chapter-one.md", request.BeforeRelativePath);
+            Assert.Null(request.AfterRelativePath);
+            Assert.Same(viewModel.SelectedRow, view.FindControl<DataGrid>("ChapterGrid")!.SelectedItem);
+        });
+    }
+
+    [Fact]
+    public void GanttView_GridRowDragHandlers_DelegateToViewModelReorderPath()
+    {
+        ReactiveUiTestBootstrap.RunOnUiThread(() =>
+        {
+            var workspace = CreateWorkspaceWithReorderSpy(
+                out var reorderRequests,
+                CreateNodeViewModel("part-one/part.md", "Part One", NodeKind.Part),
+                CreateNodeViewModel("part-one/chapter-one.md", "Chapter One"),
+                CreateNodeViewModel("part-one/chapter-two.md", "Chapter Two"));
+
+            var viewModel = new GanttViewModel(
+                workspace,
+                new PhaseDataService(Substitute.For<IMetadataStore>()),
+                Substitute.For<INotificationService>());
+
+            var view = new GanttView { DataContext = viewModel };
+            LayoutView(view);
+
+            var sourcePoint = new Point(12, 36 + 3 * 28 + 14);
+            var targetPoint = new Point(12, 36 + 2 * 28 + 4);
+            InvokePrivate(view, "ChapterGrid_PointerPressedStateForTests", sourcePoint, "part-one/chapter-two.md");
+            InvokePrivate(view, "ChapterGrid_PointerMovedStateForTests", targetPoint);
+            InvokePrivateAsync(view, "ChapterGrid_PointerReleasedStateForTests", targetPoint).GetAwaiter().GetResult();
 
             var request = Assert.Single(reorderRequests);
             Assert.Equal("part-one/chapter-two.md", request.RelativePath);
@@ -168,6 +204,14 @@ public sealed class GanttViewSmokeTests
 
         SetAutoPropertyBackingField(workspace, "ReorderChapterCommand", reorderCommand);
         return workspace;
+    }
+
+    private static void InvokePrivate(object target, string methodName, params object?[] args)
+    {
+        var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Method '{methodName}' not found.");
+
+        method.Invoke(target, args);
     }
 
     private static async Task InvokePrivateAsync(object target, string methodName, params object?[] args)

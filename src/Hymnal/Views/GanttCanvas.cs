@@ -143,6 +143,7 @@ public sealed class GanttCanvas : Control
 
     private INotifyCollectionChanged? _trackedCollection;
     private Point? _rowDragStartPoint;
+    private GanttRowReorderRequestedEventArgs? _previewReorder;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -224,6 +225,7 @@ public sealed class GanttCanvas : Control
         finally
         {
             _rowDragStartPoint = null;
+            ClearRowReorderPreview();
         }
     }
 
@@ -233,6 +235,10 @@ public sealed class GanttCanvas : Control
         try
         {
             var pos = e.GetPosition(this);
+
+            if (_rowDragStartPoint is { } dragStart)
+                UpdateRowReorderPreview(dragStart, pos);
+
             GanttBarHitInfo? hit = null;
 
             foreach (var region in _barHitRegions)
@@ -262,6 +268,9 @@ public sealed class GanttCanvas : Control
         base.OnPointerExited(e);
         _currentHitInfo = null;
         ToolTip.SetTip(this, null);
+
+        if (_rowDragStartPoint == null)
+            ClearRowReorderPreview();
     }
 
     // ── MeasureOverride ───────────────────────────────────────────────────────
@@ -363,6 +372,8 @@ public sealed class GanttCanvas : Control
                 double rowY = HeaderHeight + i * RowHeight;
                 DrawRow(ctx, rows[i], i, rowY, axisStart, axisEnd, chartWidth, showTable, hitRegions);
             }
+
+            DrawRowReorderPreview(ctx, rows, logicalWidth);
 
             _barHitRegions = hitRegions;
 
@@ -895,7 +906,71 @@ public sealed class GanttCanvas : Control
         grid.Children.Add(tb);
     }
 
-    // ── Row reorder hit-testing ───────────────────────────────────────────────
+    // ── Row reorder preview and hit-testing ──────────────────────────────────
+
+    public void UpdateRowReorderPreview(Point sourcePoint, Point targetPoint)
+    {
+        if (TryCreateRowReorderIntent(sourcePoint, targetPoint, out var args) && args != null)
+        {
+            if (!AreSamePreview(_previewReorder, args))
+            {
+                _previewReorder = args;
+                InvalidateVisual();
+            }
+
+            return;
+        }
+
+        ClearRowReorderPreview();
+    }
+
+    public void ClearRowReorderPreview()
+    {
+        if (_previewReorder == null)
+            return;
+
+        _previewReorder = null;
+        InvalidateVisual();
+    }
+
+    private static bool AreSamePreview(
+        GanttRowReorderRequestedEventArgs? left,
+        GanttRowReorderRequestedEventArgs? right)
+    {
+        return left?.SourceRow == right?.SourceRow
+            && left?.TargetRow == right?.TargetRow
+            && left?.DropBeforeTarget == right?.DropBeforeTarget;
+    }
+
+    private void DrawRowReorderPreview(
+        DrawingContext ctx,
+        IReadOnlyList<GanttRowViewModel> rows,
+        double totalWidth)
+    {
+        if (_previewReorder == null)
+            return;
+
+        var targetIndex = -1;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (ReferenceEquals(rows[i], _previewReorder.TargetRow))
+            {
+                targetIndex = i;
+                break;
+            }
+        }
+        if (targetIndex < 0)
+            return;
+
+        var rowTop = HeaderHeight + targetIndex * RowHeight;
+        var y = _previewReorder.DropBeforeTarget ? rowTop : rowTop + RowHeight;
+        var previewBrush = new SolidColorBrush(Color.Parse("#F5C842"));
+        var previewGlow = new SolidColorBrush(Color.FromArgb(0x22, 0xF5, 0xC8, 0x42));
+        var previewPen = new Pen(previewBrush, 2.0);
+
+        ctx.FillRectangle(previewGlow, new Rect(0, rowTop, totalWidth, RowHeight));
+        ctx.DrawLine(previewPen, new Point(0, y), new Point(totalWidth, y));
+    }
 
     public bool TryRaiseRowReorderIntent(Point sourcePoint, Point targetPoint)
     {

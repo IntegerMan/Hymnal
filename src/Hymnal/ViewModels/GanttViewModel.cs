@@ -496,18 +496,26 @@ public sealed class GanttViewModel : ViewModelBase
         var end = row.EditableEndDate.HasValue
             ? DateOnly.FromDateTime(row.EditableEndDate.Value)
             : (DateOnly?)null;
+        var status = row.EditableStatus;
+        var phaseName = status.ToString();
+        var startStr = start?.ToString("yyyy-MM-dd");
+        var endStr = end?.ToString("yyyy-MM-dd");
+        var progress = Math.Clamp(row.EditableProgressPercent ?? 0.0, 0.0, 100.0);
+
+        var (existingStatus, existingStart, existingEnd, existingProgress) = GetPersistedInlineValues(chapterVm, status);
+        if (existingStatus == status
+            && string.Equals(existingStart, startStr, StringComparison.Ordinal)
+            && string.Equals(existingEnd, endStr, StringComparison.Ordinal)
+            && Math.Abs(existingProgress - progress) < 0.0001)
+        {
+            return;
+        }
 
         if (start.HasValue && end.HasValue && end.Value < start.Value)
         {
             _notificationService.ShowError("End date cannot be before start date.");
             return;
         }
-
-        var status = row.EditableStatus;
-        var phaseName = status.ToString();
-        var startStr = start?.ToString("yyyy-MM-dd");
-        var endStr = end?.ToString("yyyy-MM-dd");
-        var progress = Math.Clamp(row.EditableProgressPercent ?? 0.0, 0.0, 100.0);
 
         PhaseData? updated = null;
         await _phaseDataService.UpsertAsync(_workspace.WorkspaceRoot, chapterVm.Uuid, current =>
@@ -692,6 +700,22 @@ public sealed class GanttViewModel : ViewModelBase
             or ChapterStatus.Editing
             or ChapterStatus.Polishing
             or ChapterStatus.Reviewing;
+
+    private static (ChapterStatus Status, string? Start, string? End, double Progress) GetPersistedInlineValues(
+        ChapterViewModel chapterVm,
+        ChapterStatus status)
+    {
+        var phaseData = chapterVm.PhaseData ?? PhaseDataService.DefaultPhaseData;
+        var phaseName = status.ToString();
+
+        if (IsPhaseStatus(status)
+            && phaseData.Schedule?.TryGetValue(phaseName, out var existing) == true)
+        {
+            return (status, existing.StartDate, existing.EndDate, existing.Progress ?? 0.0);
+        }
+
+        return (phaseData.Status, phaseData.PhaseStartDate, phaseData.PhaseEndDate, 0.0);
+    }
 
     private void RebuildRows()
     {
