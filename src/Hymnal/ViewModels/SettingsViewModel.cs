@@ -85,12 +85,15 @@ public class SettingsViewModel : ViewModelBase
 
     private async Task AddProfileAsync()
     {
-        var newProfile = new ProviderProfile(
+        var defaultType = ProviderType.OpenAI;
+        var defaults    = ProviderProfileViewModel.TypeDefaults[defaultType];
+        var newProfile  = new ProviderProfile(
             Id: Guid.NewGuid().ToString(),
-            DisplayName: "New Provider",
-            BaseUrl: "https://api.openai.com/v1",
-            ModelId: "gpt-4o",
-            ContextWindowTokens: null);
+            DisplayName: defaultType.ToString(),
+            BaseUrl: defaults.BaseUrl,
+            ModelId: defaults.ModelId,
+            ContextWindowTokens: null,
+            Type: defaultType);
 
         await _profileService.SaveAsync(newProfile).ConfigureAwait(false);
         var vm = CreateProfileViewModel(newProfile, false);

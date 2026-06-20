@@ -198,7 +198,7 @@ public sealed class SupplementalDocsViewSmokeTests
                 new BookStatsViewModel(Workspace, new WordCountHistoryService(MetadataStore), TargetsService),
                 new GanttViewModel(Workspace, PhaseDataService, NotificationService),
                 corkboardVm,
-                new ResearchViewModel(Workspace, docsVm, EditorViewModel),
+                new ResearchViewModel(Workspace, docsVm, EditorViewModel, AiTestDoubles.CreateStubAiChatViewModel(EditorViewModel, Workspace, NotificationService)),
                 docsVm,
                 gitPanelVm,
                 NotificationService,

@@ -215,7 +215,7 @@ public sealed class MainWindowPlanModeTests
                 new BookStatsViewModel(Workspace, new WordCountHistoryService(MetadataStore), TargetsService),
                 new GanttViewModel(Workspace, PhaseDataService, NotificationService),
                 new CorkboardViewModel(Workspace, StructureService, new OrphanFileDiscoveryService(), SettingsStore, NotificationService, ManuscriptService),
-                new ResearchViewModel(Workspace, docs, EditorViewModel),
+                new ResearchViewModel(Workspace, docs, EditorViewModel, AiTestDoubles.CreateStubAiChatViewModel(EditorViewModel, Workspace, NotificationService)),
                 docs,
                 new GitPanelViewModel(Workspace, EditorViewModel, new FakeGitService(), NotificationService),
                 NotificationService,

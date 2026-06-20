@@ -13,9 +13,7 @@ using Hymnal.ViewModels.Ai;
 using Hymnal.Views;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
-using OpenAI;
 using System;
-using System.ClientModel;
 
 namespace Hymnal;
 
@@ -72,15 +70,9 @@ public partial class App : Application
         services.AddSingleton<ISupplementalDocsService, SupplementalDocsService>();
 
         // M006 — AI platform services
-        // IChatClient factory: builds an MEAI-compatible client from a ProviderProfile + API key
+        // IChatClient factory: builds a provider-specific client from a ProviderProfile + API key
         services.AddSingleton<Func<Hymnal.Core.Models.Ai.ProviderProfile, string, IChatClient>>(sp =>
-            (profile, apiKey) =>
-            {
-                var opts = new OpenAIClientOptions { Endpoint = new Uri(profile.BaseUrl) };
-                return new OpenAIClient(new ApiKeyCredential(apiKey), opts)
-                    .GetChatClient(profile.ModelId)
-                    .AsIChatClient();
-            });
+            (profile, apiKey) => ChatClientFactory.Create(profile, apiKey));
 
         services.AddSingleton<IRolePromptProvider, RolePromptProvider>();
         services.AddSingleton<IManuscriptContextReader, ManuscriptContextReader>();
@@ -176,7 +168,8 @@ public partial class App : Application
             new ResearchViewModel(
                 sp.GetRequiredService<WorkspaceViewModel>(),
                 sp.GetRequiredService<SupplementalDocsViewModel>(),
-                sp.GetRequiredService<EditorViewModel>()));
+                sp.GetRequiredService<EditorViewModel>(),
+                sp.GetRequiredService<AiChatViewModel>()));
 
         services.AddSingleton<SupplementalDocsViewModel>(sp =>
             new SupplementalDocsViewModel(

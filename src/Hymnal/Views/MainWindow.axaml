@@ -176,14 +176,69 @@
                                   ToolTip.Tip="Reserved for later" />
                 </StackPanel>
 
-                <!-- Settings + AI icons (always visible, no workspace required) -->
+                <!-- Right-side toolbar: Git sync pill (workspace-only) + AI chat (workspace-only) + Settings (always visible) -->
                 <StackPanel Grid.Column="2"
                             Orientation="Horizontal"
                             VerticalAlignment="Center"
                             HorizontalAlignment="Right"
                             Margin="0,0,4,0"
-                            Spacing="0"
-                            IsVisible="{Binding !WorkspaceViewModel.HasWorkspace}">
+                            Spacing="4">
+
+                    <!-- Git sync pill — only when a workspace is open and git panel is visible -->
+                    <Border Padding="12,6"
+                            Margin="0,0,4,0"
+                            CornerRadius="10"
+                            Background="{DynamicResource SurfaceHighBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="1"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding GitPanelViewModel.IsVisible}">
+                        <StackPanel Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="12">
+                            <StackPanel Orientation="Horizontal"
+                                        VerticalAlignment="Center"
+                                        Spacing="6"
+                                        ToolTip.Tip="{Binding GitPanelViewModel.ChangeSummaryText}">
+                                <TextBlock Text="Changes"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           LetterSpacing="0.5"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="↓"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    <TextBlock Text="{Binding GitPanelViewModel.BehindRemoteCount}"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="↑"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                    <TextBlock Text="{Binding GitPanelViewModel.OutgoingCount}"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <Button Content="{Binding GitPanelViewModel.PrimaryActionText}"
+                                    Click="SyncButton_Click"
+                                    IsEnabled="{Binding GitPanelViewModel.CanSync}"
+                                    Padding="18,6"
+                                    CornerRadius="6"
+                                    Background="{DynamicResource SynthwavePurpleBrush}"
+                                    Foreground="{DynamicResource OnSurfaceBrush}"
+                                    ToolTip.Tip="Sync local changes, or pull when already up to date" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Settings — always visible -->
                     <Button Classes="nav-icon"
                             Command="{Binding OpenSettingsCommand}"
                             ToolTip.Tip="Settings (Ctrl+,)">
@@ -192,96 +247,8 @@
                               Width="18" Height="18"
                               Stretch="Uniform" />
                     </Button>
-                </StackPanel>
 
-                <Border Grid.Column="2"
-                        Margin="4,0,12,4"
-                        MinHeight="40"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Right"
-                        IsVisible="{Binding WorkspaceViewModel.HasWorkspace}">
-                    <Grid MinHeight="40"
-                          HorizontalAlignment="Right">
-                        <!-- Compact placeholder reserves right-aligned space while the git probe runs -->
-                        <Border MinWidth="100"
-                                MinHeight="32"
-                                HorizontalAlignment="Right"
-                                Opacity="0"
-                                IsVisible="{Binding GitPanelViewModel.IsVisible, Converter={StaticResource BoolNotConverter}}" />
-                        <Border Padding="12,6"
-                                CornerRadius="10"
-                                Background="{DynamicResource SurfaceHighBrush}"
-                                BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                BorderThickness="1"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Center"
-                                IsVisible="{Binding GitPanelViewModel.IsVisible}">
-                            <StackPanel Orientation="Horizontal"
-                                        VerticalAlignment="Center"
-                                        Spacing="12">
-                                <StackPanel Orientation="Horizontal"
-                                            VerticalAlignment="Center"
-                                            Spacing="6"
-                                            ToolTip.Tip="{Binding GitPanelViewModel.ChangeSummaryText}">
-                                    <TextBlock Text="Changes"
-                                               FontSize="11"
-                                               FontWeight="SemiBold"
-                                               LetterSpacing="0.5"
-                                               VerticalAlignment="Center"
-                                               Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                                    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-                                        <TextBlock Text="↓"
-                                                   FontSize="12"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                                        <TextBlock Text="{Binding GitPanelViewModel.BehindRemoteCount}"
-                                                   FontSize="12"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-                                        <TextBlock Text="↑"
-                                                   FontSize="12"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                                        <TextBlock Text="{Binding GitPanelViewModel.OutgoingCount}"
-                                                   FontSize="12"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
-                                    </StackPanel>
-                                </StackPanel>
-                                <Button Content="{Binding GitPanelViewModel.PrimaryActionText}"
-                                        Click="SyncButton_Click"
-                                        IsEnabled="{Binding GitPanelViewModel.CanSync}"
-                                        Padding="18,6"
-                                        CornerRadius="6"
-                                        Background="{DynamicResource SynthwavePurpleBrush}"
-                                        Foreground="{DynamicResource OnSurfaceBrush}"
-                                        ToolTip.Tip="Sync local changes, or pull when already up to date" />
-                                <!-- AI Chat toggle -->
-                                <Button Classes="nav-icon"
-                                        Command="{Binding ToggleAiChatCommand}"
-                                        ToolTip.Tip="AI Chat (Ctrl+Shift+A)">
-                                    <Path Data="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"
-                                          Stroke="{DynamicResource OnSurfaceDimBrush}"
-                                          StrokeThickness="1.5"
-                                          StrokeLineCap="Round"
-                                          Width="18" Height="18"
-                                          Stretch="Uniform" />
-                                </Button>
-                                <!-- Settings -->
-                                <Button Classes="nav-icon"
-                                        Command="{Binding OpenSettingsCommand}"
-                                        ToolTip.Tip="Settings (Ctrl+,)">
-                                    <Path Data="M12 15.5A3.5 3.5 0 018.5 12 3.5 3.5 0 0112 8.5a3.5 3.5 0 013.5 3.5 3.5 3.5 0 01-3.5 3.5m7.43-2.92c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.16-1.63c.19-.15.24-.42.12-.64l-2.05-3.55c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22L2.74 8.87c-.12.21-.08.49.12.64L5.02 11.1c-.04.34-.07.67-.07 1s.03.65.07.97l-2.16 1.66c-.19.15-.24.42-.12.64l2.05 3.55c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2.05-3.55c.12-.22.07-.49-.12-.64l-2.16-1.66z"
-                                          Fill="{DynamicResource OnSurfaceDimBrush}"
-                                          Width="18" Height="18"
-                                          Stretch="Uniform" />
-                                </Button>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-                </Border>
+                </StackPanel>
             </Grid>
         </Border>
 

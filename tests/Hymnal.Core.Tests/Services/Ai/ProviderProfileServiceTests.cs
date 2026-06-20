@@ -113,7 +113,34 @@ public class ProviderProfileServiceTests
         Assert.Equal("Renamed", all[0].DisplayName);
     }
 
-    // ── TestConnectionAsync ───────────────────────────────────────────────────
+    // ── Type persistence ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SaveAsync_Then_LoadAllAsync_PreservesProviderType()
+    {
+        var sut = CreateSut();
+        var profile = MakeProfile("type-1") with { Type = ProviderType.AzureOpenAI };
+
+        await sut.SaveAsync(profile);
+        var all = await sut.LoadAllAsync();
+
+        Assert.Single(all);
+        Assert.Equal(ProviderType.AzureOpenAI, all[0].Type);
+    }
+
+    [Fact]
+    public async Task LoadAllAsync_LegacyDtoWithoutType_DefaultsToOpenAI()
+    {
+        // A profile created without specifying Type uses the default (OpenAI).
+        var sut = CreateSut();
+        var profile = MakeProfile("legacy-1"); // no Type arg => default OpenAI
+
+        await sut.SaveAsync(profile);
+        var all = await sut.LoadAllAsync();
+
+        Assert.Single(all);
+        Assert.Equal(ProviderType.OpenAI, all[0].Type);
+    }
 
     [Fact]
     public async Task TestConnectionAsync_SucceedingClient_ReturnsOk()

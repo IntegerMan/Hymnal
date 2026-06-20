@@ -97,23 +97,25 @@
                                     <!-- Edit fields -->
                                     <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="120,*">
                                         <TextBlock Grid.Row="0" Grid.Column="0"
-                                                   Text="Display name"
+                                                   Text="Provider type"
                                                    FontSize="11"
                                                    Foreground="{DynamicResource OnSurfaceDimBrush}"
                                                    VerticalAlignment="Center" />
-                                        <TextBox Grid.Row="0" Grid.Column="1"
-                                                 Text="{Binding DisplayName, Mode=TwoWay}"
-                                                 FontSize="12"
-                                                 Margin="0,0,0,6"
-                                                 Background="{DynamicResource SurfaceBaseBrush}"
-                                                 Foreground="{DynamicResource OnSurfaceBrush}"
-                                                 BorderThickness="1"
-                                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                                 CornerRadius="4"
-                                                 Padding="6,4" />
+                                        <ComboBox Grid.Row="0" Grid.Column="1"
+                                                  ItemsSource="{Binding AvailableTypes}"
+                                                  SelectedItem="{Binding Type, Mode=TwoWay}"
+                                                  FontSize="12"
+                                                  Margin="0,0,0,6"
+                                                  Background="{DynamicResource SurfaceBaseBrush}"
+                                                  Foreground="{DynamicResource OnSurfaceBrush}"
+                                                  BorderThickness="1"
+                                                  BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                                  CornerRadius="4"
+                                                  Padding="6,4"
+                                                  HorizontalAlignment="Stretch" />
 
                                         <TextBlock Grid.Row="1" Grid.Column="0"
-                                                   Text="Base URL"
+                                                   Text="{Binding BaseUrlLabel}"
                                                    FontSize="11"
                                                    Foreground="{DynamicResource OnSurfaceDimBrush}"
                                                    VerticalAlignment="Center" />
@@ -129,7 +131,7 @@
                                                  Padding="6,4" />
 
                                         <TextBlock Grid.Row="2" Grid.Column="0"
-                                                   Text="Model ID"
+                                                   Text="{Binding ModelIdLabel}"
                                                    FontSize="11"
                                                    Foreground="{DynamicResource OnSurfaceDimBrush}"
                                                    VerticalAlignment="Center" />
@@ -145,7 +147,7 @@
                                                  Padding="6,4" />
 
                                         <TextBlock Grid.Row="3" Grid.Column="0"
-                                                   Text="API key"
+                                                   Text="{Binding ApiKeyHint}"
                                                    FontSize="11"
                                                    Foreground="{DynamicResource OnSurfaceDimBrush}"
                                                    VerticalAlignment="Center" />
@@ -161,14 +163,34 @@
                                                  CornerRadius="4"
                                                  Padding="6,4" />
 
-                                        <!-- Test result -->
-                                        <TextBlock Grid.Row="4" Grid.Column="1"
+                                        <!-- Test result: success -->
+                                        <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
                                                    Text="{Binding TestResult}"
-                                                   IsVisible="{Binding TestResult, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                   IsVisible="{Binding TestSucceeded}"
                                                    FontSize="11"
                                                    Margin="0,0,0,6"
-                                                   Foreground="{DynamicResource CyanBrush}" />
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource SuccessBrush}" />
+
+                                        <!-- Test result: failure -->
+                                        <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
+                                                   Text="{Binding TestResult}"
+                                                   IsVisible="{Binding TestFailed}"
+                                                   FontSize="11"
+                                                   Margin="0,0,0,6"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource ErrorBrush}" />
                                     </Grid>
+
+                                    <!-- Per-type setup help -->
+                                    <Border Padding="10,8"
+                                            CornerRadius="6"
+                                            Background="{DynamicResource SurfaceOverlayBrush}">
+                                        <TextBlock Text="{Binding HelpText}"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource OnSurfaceMutedBrush}" />
+                                    </Border>
 
                                     <!-- Action buttons -->
                                     <StackPanel Orientation="Horizontal" Spacing="8">

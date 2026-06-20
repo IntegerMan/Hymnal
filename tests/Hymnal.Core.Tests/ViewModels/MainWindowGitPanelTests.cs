@@ -154,7 +154,7 @@ public sealed class MainWindowGitPanelTests : IDisposable
                 new BookStatsViewModel(Workspace, new WordCountHistoryService(MetadataStore), new TargetsService(MetadataStore)),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), Notifications),
                 new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), new OrphanFileDiscoveryService(), SettingsStore, Notifications, new ManuscriptService(Notifications)),
-                new ResearchViewModel(Workspace, supplementalDocs, Editor),
+                new ResearchViewModel(Workspace, supplementalDocs, Editor, AiTestDoubles.CreateStubAiChatViewModel(Editor, Workspace, Notifications)),
                 supplementalDocs,
                 gitPanel,
                 Notifications,

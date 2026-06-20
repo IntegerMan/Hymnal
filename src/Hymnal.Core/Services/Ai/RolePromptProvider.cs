@@ -17,17 +17,19 @@ public sealed class RolePromptProvider : IRolePromptProvider
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<AiRole>> _viewRoleMap =
         new Dictionary<string, IReadOnlyList<AiRole>>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Write"]  = new[] { AiRole.WritingCoach, AiRole.Proofreader, AiRole.LineEditor, AiRole.DevelopmentalEditor, AiRole.BetaReader },
-            ["Manage"] = new[] { AiRole.WritingCoach, AiRole.DevelopmentalEditor, AiRole.BetaReader },
-            ["Plan"]   = new[] { AiRole.DevelopmentalEditor, AiRole.WritingCoach, AiRole.BetaReader },
+            ["Write"]    = new[] { AiRole.WritingCoach, AiRole.Proofreader, AiRole.LineEditor, AiRole.DevelopmentalEditor, AiRole.BetaReader },
+            ["Research"] = new[] { AiRole.WritingCoach, AiRole.Proofreader, AiRole.LineEditor, AiRole.DevelopmentalEditor, AiRole.BetaReader },
+            ["Manage"]   = new[] { AiRole.WritingCoach, AiRole.DevelopmentalEditor, AiRole.BetaReader },
+            ["Plan"]     = new[] { AiRole.DevelopmentalEditor, AiRole.WritingCoach, AiRole.BetaReader },
         };
 
     private static readonly IReadOnlyDictionary<string, AiRole> _defaultRoleMap =
         new Dictionary<string, AiRole>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Write"]  = AiRole.WritingCoach,
-            ["Manage"] = AiRole.WritingCoach,
-            ["Plan"]   = AiRole.DevelopmentalEditor,
+            ["Write"]    = AiRole.WritingCoach,
+            ["Research"] = AiRole.WritingCoach,
+            ["Manage"]   = AiRole.WritingCoach,
+            ["Plan"]     = AiRole.DevelopmentalEditor,
         };
 
     public RolePromptProvider()

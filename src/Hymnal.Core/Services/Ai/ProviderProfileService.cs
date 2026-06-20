@@ -112,12 +112,13 @@ public sealed class ProviderProfileService : IProviderProfileService
         string DisplayName,
         string BaseUrl,
         string ModelId,
-        int? ContextWindowTokens)
+        int? ContextWindowTokens,
+        ProviderType Type = ProviderType.OpenAI)
     {
         public static ProviderProfileDto From(ProviderProfile p) =>
-            new(p.Id, p.DisplayName, p.BaseUrl, p.ModelId, p.ContextWindowTokens);
+            new(p.Id, p.DisplayName, p.BaseUrl, p.ModelId, p.ContextWindowTokens, p.Type);
 
         public ProviderProfile ToModel() =>
-            new(Id, DisplayName, BaseUrl, ModelId, ContextWindowTokens);
+            new(Id, DisplayName, BaseUrl, ModelId, ContextWindowTokens, Type);
     }
 }

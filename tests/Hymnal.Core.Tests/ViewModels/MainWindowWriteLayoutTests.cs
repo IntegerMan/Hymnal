@@ -237,7 +237,7 @@ public sealed class MainWindowWriteLayoutTests : IDisposable
                 new BookStatsViewModel(Workspace, new WordCountHistoryService(MetadataStore), new TargetsService(MetadataStore)),
                 new GanttViewModel(Workspace, new PhaseDataService(MetadataStore), NotificationService),
                 new CorkboardViewModel(Workspace, new FakeBookTxtStructureService(), new OrphanFileDiscoveryService(), SettingsStore, NotificationService, new ManuscriptService(NotificationService)),
-                new ResearchViewModel(Workspace, docs, Editor),
+                new ResearchViewModel(Workspace, docs, Editor, AiTestDoubles.CreateStubAiChatViewModel(Editor, Workspace, NotificationService)),
                 docs,
                 gitPanel,
                 NotificationService,

@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Hymnal.ViewModels"
              xmlns:views="clr-namespace:Hymnal.Views"
+             xmlns:aiviews="clr-namespace:Hymnal.Views.Ai"
              x:Class="Hymnal.Views.ResearchView"
              x:DataType="vm:ResearchViewModel"
              Background="#0B0820">
@@ -59,28 +60,42 @@
                       ResizeDirection="Columns"
                       Background="{DynamicResource BorderSubtleBrush}" />
 
-        <!-- AI chat placeholder -->
+        <!-- AI chat panel -->
         <Border Grid.Column="4"
                 Background="{DynamicResource SurfaceElevatedBrush}"
                 BorderBrush="{DynamicResource BorderSubtleBrush}"
                 BorderThickness="1,0,0,0">
-            <StackPanel VerticalAlignment="Center"
-                        HorizontalAlignment="Center"
-                        Margin="16"
-                        Spacing="8">
-                <TextBlock Text="AI CHAT"
-                           FontSize="10"
-                           FontWeight="SemiBold"
-                           LetterSpacing="1.5"
-                           Foreground="{DynamicResource OnSurfaceDimBrush}"
-                           HorizontalAlignment="Center" />
-                <TextBlock Text="Coming soon"
-                           FontSize="12"
-                           Foreground="{DynamicResource OnSurfaceDimBrush}"
-                           HorizontalAlignment="Center"
-                           TextAlignment="Center"
-                           TextWrapping="Wrap" />
-            </StackPanel>
+            <Grid RowDefinitions="48,*">
+                <!-- Header -->
+                <Border Grid.Row="0"
+                        Height="48"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                        BorderThickness="0,0,0,1">
+                    <Grid ColumnDefinitions="48,*">
+                        <Path Grid.Column="0"
+                              Width="18"
+                              Height="18"
+                              Stretch="Uniform"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Center"
+                              Stroke="{DynamicResource SynthwavePurpleBrush}"
+                              StrokeThickness="1.5"
+                              StrokeLineCap="Round"
+                              Data="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                        <TextBlock Grid.Column="1"
+                                   Text="AI CHAT"
+                                   VerticalAlignment="Center"
+                                   Margin="4,0,0,0"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   LetterSpacing="1.5"
+                                   Foreground="{DynamicResource OnSurfaceDimBrush}" />
+                    </Grid>
+                </Border>
+
+                <aiviews:AiChatView Grid.Row="1"
+                                    DataContext="{Binding AiChatViewModel}" />
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

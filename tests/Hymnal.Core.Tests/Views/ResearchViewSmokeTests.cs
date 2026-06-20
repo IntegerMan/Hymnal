@@ -7,13 +7,14 @@ namespace Hymnal.Core.Tests.Views;
 public sealed class ResearchViewSmokeTests
 {
     [Fact]
-    public void ResearchView_Axaml_WiresSharedDocsEditorAndAiPlaceholder()
+    public void ResearchView_Axaml_WiresSharedDocsEditorAndAiChat()
     {
         var axaml = File.ReadAllText(FindRepositoryFile("src/Hymnal/Views/ResearchView.axaml"));
         Assert.Contains("x:Class=\"Hymnal.Views.ResearchView\"", axaml);
         Assert.Contains("DataContext=\"{Binding SupplementalDocsViewModel}\"", axaml);
         Assert.Contains("DataContext=\"{Binding EditorViewModel}\"", axaml);
-        Assert.Contains("Coming soon", axaml);
+        Assert.Contains("DataContext=\"{Binding AiChatViewModel}\"", axaml);
+        Assert.Contains("AiChatView", axaml);
         Assert.Contains("Text=\"DOCS\"", axaml);
 
         var mainWindowAxaml = File.ReadAllText(FindRepositoryFile("src/Hymnal/Views/MainWindow.axaml"));
