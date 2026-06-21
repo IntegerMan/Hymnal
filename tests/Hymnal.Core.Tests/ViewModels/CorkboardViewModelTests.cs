@@ -219,7 +219,7 @@ public sealed class CorkboardViewModelTests
         await ExecuteCommandAsync(board.ReorderCardCommand.Execute(
             new ReorderCardRequest("part-one/chapter-one.md", AfterRelativePath: "part-one/chapter-three.md")));
 
-        Assert.Equal(1, context.StructureService.ReorderCalls.Count);
+        Assert.Single(context.StructureService.ReorderCalls);
         Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", 3), context.StructureService.ReorderCalls[0]);
         Assert.Equal(1, context.Workspace.ReorderCount);
         Assert.Equal(0, context.Workspace.ReloadCount);
@@ -246,7 +246,7 @@ public sealed class CorkboardViewModelTests
                 TargetPartPath: "part-one/part.md",
                 AfterRelativePath: "part-one/chapter-three.md")));
 
-        Assert.Equal(1, context.StructureService.ReorderCalls.Count);
+        Assert.Single(context.StructureService.ReorderCalls);
         Assert.Equal((context.Workspace.BookTxtPath, "part-one/chapter-one.md", 3), context.StructureService.ReorderCalls[0]);
         Assert.Empty(context.StructureService.MoveCalls);
         Assert.Equal(1, context.Workspace.ReloadCount);
@@ -664,7 +664,7 @@ public sealed class CorkboardViewModelTests
 
         Assert.Same(card.Card, board.SelectedCard);
         Assert.Equal(itemsBefore, board.Items.Select(item => item.RelativePath));
-        Assert.Equal(1, context.NotificationService.Errors.Count);
+        Assert.Single(context.NotificationService.Errors);
         Assert.Contains("disk write exploded", context.NotificationService.Errors[0]);
         Assert.Equal("Reorder card", board.LastStructuralError?.Operation);
         Assert.Equal("part-one/chapter-one.md", board.LastStructuralError?.Path);
@@ -778,7 +778,7 @@ public sealed class CorkboardViewModelTests
             new DeleteChapterRequest("part-one/chapter-one.md", Confirmed: false)));
 
         Assert.Empty(context.StructureService.DeleteCalls);
-        Assert.Equal(1, context.NotificationService.Errors.Count);
+        Assert.Single(context.NotificationService.Errors);
         Assert.Contains("confirmation was not provided", context.NotificationService.Errors[0]);
         Assert.Equal("Delete chapter", board.LastStructuralError?.Operation);
         Assert.Equal("part-one/chapter-one.md", board.LastStructuralError?.Path);

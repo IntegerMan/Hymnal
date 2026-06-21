@@ -53,7 +53,7 @@ public sealed class WorkspaceSidebarExclusionTests
             var excludedNode = Assert.Single(context.Workspace.Nodes, node => node.Node.RelativePath == "part-one/chapter-02.md");
             Assert.True(excludedNode.Node.IsExcluded);
             Assert.False(context.Workspace.Nodes.Single(node => node.Node.RelativePath == "part-one/chapter-01.md").Node.IsExcluded);
-            Assert.False(context.Workspace.Nodes.Any(node => node.Node.RelativePath == "part-one/unmanifested-orphan.md"));
+            Assert.DoesNotContain(context.Workspace.Nodes, node => node.Node.RelativePath == "part-one/unmanifested-orphan.md");
 
             Assert.Equal(
                 context.Workspace.Nodes.Select(node => node.Node.RelativePath),

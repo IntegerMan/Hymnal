@@ -120,6 +120,7 @@ public class AiChatViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ToggleListCommand { get; }
     public ReactiveCommand<Unit, Unit> TogglePanelCommand { get; }
     public ReactiveCommand<ChatMessageViewModel, Unit> RegenerateCommand { get; }
+    public ReactiveCommand<ConversationScope, Unit> SetScopeCommand { get; }
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ public class AiChatViewModel : ViewModelBase, IDisposable
         ToggleListCommand = ReactiveCommand.Create(() => { IsListVisible = !IsListVisible; });
         TogglePanelCommand = ReactiveCommand.Create(() => { IsVisible = !IsVisible; });
         RegenerateCommand = ReactiveCommand.CreateFromTask<ChatMessageViewModel>(RegenerateAsync);
+        SetScopeCommand = ReactiveCommand.Create<ConversationScope>(scope => SelectedScope = scope);
 
         Disposables.Add(SendCommand.ThrownExceptions
             .Subscribe(ex => ErrorMessage = ex.Message));
@@ -475,7 +477,7 @@ public class AiChatViewModel : ViewModelBase, IDisposable
     // ── IDisposable ──────────────────────────────────────────────────────────
 
     private bool _disposed;
-    public new void Dispose()
+    public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;

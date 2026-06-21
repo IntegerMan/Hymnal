@@ -1706,7 +1706,7 @@ public class WorkspaceViewModel : ViewModelBase
 
         try
         {
-            using var _ = _manuscriptService.SuppressFileWatcher();
+            using var suppressFileWatcher = _manuscriptService.SuppressFileWatcher();
 
             var result = await action().ConfigureAwait(false);
             if (!result.IsSuccess)
@@ -1731,7 +1731,7 @@ public class WorkspaceViewModel : ViewModelBase
             }
             else
             {
-                hydrationTask.ContinueWith(task =>
+                _ = hydrationTask.ContinueWith(task =>
                     Avalonia.Threading.Dispatcher.UIThread.Post(() => SelectReplacementNodeIfPresent(replacementPath)),
                     TaskScheduler.Default);
             }

@@ -11,7 +11,7 @@
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,8,8,4">
             <TextBox Grid.Column="0"
                      Text="{Binding SearchQuery, Mode=TwoWay}"
-                     Watermark="Search conversations…"
+                     PlaceholderText="Search conversations…"
                      FontSize="11"
                      Background="{DynamicResource SurfaceBaseBrush}"
                      Foreground="{DynamicResource OnSurfaceBrush}"
