@@ -206,7 +206,7 @@ public partial class MainWindow : Window
         var grid = RightPaneGrid;   // x:Name="RightPaneGrid" field from generated partial class
         if (grid is null) return;
 
-        // Notes visibility is still driven from code-behind (compiled binding limitation in child views).
+        // Notes and AI Chat content visibility are driven from code-behind (compiled binding limitation in child views).
         if (NotesViewContent is not null)
         {
             NotesViewContent.IsVisible = vm.NotesViewModel.IsVisible;
@@ -217,44 +217,54 @@ public partial class MainWindow : Window
                     .Subscribe(v => NotesViewContent.IsVisible = v));
         }
 
+        if (AiChatViewContent is not null)
+        {
+            AiChatViewContent.IsVisible = vm.AiChatViewModel.IsVisible;
+            _layoutDisposables.Add(
+                vm.AiChatViewModel
+                    .WhenAnyValue(x => x.IsVisible)
+                    .ObserveOn(AvaloniaScheduler.Instance)
+                    .Subscribe(v => AiChatViewContent.IsVisible = v));
+        }
+
         // ChapterPanelContentControl.IsVisible is bound in AXAML to IsChapterPanelOpen;
         // we only need to drive the row heights here.
 
-        // Outlook-style layout: 3 rows — DockPanel(header+content) | splitter | DockPanel(header+content)
-        // Row 0: Chapter panel DockPanel (* or Auto — managed here)
-        // Row 1: Splitter (Auto — not managed here)
-        // Row 2: Notes DockPanel (* or Auto — managed here)
+        // Outlook-style layout: 5 rows — DockPanel | splitter | DockPanel | splitter | DockPanel
+        // Rows 0, 2, 4: content rows (* or Auto — managed here)
 
-        void ApplyRowHeights(bool chPanelVisible, bool notesVisible, WriteLayoutSettings layout)
+        void ApplyRowHeights(bool chPanelVisible, bool notesVisible, bool chatVisible, WriteLayoutSettings layout)
         {
-            if (chPanelVisible && notesVisible)
-            {
-                grid.RowDefinitions[0].Height = new GridLength(layout.RightPaneTopStar, GridUnitType.Star);
-                grid.RowDefinitions[2].Height = new GridLength(layout.RightPaneBottomStar, GridUnitType.Star);
-            }
-            else
-            {
-                grid.RowDefinitions[0].Height = chPanelVisible
-                    ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
-                grid.RowDefinitions[2].Height = notesVisible
-                    ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
-            }
+            var openCount = (chPanelVisible ? 1 : 0) + (notesVisible ? 1 : 0) + (chatVisible ? 1 : 0);
+            var usePersistedStars = openCount >= 2;
+
+            grid.RowDefinitions[0].Height = chPanelVisible
+                ? new GridLength(usePersistedStars ? layout.RightPaneTopStar : 1.0, GridUnitType.Star)
+                : GridLength.Auto;
+            grid.RowDefinitions[2].Height = notesVisible
+                ? new GridLength(usePersistedStars ? layout.RightPaneBottomStar : 1.0, GridUnitType.Star)
+                : GridLength.Auto;
+            grid.RowDefinitions[4].Height = chatVisible
+                ? new GridLength(usePersistedStars ? layout.RightPaneChatStar : 1.0, GridUnitType.Star)
+                : GridLength.Auto;
         }
 
         ApplyRowHeights(
             vm.IsChapterPanelOpen,
             vm.NotesViewModel.IsVisible,
+            vm.AiChatViewModel.IsVisible,
             vm.CurrentWriteLayout);
 
         _layoutDisposables.Add(
             vm.WhenAnyValue(x => x.IsChapterPanelOpen)
                 .CombineLatest(
                     vm.NotesViewModel.WhenAnyValue(x => x.IsVisible),
+                    vm.AiChatViewModel.WhenAnyValue(x => x.IsVisible),
                     vm.WhenAnyValue(x => x.CurrentWriteLayout),
-                    (chPanel, notes, layout) => (chPanel, notes, layout))
+                    (chPanel, notes, chat, layout) => (chPanel, notes, chat, layout))
                 .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(
-                    state => ApplyRowHeights(state.chPanel, state.notes, state.layout),
+                    state => ApplyRowHeights(state.chPanel, state.notes, state.chat, state.layout),
                     _ => { /* non-fatal */ }));
     }
 
@@ -331,6 +341,7 @@ public partial class MainWindow : Window
             LeftPaneBottomStar  = current.LeftPaneBottomStar,
             RightPaneTopStar    = current.RightPaneTopStar,
             RightPaneBottomStar = current.RightPaneBottomStar,
+            RightPaneChatStar   = current.RightPaneChatStar,
         };
 
         // Capture left sidebar width only when a pane is open (avoid persisting 48).
@@ -361,16 +372,20 @@ public partial class MainWindow : Window
             }
         }
 
-        // Capture right-pane vertical split only when both panes are open.
-        if (vm.IsBothRightPanesOpen && rightPane?.RowDefinitions.Count >= 3)
+        // Capture right-pane vertical star weights for each open content row.
+        if (rightPane?.RowDefinitions.Count >= 5)
         {
             var top = rightPane.RowDefinitions[0].Height;
-            var bot = rightPane.RowDefinitions[2].Height;
-            if (top.IsStar && bot.IsStar && top.Value > 0 && bot.Value > 0)
-            {
-                captured.RightPaneTopStar    = top.Value;
-                captured.RightPaneBottomStar = bot.Value;
-            }
+            if (top.IsStar && top.Value > 0)
+                captured.RightPaneTopStar = top.Value;
+
+            var mid = rightPane.RowDefinitions[2].Height;
+            if (mid.IsStar && mid.Value > 0)
+                captured.RightPaneBottomStar = mid.Value;
+
+            var chat = rightPane.RowDefinitions[4].Height;
+            if (chat.IsStar && chat.Value > 0)
+                captured.RightPaneChatStar = chat.Value;
         }
 
         _ = vm.PersistWriteLayoutAsync(captured);

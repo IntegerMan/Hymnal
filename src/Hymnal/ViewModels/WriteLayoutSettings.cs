@@ -22,13 +22,16 @@ public sealed class WriteLayoutSettings
     /// <summary>Star weight for the Docs section row (Row 2 of LeftPaneGrid).</summary>
     public double LeftPaneBottomStar { get; set; } = 1.0;
 
-    // ── Right pane horizontal-split ratio ────────────────────────────────────
+    // ── Right pane vertical-split ratio ────────────────────────────────────────
 
-    /// <summary>Star weight for the Chapter Info content row (Row 1 of RightPaneGrid).</summary>
+    /// <summary>Star weight for the Chapter Info content row (Row 0 of RightPaneGrid).</summary>
     public double RightPaneTopStar { get; set; } = 1.0;
 
-    /// <summary>Star weight for the Notes content row (Row 4 of RightPaneGrid).</summary>
+    /// <summary>Star weight for the Notes content row (Row 2 of RightPaneGrid).</summary>
     public double RightPaneBottomStar { get; set; } = 1.0;
+
+    /// <summary>Star weight for the AI Chat content row (Row 4 of RightPaneGrid).</summary>
+    public double RightPaneChatStar { get; set; } = 1.0;
 
     // ── Defaults ─────────────────────────────────────────────────────────────
 

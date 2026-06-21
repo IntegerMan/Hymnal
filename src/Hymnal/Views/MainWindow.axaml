@@ -557,11 +557,11 @@
                                                 IsVisible="{Binding IsChapterPanelOpen}" />
                             </DockPanel>
 
-                            <!-- Row 1: GridSplitter between sections (visible when both open) -->
+                            <!-- Row 1: GridSplitter between Info and Notes (visible when both content areas open) -->
                             <GridSplitter Grid.Row="1"
                                           Height="4"
                                           ResizeDirection="Rows"
-                                          IsVisible="{Binding IsBothRightPanesOpen}"
+                                          IsVisible="{Binding IsInfoNotesSplitterVisible}"
                                           Background="{DynamicResource BorderSubtleBrush}" />
 
                             <!-- Row 2: Notes DockPanel (header pinned top + content fills rest) -->
@@ -596,16 +596,15 @@
                                                  DataContext="{Binding NotesViewModel}" />
                             </DockPanel>
 
-                            <!-- Row 3: GridSplitter between Notes and AI (visible when both open) -->
+                            <!-- Row 3: GridSplitter between Notes and AI (visible when both content areas open) -->
                             <GridSplitter Grid.Row="3"
                                           Height="4"
                                           ResizeDirection="Rows"
-                                          IsVisible="{Binding AiChatViewModel.IsVisible}"
+                                          IsVisible="{Binding IsNotesChatSplitterVisible}"
                                           Background="{DynamicResource BorderSubtleBrush}" />
 
-                            <!-- Row 4: AI Chat DockPanel -->
-                            <DockPanel Grid.Row="4"
-                                       IsVisible="{Binding AiChatViewModel.IsVisible}">
+                            <!-- Row 4: AI Chat DockPanel (header always visible; content collapses) -->
+                            <DockPanel Grid.Row="4">
                                 <Border DockPanel.Dock="Top"
                                         Height="48"
                                         BorderBrush="{DynamicResource BorderSubtleBrush}"
@@ -641,7 +640,8 @@
                                         </Button>
                                     </Grid>
                                 </Border>
-                                <aiviews:AiChatView DataContext="{Binding AiChatViewModel}" />
+                                <aiviews:AiChatView x:Name="AiChatViewContent"
+                                                    DataContext="{Binding AiChatViewModel}" />
                             </DockPanel>
 
                         </Grid>
