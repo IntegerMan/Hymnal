@@ -49,7 +49,6 @@ lpt[1-9].*
 *.swo
 *~
 .idea/
-.vscode/
 *.code-workspace
 .env
 .env.*
