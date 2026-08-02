@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M002/S04/T01",
+  "timestamp": 1780201026733,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet build src/Hymnal/Hymnal.csproj -nologo",
+      "exitCode": 0,
+      "durationMs": 2562,
+      "verdict": "pass"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2,
+  "runtimeErrors": [
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[verify-shell] exitCode=1 errors: 0 Error(s); Passed!  - Failed:     0, Passed:    57, Skipped:     0, Total:    57, Duration: 226 ms",
+      "blocking": true
+    },
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[hymnal-shell] exitCode=1 errors: Unhandled exception. ReactiveUI.UnhandledErrorException: An object implementing IHandleObservableErrors (often a ReactiveCommand or ObservableAsPropertyHelper) has errored, thereby breaking its observ; ---> System.Reflection.TargetInvocationException: Exception has been thrown by the target of an invocation.; --- End of inner exception stack trace ---",
+      "blocking": true
+    },
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[verify-shell-2] exitCode=1 errors: Unhandled exception. ReactiveUI.UnhandledErrorException: An object implementing IHandleObservableErrors (often a ReactiveCommand or ObservableAsPropertyHelper) has errored, thereby breaking its observ; ---> System.Reflection.TargetInvocationException: Exception has been thrown by the target of an invocation.; --- End of inner exception stack trace ---",
+      "blocking": true
+    }
+  ]
+}

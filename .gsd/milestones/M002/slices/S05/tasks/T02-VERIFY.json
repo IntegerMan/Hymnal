@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M002/S05/T02",
+  "timestamp": 1780258487901,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "test -f .gsd/milestones/M002/slices/S05/S05-SUMMARY.md",
+      "exitCode": 1,
+      "durationMs": 42,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}

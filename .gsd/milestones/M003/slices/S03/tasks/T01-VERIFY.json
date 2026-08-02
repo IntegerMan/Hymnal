@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M003/S03/T01",
+  "timestamp": 1780341194412,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet test Hymnal.sln --filter GanttViewModelTests -nologo",
+      "exitCode": 0,
+      "durationMs": 6754,
+      "verdict": "pass"
+    }
+  ]
+}

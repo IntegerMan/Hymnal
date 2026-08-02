@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M005/S01/T02",
+  "timestamp": 1781752164446,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet test tests/Hymnal.Core.Tests/Hymnal.Core.Tests.csproj --filter IncludeExclude",
+      "exitCode": 0,
+      "durationMs": 7816,
+      "verdict": "pass"
+    }
+  ]
+}
