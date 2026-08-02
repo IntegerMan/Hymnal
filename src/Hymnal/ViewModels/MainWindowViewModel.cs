@@ -185,8 +185,16 @@ public class MainWindowViewModel : ViewModelBase
     public bool IsAnyRightPaneOpen => _isAnyRightPaneOpen.Value;
 
     private readonly ObservableAsPropertyHelper<bool> _isBothRightPanesOpen;
-    /// <summary>True when both the Notes and top-right panels are visible.</summary>
+    /// <summary>True when two or more right-rail panels have open content.</summary>
     public bool IsBothRightPanesOpen => _isBothRightPanesOpen.Value;
+
+    private readonly ObservableAsPropertyHelper<bool> _isInfoNotesSplitterVisible;
+    /// <summary>True when both Info and Notes content areas are open (shows the splitter between them).</summary>
+    public bool IsInfoNotesSplitterVisible => _isInfoNotesSplitterVisible.Value;
+
+    private readonly ObservableAsPropertyHelper<bool> _isNotesChatSplitterVisible;
+    /// <summary>True when both Notes and Chat content areas are open (shows the splitter between them).</summary>
+    public bool IsNotesChatSplitterVisible => _isNotesChatSplitterVisible.Value;
 
     private readonly ObservableAsPropertyHelper<bool> _isEditorChapterBarVisible;
     /// <summary>True when the editor chapter metadata bar should be shown.</summary>
@@ -377,6 +385,20 @@ public class MainWindowViewModel : ViewModelBase
             .ToProperty(this, x => x.IsBothRightPanesOpen);
         Disposables.Add(_isBothRightPanesOpen);
 
+        _isInfoNotesSplitterVisible = Observable.CombineLatest(
+                chapterPanelOpenObs,
+                NotesViewModel.WhenAnyValue(x => x.IsVisible),
+                (chPanel, notes) => chPanel && notes)
+            .ToProperty(this, x => x.IsInfoNotesSplitterVisible);
+        Disposables.Add(_isInfoNotesSplitterVisible);
+
+        _isNotesChatSplitterVisible = Observable.CombineLatest(
+                NotesViewModel.WhenAnyValue(x => x.IsVisible),
+                AiChatViewModel.WhenAnyValue(x => x.IsVisible),
+                (notes, ai) => notes && ai)
+            .ToProperty(this, x => x.IsNotesChatSplitterVisible);
+        Disposables.Add(_isNotesChatSplitterVisible);
+
         _isEditorChapterBarVisible = Observable.CombineLatest(
                 this.WhenAnyValue(x => x.ActiveMode),
                 workspaceViewModel.WhenAnyValue(x => x.SelectedNode),
@@ -513,6 +535,7 @@ public class MainWindowViewModel : ViewModelBase
                 stored.LeftPaneBottomStar  = Math.Max(0.01, stored.LeftPaneBottomStar);
                 stored.RightPaneTopStar    = Math.Max(0.01, stored.RightPaneTopStar);
                 stored.RightPaneBottomStar = Math.Max(0.01, stored.RightPaneBottomStar);
+                stored.RightPaneChatStar   = Math.Max(0.01, stored.RightPaneChatStar);
                 CurrentWriteLayout = stored;
             }
         }

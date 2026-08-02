@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Hymnal",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/Hymnal/bin/Debug/net10.0/Hymnal.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/src/Hymnal",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      "name": "Launch Hymnal (no build)",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Hymnal/bin/Debug/net10.0/Hymnal.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/src/Hymnal",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    }
+  ]
+}

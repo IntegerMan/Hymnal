@@ -1,4 +1,10 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="AGENTS.md" />
+    <File Path="GETTING_STARTED.md" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Hymnal.Core/Hymnal.Core.csproj" />
     <Project Path="src/Hymnal/Hymnal.csproj" />
