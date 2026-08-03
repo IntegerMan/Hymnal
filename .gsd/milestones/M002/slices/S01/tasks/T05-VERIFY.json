@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T05",
+  "unitId": "M002/S01/T05",
+  "timestamp": 1780187563394,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet build src/Hymnal.Core/Hymnal.Core.csproj -nologo && dotnet build src/Hymnal/Hymnal.csproj -nologo && dotnet test tests/Hymnal.Core.Tests/Hymnal.Core.Tests.csproj --filter ChapterRegistryServiceTests && dotnet test tests/Hymnal.Core.Tests/Hymnal.Core.Tests.csproj --filter PhaseDataServiceTests",
+      "exitCode": 3221225786,
+      "durationMs": 12027,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}

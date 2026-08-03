@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M005/S08/T02",
+  "timestamp": 1781844581620,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "powershell.exe -NoProfile -Command \"& 'C:\\Program Files\\dotnet\\dotnet.exe' test tests\\Hymnal.Core.Tests\\Hymnal.Core.Tests.csproj --nologo --filter StructuralConsistencyUatTests --verbosity minimal\"",
+      "exitCode": 0,
+      "durationMs": 280,
+      "verdict": "pass"
+    }
+  ]
+}

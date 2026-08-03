@@ -1,0 +1,39 @@
+---
+sliceId: S08
+uatType: browser-executable
+verdict: PARTIAL
+date: 2026-06-19T05:34:01.572Z
+---
+
+# UAT Result — S08
+
+## Checks
+
+| Check | Mode | Result | Notes |
+|-------|------|--------|-------|
+| Preconditions: throwaway workspace, Book.txt under workspace, nested Part files, included chapters, orphan file, and pre-created metadata/registry/exclusion sidecars available for replay. | artifact | PASS | `gsd_exec` artifact coverage `604cdcc8-920a-44e8-8f37-3c009641f40a` confirmed the manual UAT doc, structural replay test, S08 summary, and T01-T04 summaries exist. The replay test contains fixture/setup coverage for `Book.txt`, `front/beta.md`, `Renamed Alpha`, `middle/act-one/orphan.md`, `Inserted Scene`, excluded nodes, UUID-backed state, and reload. |
+| Main replay step 1: Launch Hymnal and open the temp workspace. | artifact | PASS | The ViewModel/Core replay source contains an `OpenWorkspaceAsync` helper and the cross-surface replay test method `CrossSurfaceReplay_PersistsOneUuidBackedStructureAfterFreshReload` (`gsd_exec` `47576df5-b1c1-4d83-ab00-c3785e5e99fb`). Manual desktop launch remains covered by `docs/uat/M005-S08-structural-consistency.md` for human replay. |
+| Main replay step 2: Verify sidebar order matches Book.txt; Part nodes visible but not normal selectable chapter documents; orphan/excluded files styled as excluded where shown. | artifact / human-follow-up | PASS / NEEDS-HUMAN | Artifact coverage confirms Sidebar, Book.txt, Part/excluded/orphan concepts are present in the replay test and manual script (`604cdcc8-920a-44e8-8f37-3c009641f40a`). Visual styling of excluded rows/cards is a desktop UI observation and should be manually confirmed with the documented script. |
+| Main replay step 3: Sidebar remove/include/rename/reorder/move Back Part before Middle Part. | artifact | PASS | Structural replay test source contains the relevant sidebar/book operations and paths (`front/beta.md`, `Renamed Alpha`, Move/Rename terms confirmed in `47576df5-b1c1-4d83-ab00-c3785e5e99fb`), and the durable UAT script documents the same actions. |
+| Main replay step 4: Corkboard reorder/move/remove Delta, show Delta and Orphan as excluded without duplicates, include Orphan after Gamma, and inline-create Inserted Scene. | artifact | PASS | Artifact coverage confirms Corkboard, Delta, Orphan, Gamma, Inserted Scene, excluded, `Assert.Single`, and `Assert.Empty` coverage in the replay test (`47576df5-b1c1-4d83-ab00-c3785e5e99fb`). S08 summary records the duplication fix: Workspace excluded nodes are authoritative before orphan projection. |
+| Main replay step 5: Gantt row order matches manuscript projection and supports same-Part movement of Gamma after Inserted Scene. | artifact | PASS | Artifact coverage confirms Gantt, same-Part, Gamma, Inserted Scene, Move, and Book.txt coverage in the replay test/manual script (`604cdcc8-920a-44e8-8f37-3c009641f40a`, `47576df5-b1c1-4d83-ab00-c3785e5e99fb`). |
+| Main replay step 6: Persisted state has final Book.txt order, moved/renamed Alpha path, Delta remains on disk but excluded, Inserted Scene exists, exclusions contain Delta only, registry UUIDs and UUID-keyed metadata remain continuous/readable. | artifact | PASS | Replay test source contains file-system assertions (`File.Exists`, directory/path checks), exclusion handling, and reload/persistence coverage (`47576df5-b1c1-4d83-ab00-c3785e5e99fb`). The exact literal `exclusions.json` appears in the manual UAT doc, while the test exercises exclusion behavior through service/model code rather than relying on that filename literal (`604cdcc8-920a-44e8-8f37-3c009641f40a`). |
+| Main replay step 7: Quit/relaunch/reopen and verify Sidebar, Corkboard, and Gantt show one consistent Book.txt-backed state with Delta once and no duplicate paths. | artifact / human-follow-up | PASS / NEEDS-HUMAN | Replay test method name and source confirm fresh reload coverage and cross-surface consistency assertions; `Assert.Single`/`Assert.Empty` terms are present for duplicate/no-stale-state checks (`47576df5-b1c1-4d83-ab00-c3785e5e99fb`). Actual desktop quit/relaunch visual confirmation remains a manual follow-up using the docs script. |
+| Controlled failure step 1: Create a target filename conflict, then attempt a Corkboard cross-Part move into that conflicting path. | artifact | PASS | The controlled failure replay method `ControlledStructuralFailures_AreVisibleAndLeaveStateRecoverableAcrossSurfaces` exists and includes Corkboard/move/conflict/error-state coverage (`47576df5-b1c1-4d83-ab00-c3785e5e99fb`). |
+| Controlled failure step 2: Conflict move is rejected with actionable error; `CorkboardViewModel.LastStructuralError` has operation/path/message/Book.txt context; Book.txt/files/registry/exclusions/metadata remain unchanged after reload. | artifact | PASS | Artifact coverage confirms `LastStructuralError`, Book.txt, file-system checks, exclusions, and reload/recoverability terms in the replay source (`604cdcc8-920a-44e8-8f37-3c009641f40a`, `47576df5-b1c1-4d83-ab00-c3785e5e99fb`). Manual user-facing copy should still be visually checked in the desktop UI if a human is doing full UAT. |
+| Controlled failure step 3: Attempt a Gantt cross-Part chapter reorder. | artifact | PASS | Artifact coverage confirms Gantt and same-Part-only behavior are present in the replay/manual coverage (`604cdcc8-920a-44e8-8f37-3c009641f40a`). |
+| Controlled failure step 4: Gantt cross-Part operation is rejected with notification directing authors to Corkboard; all surfaces remain unchanged. | artifact / human-follow-up | PASS / NEEDS-HUMAN | Replay source confirms controlled failure/recoverability coverage and Gantt/same-Part behavior. Exact notification copy is a desktop UX observation and should be verified manually with `docs/uat/M005-S08-structural-consistency.md`. |
+| Runtime re-execution of focused structural UAT tests in this verification lane. | runtime | NEEDS-HUMAN | Attempted `dotnet test Hymnal.slnx --filter FullyQualifiedName~StructuralConsistencyUatTests --no-restore --logger console;verbosity=minimal` via native Node child process (`gsd_exec` `1aa9a8b9-d724-453f-a373-fd785bd7e7e8`). It failed before test execution with the known environment assets-file error: `NETSDK1060 ... project.assets.json ... Value cannot be null. (Parameter 'path1')`. This matches the documented MEM008/S08 caveat and does not provide fresh runtime pass/fail evidence. |
+
+## Overall Verdict
+
+PARTIAL — Artifact-based UAT coverage and prior S08 closure evidence support the structural consistency checks, but this verification lane could not truthfully re-run the focused .NET UAT tests or exercise the desktop UI/browser-equivalent live flow, so live/runtime confirmation remains a human/native-Windows follow-up.
+
+## Notes
+
+- Evidence gathered:
+  - `gsd_exec` `604cdcc8-920a-44e8-8f37-3c009641f40a`: artifact coverage for manual UAT doc, replay test, S08 summary, task summaries, and key UAT terms.
+  - `gsd_exec` `47576df5-b1c1-4d83-ab00-c3785e5e99fb`: replay test method/term summary, including cross-surface replay and controlled failure methods.
+  - `gsd_exec` `1aa9a8b9-d724-453f-a373-fd785bd7e7e8`: attempted focused runtime test execution, blocked by known .NET assets-file verification-environment issue.
+- No browser URL or web UI exists for this desktop Avalonia UAT despite the detected `browser-executable` mode; browser screenshots could not be truthfully captured.
+- Human/native-Windows follow-up should run the documented desktop script at `docs/uat/M005-S08-structural-consistency.md`, preferably from PowerShell with a clean native restore/build environment, and visually confirm excluded styling plus notification wording.

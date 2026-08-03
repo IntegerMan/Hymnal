@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M001/S05/T01",
+  "timestamp": 1780106718817,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet test tests/Hymnal.Core.Tests --filter PathHelper --nologo",
+      "exitCode": 0,
+      "durationMs": 5428,
+      "verdict": "pass"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2,
+  "runtimeErrors": [
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[cd \"C:\\Dev\\Hymnal\\.gsd\\worktrees\\M001\" && dotnet build src/H] exitCode=1 errors: C:\\Dev\\Hymnal\\.gsd\\worktrees\\M001\\src\\Hymnal\\ViewModels\\WorkspaceViewModel.cs(76,28): error CS0104: 'Unit' is an ambiguous reference between 'Hymnal.Core.Common.Unit' and 'System.Reactive.Unit' [C:\\De; C:\\Dev\\Hymnal\\.gsd\\worktrees\\M001\\src\\Hymnal\\ViewModels\\WorkspaceViewModel.cs(76,34): error CS0104: 'Unit' is an ambiguous reference between 'Hymnal.Core.Common.Unit' and 'System.Reactive.Unit' [C:\\De; C:\\Dev\\Hymnal\\.gsd\\worktrees\\M001\\src\\Hymnal\\ViewModels\\WorkspaceViewModel.cs(77,28): error CS0104: 'Unit' is an ambiguous reference between 'Hymnal.Core.Common.Unit' and 'System.Reactive.Unit' [C:\\De",
+      "blocking": true
+    }
+  ]
+}

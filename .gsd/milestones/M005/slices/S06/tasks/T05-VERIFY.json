@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T05",
+  "unitId": "M005/S06/T05",
+  "timestamp": 1781822576588,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet test Hymnal.slnx --nologo --verbosity minimal",
+      "exitCode": 1,
+      "durationMs": 13200,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}

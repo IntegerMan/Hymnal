@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M004/S03/T01",
+  "timestamp": 1780552387460,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet test tests/Hymnal.Core.Tests/Hymnal.Core.Tests.csproj --filter FullyQualifiedName~ProcessGitServiceTests",
+      "exitCode": 0,
+      "durationMs": 5267,
+      "verdict": "pass"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2,
+  "runtimeErrors": [
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[inspect-repo] exitCode=1",
+      "blocking": true
+    },
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[inspect-shell] exitCode=1 errors: .gsd\\milestones\\M001\\slices\\S01\\tasks\\T04-SUMMARY.md:38:| 2 | `dotnet test tests/Hymnal.Core.Tests/ --no-build` | 0 | pass — 4 passed, 0 failed | 3000ms |; .gsd\\milestones\\M001\\slices\\S03\\tasks\\T01-SUMMARY.md:37:| 1 | `dotnet test tests/Hymnal.Core.Tests/ --filter \"MetadataStore\"` | 0 | ✅ pass — 3 passed, 0 failed | 13000ms |; .gsd\\milestones\\M004\\slices\\S01\\S01-ASSESSMENT.md:14:| Click the Plan tab. | human-follow-up | NEEDS-HUMAN | Browser navigation to `http://localhost:3000` failed with `ERR_CONNECTION_REFUSED`, so the ",
+      "blocking": true
+    },
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[uat-shell] exitCode=1",
+      "blocking": true
+    }
+  ]
+}

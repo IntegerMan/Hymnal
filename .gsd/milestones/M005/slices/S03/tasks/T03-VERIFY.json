@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M005/S03/T03",
+  "timestamp": 1781784351906,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet test tests/Hymnal.Core.Tests/Hymnal.Core.Tests.csproj --nologo --filter SidebarViewSmokeTests --verbosity minimal",
+      "exitCode": 0,
+      "durationMs": 5371,
+      "verdict": "pass"
+    }
+  ]
+}

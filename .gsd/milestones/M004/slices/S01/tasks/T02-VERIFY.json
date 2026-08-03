@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M004/S01/T02",
+  "timestamp": 1780538201465,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "dotnet test Hymnal.sln --filter FullyQualifiedName~CorkboardProjectionTests",
+      "exitCode": 0,
+      "durationMs": 6531,
+      "verdict": "pass"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2,
+  "runtimeErrors": [
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[ps-shell] exitCode=1",
+      "blocking": true
+    },
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[ps-shell-2] exitCode=1 errors: Failed Hymnal.Core.Tests.ViewModels.CorkboardProjectionTests.CardViewModel_ProjectsLiveDisplayValuesAndFallbacks [2 s]; Error Message:; Failed!  - Failed:     1, Passed:     3, Skipped:     0, Total:     4, Duration: 2 s - Hymnal.Core.Tests.dll (net10.0)",
+      "blocking": true
+    },
+    {
+      "source": "bg-shell",
+      "severity": "crash",
+      "message": "[ps-shell-3] exitCode=1 errors: Failed Hymnal.Core.Tests.ViewModels.CorkboardProjectionTests.CardViewModel_ProjectsLiveDisplayValuesAndFallbacks [2 s]; Error Message:; Failed!  - Failed:     1, Passed:     3, Skipped:     0, Total:     4, Duration: 2 s",
+      "blocking": true
+    }
+  ]
+}
